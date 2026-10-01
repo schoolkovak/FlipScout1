@@ -10,16 +10,20 @@ export default async function handler(req,res) {
     buildBudget:Number(req.body?.buildBudget||0),
     committed:Number(req.body?.committed||0),
     sortBy:req.body?.sortBy||"best",
-    deepScan:Boolean(req.body?.deepScan)
+    deepScan:Boolean(req.body?.deepScan),
+    providerKeys:{
+      SERPER_API_KEY:req.body?.providerKeys?.SERPER_API_KEY||"",
+      SEARCHAPI_API_KEY:req.body?.providerKeys?.SEARCHAPI_API_KEY||""
+    }
   };
   if (!input.query) return res.status(400).json({available:false,message:"Enter a part or model to search."});
 
-  const connected=providerStatus().some(x=>x.status==="Connected");
+  const connected=providerStatus(input.providerKeys).some(x=>x.status==="Connected");
   if (!connected) {
     return res.status(200).json({
       available:false,
       message:"No live market provider is connected yet. The easiest free starter is Serper (2,500 free queries); SearchAPI is the best optional direct-source backup for eBay, Walmart and Best Buy.",
-      sources:providerStatus()
+      sources:providerStatus(input.providerKeys)
     });
   }
 
@@ -29,7 +33,7 @@ export default async function handler(req,res) {
       available:false,
       message:"Providers responded, but FlipScout could not find enough relevant comparable listings for this search.",
       errors:result.errors,
-      sources:providerStatus()
+      sources:providerStatus(input.providerKeys)
     });
   }
 
@@ -50,6 +54,6 @@ export default async function handler(req,res) {
     },
     results:result.ranked.slice(0,75),
     errors:result.errors,
-    sources:providerStatus()
+    sources:providerStatus(input.providerKeys)
   });
 }
