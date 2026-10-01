@@ -7,10 +7,22 @@ function env(name) {
 export function providerStatus() {
   return [
     {
+      id:"serper",
+      name:"Serper Shopping",
+      status: env("SERPER_API_KEY") ? "Connected" : "Missing credentials",
+      coverage:"Recommended free starter: 2,500 real-time Google Shopping queries"
+    },
+    {
+      id:"searchapi",
+      name:"SearchAPI",
+      status: env("SEARCHAPI_API_KEY") ? "Connected" : "Missing credentials",
+      coverage:"Direct eBay, Walmart and Best Buy public search results; use sparingly on free credits"
+    },
+    {
       id:"serpapi",
-      name:"Google Shopping",
+      name:"SerpApi Google Shopping",
       status: env("SERPAPI_API_KEY") ? "Connected" : "Missing credentials",
-      coverage:"New retail + some second-hand offers surfaced by Google Shopping"
+      coverage:"Optional Google Shopping provider; 250 free searches/month"
     },
     {
       id:"bestbuy",
@@ -190,6 +202,158 @@ export async function searchSerpApi({query,category,condition}) {
       relevance:relevanceScore(x.title,query,category)
     };
   }).filter(x=>x.itemPrice>0 && (condition==="any" || x.condition===condition));
+}
+
+
+export async function searchSerperShopping({query,category,condition}) {
+  if (!env("SERPER_API_KEY")) return [];
+  const q=condition==="used" ? "used "+query : condition==="open-box" ? "open box "+query : query;
+  const response=await fetch("https://google.serper.dev/shopping",{
+    method:"POST",
+    headers:{
+      "X-API-KEY":env("SERPER_API_KEY"),
+      "Content-Type":"application/json"
+    },
+    body:JSON.stringify({q,gl:"us",hl:"en",num:100})
+  });
+  if(!response.ok) throw new Error("Serper Shopping returned "+response.status);
+  const data=await response.json();
+  return (data.shopping||[]).map((x,index)=>{
+    const itemPrice=parseMoney(x.price);
+    const ship=parseShippingFromSerp({delivery:x.delivery});
+    const inferredCondition=condition==="any" ? normalizeCondition((x.title||"")+" "+(x.source||"")) : condition;
+    return {
+      id:"serper-"+(x.productId||index)+"-"+itemPrice,
+      source:"Google Shopping",
+      sourceType:"retail-aggregator",
+      title:x.title||"Untitled shopping result",
+      condition:inferredCondition==="unknown"?"new":inferredCondition,
+      itemPrice:itemPrice||0,
+      shipping:ship.shipping,
+      shippingKnown:ship.shippingKnown,
+      totalPrice:(itemPrice||0)+ship.shipping,
+      seller:x.source||"Unknown merchant",
+      url:x.link||null,
+      freshness:null,
+      relevance:relevanceScore(x.title,query,category)
+    };
+  }).filter(x=>x.itemPrice>0 && (condition==="any" || x.condition===condition));
+}
+
+function searchApiCondition(condition){
+  if(condition==="new") return "new";
+  if(condition==="used") return "pre_owned_excellent,used_very_good,used_good,used_acceptable,pre_owned_fair";
+  if(condition==="open-box") return "new_opened,like_new";
+  return null;
+}
+
+async function searchSearchApiEngine(engine,query,extra={}){
+  if(!env("SEARCHAPI_API_KEY")) return null;
+  const params=new URLSearchParams({engine,q:query,api_key:env("SEARCHAPI_API_KEY"),...extra});
+  const response=await fetch("https://www.searchapi.io/api/v1/search?"+params.toString());
+  if(!response.ok) throw new Error("SearchAPI "+engine+" returned "+response.status);
+  return response.json();
+}
+
+export async function searchSearchApiEbay({query,category,condition}) {
+  const extra={num:"240",sort_by:"best_match",buying_format:"buy_it_now"};
+  const cond=searchApiCondition(condition);
+  if(cond) extra.condition=cond;
+  const data=await searchSearchApiEngine("ebay_search",query,extra);
+  if(!data) return [];
+  return (data.organic_results||[]).map((x,index)=>{
+    const itemPrice=Number(x.extracted_price ?? x.extracted_price_range?.from ?? 0);
+    const shippingKnown=x.extracted_shipping!==undefined || /free/i.test(x.shipping||"");
+    const shipping=/free/i.test(x.shipping||"")?0:Number(x.extracted_shipping||0);
+    return {
+      id:"searchapi-ebay-"+(x.item_id||index),
+      source:"eBay",
+      sourceType:"marketplace",
+      title:x.title||"Untitled eBay listing",
+      condition:normalizeCondition(x.condition),
+      itemPrice,
+      shipping,
+      shippingKnown,
+      totalPrice:itemPrice+shipping,
+      seller:x.seller?.name||"eBay seller",
+      url:x.link||null,
+      freshness:null,
+      relevance:relevanceScore(x.title,query,category)
+    };
+  }).filter(x=>x.itemPrice>0 && (condition==="any" || x.condition===condition || (condition==="open-box"&&x.condition==="open-box")));
+}
+
+export async function searchSearchApiBestBuy({query,category,condition}) {
+  const data=await searchSearchApiEngine("bestbuy_search",query,{sort_by:"best_match"});
+  if(!data) return [];
+  const out=[];
+  for(const [index,x] of (data.organic_results||[]).entries()){
+    const itemPrice=Number(x.extracted_price||0);
+    if(itemPrice>0 && (condition==="any"||condition==="new")){
+      out.push({
+        id:"searchapi-bestbuy-new-"+(x.product_id||index),
+        source:"Best Buy",
+        sourceType:"retailer",
+        title:x.title||x.short_title||"Best Buy item",
+        condition:"new",
+        itemPrice,
+        shipping:0,
+        shippingKnown:false,
+        totalPrice:itemPrice,
+        seller:x.seller?.name||"Best Buy",
+        url:x.link||null,
+        freshness:null,
+        relevance:relevanceScore(x.title,query,category)
+      });
+    }
+    if(condition==="any"||condition==="open-box"){
+      for(const [j,offer] of (x.open_box_options||[]).entries()){
+        const openPrice=Number(offer.extracted_price||0);
+        if(!openPrice) continue;
+        out.push({
+          id:"searchapi-bestbuy-open-"+(x.product_id||index)+"-"+j,
+          source:"Best Buy",
+          sourceType:"retailer",
+          title:(x.title||x.short_title||"Best Buy item")+" - Open Box "+(offer.condition||""),
+          condition:"open-box",
+          itemPrice:openPrice,
+          shipping:0,
+          shippingKnown:false,
+          totalPrice:openPrice,
+          seller:"Best Buy",
+          url:offer.link||x.link||null,
+          freshness:null,
+          relevance:relevanceScore(x.title,query,category)
+        });
+      }
+    }
+  }
+  return out;
+}
+
+export async function searchSearchApiWalmart({query,category,condition}) {
+  if(condition==="used"||condition==="open-box") return [];
+  const data=await searchSearchApiEngine("walmart_search",query,{sort_by:"best_match"});
+  if(!data) return [];
+  return (data.organic_results||[]).map((x,index)=>{
+    const itemPrice=Number(x.extracted_price||0);
+    const shippingKnown=Boolean(x.is_free_shipping);
+    return {
+      id:"searchapi-walmart-"+(x.id||index),
+      source:"Walmart",
+      sourceType:"retailer-marketplace",
+      title:x.title||"Walmart item",
+      condition:"new",
+      itemPrice,
+      shipping:0,
+      shippingKnown,
+      totalPrice:itemPrice,
+      seller:x.seller_name||"Walmart",
+      url:x.link||null,
+      freshness:null,
+      relevance:relevanceScore(x.title,query,category)
+    };
+  }).filter(x=>x.itemPrice>0);
 }
 
 function bestBuySearchTerms(query) {
@@ -448,37 +612,54 @@ export function rankDeals(items,market,{query,partBudget,buildBudget,committed,s
 }
 
 function cacheKey(input){
-  return [normalizeText(input.query),String(input.category||"").toLowerCase(),input.condition||"any"].join("|");
+  return [normalizeText(input.query),String(input.category||"").toLowerCase(),input.condition||"any",input.deepScan?"deep":"fast"].join("|");
 }
 
 function chooseProviders(input){
-  const hasEbay=Boolean(env("EBAY_CLIENT_ID")&&env("EBAY_CLIENT_SECRET"));
-  const hasRetail=Boolean(env("SERPAPI_API_KEY")||env("BESTBUY_API_KEY"));
+  const hasOfficialEbay=Boolean(env("EBAY_CLIENT_ID")&&env("EBAY_CLIENT_SECRET"));
   const condition=input.condition||"any";
-
-  if(condition==="used"&&hasEbay){
-    return [
-      ["eBay",()=>searchEbay(input)]
-    ];
-  }
-  if(condition==="new"&&hasRetail){
-    const providers=[];
-    if(env("SERPAPI_API_KEY")) providers.push(["Google Shopping",()=>searchSerpApi(input)]);
-    if(env("BESTBUY_API_KEY")) providers.push(["Best Buy",()=>searchBestBuy(input)]);
-    return providers;
-  }
-  if(condition==="open-box"){
-    const providers=[];
-    if(env("BESTBUY_API_KEY")) providers.push(["Best Buy",()=>searchBestBuy(input)]);
-    if(hasEbay) providers.push(["eBay",()=>searchEbay(input)]);
-    if(!providers.length&&env("SERPAPI_API_KEY")) providers.push(["Google Shopping",()=>searchSerpApi(input)]);
-    return providers;
-  }
-
   const providers=[];
-  if(env("SERPAPI_API_KEY")) providers.push(["Google Shopping",()=>searchSerpApi(input)]);
-  if(env("BESTBUY_API_KEY")) providers.push(["Best Buy",()=>searchBestBuy(input)]);
-  if(hasEbay) providers.push(["eBay",()=>searchEbay(input)]);
+
+  if(condition==="used"){
+    if(env("SEARCHAPI_API_KEY")) providers.push(["SearchAPI eBay",()=>searchSearchApiEbay(input)]);
+    else if(hasOfficialEbay) providers.push(["eBay",()=>searchEbay(input)]);
+    else if(env("SERPER_API_KEY")) providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
+    else if(env("SERPAPI_API_KEY")) providers.push(["Google Shopping",()=>searchSerpApi(input)]);
+    return providers;
+  }
+
+  if(condition==="open-box"){
+    if(env("SEARCHAPI_API_KEY")) {
+      providers.push(["SearchAPI Best Buy",()=>searchSearchApiBestBuy(input)]);
+      providers.push(["SearchAPI eBay",()=>searchSearchApiEbay(input)]);
+    } else if(env("BESTBUY_API_KEY")) {
+      providers.push(["Best Buy",()=>searchBestBuy(input)]);
+    } else if(hasOfficialEbay) {
+      providers.push(["eBay",()=>searchEbay(input)]);
+    } else if(env("SERPER_API_KEY")) {
+      providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
+    }
+    return providers;
+  }
+
+  if(env("SERPER_API_KEY")) providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
+  else if(env("SERPAPI_API_KEY")) providers.push(["Google Shopping",()=>searchSerpApi(input)]);
+
+  if(input.deepScan&&env("SEARCHAPI_API_KEY")){
+    providers.push(["SearchAPI Walmart",()=>searchSearchApiWalmart(input)]);
+    providers.push(["SearchAPI Best Buy",()=>searchSearchApiBestBuy(input)]);
+    if(condition==="any") providers.push(["SearchAPI eBay",()=>searchSearchApiEbay(input)]);
+  } else if(!env("SERPER_API_KEY")&&!env("SERPAPI_API_KEY")){
+    if(env("SEARCHAPI_API_KEY")){
+      providers.push(["SearchAPI Walmart",()=>searchSearchApiWalmart(input)]);
+      providers.push(["SearchAPI Best Buy",()=>searchSearchApiBestBuy(input)]);
+      if(condition==="any") providers.push(["SearchAPI eBay",()=>searchSearchApiEbay(input)]);
+    } else {
+      if(env("BESTBUY_API_KEY")) providers.push(["Best Buy",()=>searchBestBuy(input)]);
+      if(hasOfficialEbay) providers.push(["eBay",()=>searchEbay(input)]);
+    }
+  }
+
   return providers;
 }
 
