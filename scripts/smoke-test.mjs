@@ -11,6 +11,11 @@ assert.equal(cpuTypo.canonical,"Ryzen 5 5600X");
 const fakeGpu=resolveCatalogPart("gpu","RTX 9090");
 assert.equal(fakeGpu.status,"unknown");
 
+const ambiguousGpu=resolveCatalogPart("gpu","RTX 3060");
+assert.equal(ambiguousGpu.status,"ambiguous");
+assert.ok(ambiguousGpu.suggestions.includes("RTX 3060 8GB"));
+assert.ok(ambiguousGpu.suggestions.includes("RTX 3060 12GB"));
+
 const validBuild={
   price:800,
   cpu:"Ryzen5-5600X",
