@@ -9,6 +9,7 @@ const app=express();
 app.use(cors());
 app.use(express.json());
 
+app.get("/api/health",(req,res)=>res.json({ok:true,service:"flipscout-api",time:new Date().toISOString()}));
 app.get("/api/sources",sourcesHandler);
 app.post("/api/deals/search",dealsHandler);
 app.post("/api/market/pc",pcHandler);
