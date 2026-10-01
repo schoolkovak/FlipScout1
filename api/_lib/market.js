@@ -6,12 +6,18 @@ function env(name) {
   return process.env[name] || "";
 }
 
-export function providerStatus() {
+function providerKey(name,input={}) {
+  return input?.providerKeys?.[name] || env(name);
+}
+
+export function providerStatus(providerKeys={}) {
+  const scoped={providerKeys};
+
   return [
     {
       id:"serper",
       name:"Serper Shopping",
-      status: env("SERPER_API_KEY") ? "Connected" : "Missing credentials",
+      status: providerKey("SERPER_API_KEY",scoped) ? "Connected" : "Missing credentials",
       coverage:"Recommended free starter: 2,500 real-time Google Shopping queries",
       signupUrl:"https://serper.dev/",
       freeAllowance:"2,500 free queries"
@@ -19,7 +25,7 @@ export function providerStatus() {
     {
       id:"searchapi",
       name:"SearchAPI",
-      status: env("SEARCHAPI_API_KEY") ? "Connected" : "Missing credentials",
+      status: providerKey("SEARCHAPI_API_KEY",scoped) ? "Connected" : "Missing credentials",
       coverage:"Direct eBay, Walmart and Best Buy public search results; use sparingly on free credits",
       signupUrl:"https://www.searchapi.io/",
       freeAllowance:"100 free requests"
@@ -217,13 +223,15 @@ export async function searchSerpApi({query,category,condition}) {
 }
 
 
-export async function searchSerperShopping({query,category,condition}) {
-  if (!env("SERPER_API_KEY")) return [];
+export async function searchSerperShopping(input) {
+  const {query,category,condition}=input;
+  const apiKey=providerKey("SERPER_API_KEY",input);
+  if (!apiKey) return [];
   const q=condition==="used" ? "used "+query : condition==="open-box" ? "open box "+query : query;
   const response=await fetch("https://google.serper.dev/shopping",{
     method:"POST",
     headers:{
-      "X-API-KEY":env("SERPER_API_KEY"),
+      "X-API-KEY":apiKey,
       "Content-Type":"application/json"
     },
     body:JSON.stringify({q,gl:"us",hl:"en",num:100})
@@ -259,9 +267,10 @@ function searchApiCondition(condition){
   return null;
 }
 
-async function searchSearchApiEngine(engine,query,extra={}){
-  if(!env("SEARCHAPI_API_KEY")) return null;
-  const params=new URLSearchParams({engine,q:query,api_key:env("SEARCHAPI_API_KEY"),...extra});
+async function searchSearchApiEngine(engine,query,extra={},providerKeys={}){
+  const apiKey=providerKeys?.SEARCHAPI_API_KEY || env("SEARCHAPI_API_KEY");
+  if(!apiKey) return null;
+  const params=new URLSearchParams({engine,q:query,api_key:apiKey,...extra});
   const response=await fetch("https://www.searchapi.io/api/v1/search?"+params.toString());
   if(!response.ok) throw new Error("SearchAPI "+engine+" returned "+response.status);
   return response.json();
@@ -291,7 +300,8 @@ function mapSearchApiEbayResult(x,index,{query,category}) {
   };
 }
 
-export async function searchSearchApiEbay({query,category,condition,postalCode,localOnly=false,distanceRadius=50}) {
+export async function searchSearchApiEbay(input) {
+  const {query,category,condition,postalCode,localOnly=false,distanceRadius=50,providerKeys={}}=input;
   const extra={num:"240",sort_by:localOnly?"distance_nearest":"best_match",buying_format:"buy_it_now"};
   const cond=searchApiCondition(condition);
   if(cond) extra.condition=cond;
@@ -300,7 +310,7 @@ export async function searchSearchApiEbay({query,category,condition,postalCode,l
     extra.distance_radius=String(distanceRadius||50);
   }
   if(localOnly) extra.filters="local_pickup";
-  const data=await searchSearchApiEngine("ebay_search",query,extra);
+  const data=await searchSearchApiEngine("ebay_search",query,extra,providerKeys);
   if(!data) return [];
 
   const raw=[...(data.organic_results||[])];
@@ -312,8 +322,9 @@ export async function searchSearchApiEbay({query,category,condition,postalCode,l
     .filter(x=>x.itemPrice>0 && (condition==="any" || x.condition===condition || (condition==="open-box"&&x.condition==="open-box")));
 }
 
-export async function searchSearchApiBestBuy({query,category,condition}) {
-  const data=await searchSearchApiEngine("bestbuy_search",query,{sort_by:"best_match"});
+export async function searchSearchApiBestBuy(input) {
+  const {query,category,condition,providerKeys={}}=input;
+  const data=await searchSearchApiEngine("bestbuy_search",query,{sort_by:"best_match"},providerKeys);
   if(!data) return [];
   const out=[];
   for(const [index,x] of (data.organic_results||[]).entries()){
@@ -360,9 +371,10 @@ export async function searchSearchApiBestBuy({query,category,condition}) {
   return out;
 }
 
-export async function searchSearchApiWalmart({query,category,condition}) {
+export async function searchSearchApiWalmart(input) {
+  const {query,category,condition,providerKeys={}}=input;
   if(condition==="used"||condition==="open-box") return [];
-  const data=await searchSearchApiEngine("walmart_search",query,{sort_by:"best_match"});
+  const data=await searchSearchApiEngine("walmart_search",query,{sort_by:"best_match"},providerKeys);
   if(!data) return [];
   return (data.organic_results||[]).map((x,index)=>{
     const itemPrice=Number(x.extracted_price||0);
@@ -630,7 +642,7 @@ export function buildSalesEvidence(items){
 }
 
 export async function searchLocalEbay(input){
-  if(!env("SEARCHAPI_API_KEY") || !input.postalCode) return {items:[],market:buildMarket([]),errors:[]};
+  if(!providerKey("SEARCHAPI_API_KEY",input) || !input.postalCode) return {items:[],market:buildMarket([]),errors:[]};
   try{
     const items=await searchSearchApiEbay({...input,localOnly:true,postalCode:input.postalCode,distanceRadius:input.distanceRadius||50});
     return {items,market:buildMarket(items),errors:[]};
@@ -687,50 +699,60 @@ export function rankDeals(items,market,{query,partBudget,buildBudget,committed,s
 }
 
 function cacheKey(input){
-  return [normalizeText(input.query),String(input.category||"").toLowerCase(),input.condition||"any",input.deepScan?"deep":"fast",input.componentEstimate?"component":"direct"].join("|");
+  return [
+    normalizeText(input.query),
+    String(input.category||"").toLowerCase(),
+    input.condition||"any",
+    input.deepScan?"deep":"fast",
+    input.componentEstimate?"component":"direct",
+    providerKey("SERPER_API_KEY",input)?"serper":"no-serper",
+    providerKey("SEARCHAPI_API_KEY",input)?"searchapi":"no-searchapi"
+  ].join("|");
 }
 
 function chooseProviders(input){
   const hasOfficialEbay=Boolean(env("EBAY_CLIENT_ID")&&env("EBAY_CLIENT_SECRET"));
+  const hasSerper=Boolean(providerKey("SERPER_API_KEY",input));
+  const hasSearchApi=Boolean(providerKey("SEARCHAPI_API_KEY",input));
   const condition=input.condition||"any";
   const providers=[];
 
-  if(input.componentEstimate&&env("SERPER_API_KEY")){
+  if(input.componentEstimate&&hasSerper){
     providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
     return providers;
   }
 
   if(condition==="used"){
-    if(env("SEARCHAPI_API_KEY")) providers.push(["SearchAPI eBay",()=>searchSearchApiEbay(input)]);
+    if(hasSearchApi) providers.push(["SearchAPI eBay",()=>searchSearchApiEbay(input)]);
     else if(hasOfficialEbay) providers.push(["eBay",()=>searchEbay(input)]);
-    else if(env("SERPER_API_KEY")) providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
+    else if(hasSerper) providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
     else if(env("SERPAPI_API_KEY")) providers.push(["Google Shopping",()=>searchSerpApi(input)]);
     return providers;
   }
 
   if(condition==="open-box"){
-    if(env("SEARCHAPI_API_KEY")) {
+    if(hasSearchApi) {
       providers.push(["SearchAPI Best Buy",()=>searchSearchApiBestBuy(input)]);
       providers.push(["SearchAPI eBay",()=>searchSearchApiEbay(input)]);
     } else if(env("BESTBUY_API_KEY")) {
       providers.push(["Best Buy",()=>searchBestBuy(input)]);
     } else if(hasOfficialEbay) {
       providers.push(["eBay",()=>searchEbay(input)]);
-    } else if(env("SERPER_API_KEY")) {
+    } else if(hasSerper) {
       providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
     }
     return providers;
   }
 
-  if(env("SERPER_API_KEY")) providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
+  if(hasSerper) providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
   else if(env("SERPAPI_API_KEY")) providers.push(["Google Shopping",()=>searchSerpApi(input)]);
 
-  if(input.deepScan&&env("SEARCHAPI_API_KEY")){
+  if(input.deepScan&&hasSearchApi){
     providers.push(["SearchAPI Walmart",()=>searchSearchApiWalmart(input)]);
     providers.push(["SearchAPI Best Buy",()=>searchSearchApiBestBuy(input)]);
     if(condition==="any") providers.push(["SearchAPI eBay",()=>searchSearchApiEbay(input)]);
-  } else if(!env("SERPER_API_KEY")&&!env("SERPAPI_API_KEY")){
-    if(env("SEARCHAPI_API_KEY")){
+  } else if(!hasSerper&&!env("SERPAPI_API_KEY")){
+    if(hasSearchApi){
       providers.push(["SearchAPI Walmart",()=>searchSearchApiWalmart(input)]);
       providers.push(["SearchAPI Best Buy",()=>searchSearchApiBestBuy(input)]);
       if(condition==="any") providers.push(["SearchAPI eBay",()=>searchSearchApiEbay(input)]);
