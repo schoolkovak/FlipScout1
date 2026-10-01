@@ -18,6 +18,54 @@ function Datalist({id,items}){
   return <datalist id={id}>{items.map(x=><option key={x.name} value={x.name}/>)}</datalist>;
 }
 
+const EMPTY_KEYS={SERPER_API_KEY:"",SEARCHAPI_API_KEY:""};
+
+function loadProviderKeys(){
+  try{
+    const saved=JSON.parse(localStorage.getItem("flipscout-provider-keys")||"{}");
+    return {...EMPTY_KEYS,...saved};
+  }catch{
+    return {...EMPTY_KEYS};
+  }
+}
+
+function ProviderSetup({providerKeys,setProviderKeys}){
+  const [draft,setDraft]=useState(providerKeys);
+  const [saved,setSaved]=useState(false);
+  const connected=Boolean(providerKeys.SERPER_API_KEY||providerKeys.SEARCHAPI_API_KEY);
+
+  function save(){
+    const clean={
+      SERPER_API_KEY:String(draft.SERPER_API_KEY||"").trim(),
+      SEARCHAPI_API_KEY:String(draft.SEARCHAPI_API_KEY||"").trim()
+    };
+    localStorage.setItem("flipscout-provider-keys",JSON.stringify(clean));
+    setProviderKeys(clean);
+    setDraft(clean);
+    setSaved(true);
+    setTimeout(()=>setSaved(false),1800);
+  }
+
+  function clear(){
+    localStorage.removeItem("flipscout-provider-keys");
+    setDraft({...EMPTY_KEYS});
+    setProviderKeys({...EMPTY_KEYS});
+  }
+
+  return <section className={"panel keyPanel "+(connected?"keyConnected":"")}>
+    <div className="sectionTitle">
+      <div><span className="eyebrow">LIVE DATA CONNECTION</span><h2>{connected?"Live market keys saved":"Connect live market data"}</h2></div>
+      {connected?<CheckCircle2 className="good"/>:<Database/>}
+    </div>
+    <p className="keyIntro">Keys are stored only in this browser and sent to FlipScout's own API when you run a search. They are not committed to GitHub.</p>
+    <div className="keyGrid">
+      <label>Serper API key<input type="password" autoComplete="off" value={draft.SERPER_API_KEY} onChange={e=>setDraft({...draft,SERPER_API_KEY:e.target.value})} placeholder="Paste Serper key"/></label>
+      <label>SearchAPI key<input type="password" autoComplete="off" value={draft.SEARCHAPI_API_KEY} onChange={e=>setDraft({...draft,SEARCHAPI_API_KEY:e.target.value})} placeholder="Paste SearchAPI key"/></label>
+    </div>
+    <div className="keyActions"><button className="primary" onClick={save}>{saved?"Saved":"Save live-data keys"}</button>{connected&&<button className="ghost" onClick={clear}>Clear</button>}</div>
+  </section>;
+}
+
 function IdentityNotice({live,result}){
   const validation=live?.validation||result?.compatibility?.resolved;
   if(!validation) return null;
@@ -86,7 +134,7 @@ function SalesEvidence({evidence}){
   </div>;
 }
 
-function Analyzer(){
+function Analyzer({providerKeys}){
   const [price,setPrice]=useState(950);
   const [cpu,setCpu]=useState("Ryzen 5 5600");
   const [gpu,setGpu]=useState("RTX 4060");
@@ -111,7 +159,7 @@ function Analyzer(){
   }
 
   async function analyze(){
-    const input={price,cpu,gpu,ram,storage,motherboard,psu,caseType,cooler,postalCode,distanceRadius,purpose};
+    const input={price,cpu,gpu,ram,storage,motherboard,psu,caseType,cooler,postalCode,distanceRadius,purpose,providerKeys};
     const fallback=fallbackPcEstimate(input);
     setResult(fallback);setLive(null);setLoading(true);
     try{
@@ -204,7 +252,7 @@ function Analyzer(){
   </section>
 }
 
-function Scanner(){
+function Scanner({providerKeys}){
   const [category,setCategory]=useState("GPU");
   const firstExample=SCANNER_CATEGORIES.find(x=>x.name==="GPU")?.example||"RTX 5070";
   const [query,setQuery]=useState(firstExample);
@@ -226,7 +274,7 @@ function Scanner(){
   async function scan(){
     setLoading(true);setData(null);
     try{
-      const r=await fetch("/api/deals/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({category,query,condition,partBudget,buildBudget,committed,sortBy,deepScan})});
+      const r=await fetch("/api/deals/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({category,query,condition,partBudget,buildBudget,committed,sortBy,deepScan,providerKeys})});
       setData(await r.json());
     }catch{
       setData({available:false,message:"Live search backend is not reachable yet."});
@@ -273,25 +321,31 @@ function Scanner(){
   </section>
 }
 
-function Sources(){
+function Sources({providerKeys}){
   const [sources,setSources]=useState([]);
-  useEffect(()=>{fetch("/api/sources").then(r=>r.json()).then(d=>setSources(d.sources||[])).catch(()=>{});},[]);
+  useEffect(()=>{
+    fetch("/api/sources",{headers:{
+      "x-serper-key":providerKeys.SERPER_API_KEY||"",
+      "x-searchapi-key":providerKeys.SEARCHAPI_API_KEY||""
+    }}).then(r=>r.json()).then(d=>setSources(d.sources||[])).catch(()=>{});
+  },[providerKeys.SERPER_API_KEY,providerKeys.SEARCHAPI_API_KEY]);
   return <section className="panel sourcePanel">
     <div className="sectionTitle"><div><span className="eyebrow">MARKET DATA</span><h2>Live source status & free setup</h2></div><Database/></div>
     <div className="sourceGrid">{sources.length?sources.map(s=><div className="sourceRow" key={s.name}>
       <div><span>{s.name}</span><small>{s.coverage}</small>{s.freeAllowance&&<small className="allowance">{s.freeAllowance}</small>}{s.id==="bestbuy"&&s.status==="Connected"&&<a className="bestBuyAttribution" href="https://developers.bestbuy.com/" target="_blank" rel="noreferrer"><img src="https://developer.bestbuy.com/images/bestbuy-logo.png" alt="Best Buy Developer API"/></a>}</div>
       <div className="sourceActions"><b className={s.status==="Connected"?"good":""}>{s.status}</b>{s.status!=="Connected"&&s.signupUrl&&<a href={s.signupUrl} target="_blank" rel="noreferrer">Get key <ExternalLink size={13}/></a>}</div>
     </div>):<p>Preview mode is running without live provider credentials.</p>}</div>
-    <div className="providerPlan"><b>Recommended free setup:</b> Serper first for broad shopping coverage, then SearchAPI for sales-backed eBay + nearby/local comps. Official Best Buy and eBay APIs are optional upgrades.</div>
+    <div className="providerPlan"><b>Recommended setup:</b> Save your Serper and SearchAPI keys above. Serper handles high-volume shopping comps; SearchAPI is reserved for direct eBay/Best Buy/Walmart data, sales-backed evidence, and local pickup comps.</div>
   </section>
 }
 
 export default function App(){
   const [tab,setTab]=useState("analyze");
+  const [providerKeys,setProviderKeys]=useState(()=>loadProviderKeys());
   const subtitle=useMemo(()=>tab==="analyze"?"Validate parts, check real sales evidence, and estimate local vs online resale.":"Search current listings, compare real asking-market comps, and protect your build budget.",[tab]);
   return <div className="app">
     <header className="hero"><div className="brand"><div className="logo">FS</div><div><h1>FlipScout</h1><p>Real-market PC flip intelligence.</p></div></div><div className="heroText">{subtitle}</div></header>
     <nav className="tabs"><button className={tab==="analyze"?"active":""} onClick={()=>setTab("analyze")}><Cpu size={17}/>PC Analyzer</button><button className={tab==="scan"?"active":""} onClick={()=>setTab("scan")}><Search size={17}/>Parts Deal Scanner</button></nav>
-    <main>{tab==="analyze"?<Analyzer/>:<Scanner/>}<Sources/></main>
+    <main><ProviderSetup providerKeys={providerKeys} setProviderKeys={setProviderKeys}/>{tab==="analyze"?<Analyzer providerKeys={providerKeys}/>:<Scanner providerKeys={providerKeys}/>}<Sources providerKeys={providerKeys}/></main>
   </div>;
 }
