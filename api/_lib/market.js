@@ -13,6 +13,12 @@ export function providerStatus() {
       coverage:"New retail + some second-hand offers surfaced by Google Shopping"
     },
     {
+      id:"bestbuy",
+      name:"Best Buy",
+      status: env("BESTBUY_API_KEY") ? "Connected" : "Missing credentials",
+      coverage:"Near-real-time new pricing plus official Open Box offers"
+    },
+    {
       id:"ebay",
       name:"eBay",
       status: env("EBAY_CLIENT_ID") && env("EBAY_CLIENT_SECRET") ? "Connected" : "Missing credentials / production approval",
@@ -111,6 +117,83 @@ export async function searchSerpApi({query,category,condition}) {
       relevance:relevanceScore(x.title,query,category)
     };
   }).filter(x=>x.itemPrice>0 && (condition==="any" || x.condition===condition));
+}
+
+function bestBuySearchTerms(query) {
+  const tokens=normalizeText(query).split(" ").filter(Boolean).slice(0,6);
+  return tokens.map(t=>"search="+encodeURIComponent(t)).join("&");
+}
+
+async function bestBuyOpenBoxForSkus(skus,{query,category}) {
+  if (!skus.length || !env("BESTBUY_API_KEY")) return [];
+  const list=skus.slice(0,100).join(",");
+  const url="https://api.bestbuy.com/beta/products/openBox(sku%20in("+list+"))?apiKey="+encodeURIComponent(env("BESTBUY_API_KEY"));
+  const response=await fetch(url);
+  if (!response.ok) throw new Error("Best Buy Open Box returned "+response.status);
+  const data=await response.json();
+  const out=[];
+  for (const product of data.results||[]) {
+    for (let i=0;i<(product.offers||[]).length;i++) {
+      const offer=product.offers[i];
+      const itemPrice=Number(offer.prices?.current||0);
+      if (!itemPrice) continue;
+      out.push({
+        id:"bestbuy-openbox-"+product.sku+"-"+i+"-"+itemPrice,
+        source:"Best Buy",
+        sourceType:"retailer",
+        title:product.names?.title||"Best Buy Open Box item",
+        condition:"open-box",
+        itemPrice,
+        shipping:0,
+        shippingKnown:false,
+        totalPrice:itemPrice,
+        seller:"Best Buy",
+        url:product.links?.web||null,
+        freshness:null,
+        relevance:relevanceScore(product.names?.title,query,category)
+      });
+    }
+  }
+  return out;
+}
+
+export async function searchBestBuy({query,category,condition}) {
+  if (!env("BESTBUY_API_KEY")) return [];
+  const terms=bestBuySearchTerms(query);
+  const searchUrl="https://api.bestbuy.com/v1/products("+terms+"&active=true)?format=json&show=sku,name,salePrice,url,onlineAvailability&sort=salePrice.asc&pageSize=100&apiKey="+encodeURIComponent(env("BESTBUY_API_KEY"));
+  const response=await fetch(searchUrl);
+  if (!response.ok) throw new Error("Best Buy Products returned "+response.status);
+  const data=await response.json();
+  const products=data.products||[];
+
+  const newItems=products.map((p,index)=>{
+    const itemPrice=Number(p.salePrice||0);
+    return {
+      id:"bestbuy-new-"+(p.sku||index),
+      source:"Best Buy",
+      sourceType:"retailer",
+      title:p.name||"Best Buy item",
+      condition:"new",
+      itemPrice,
+      shipping:0,
+      shippingKnown:false,
+      totalPrice:itemPrice,
+      seller:"Best Buy",
+      url:p.url||null,
+      freshness:null,
+      relevance:relevanceScore(p.name,query,category)
+    };
+  }).filter(x=>x.itemPrice>0);
+
+  let openBox=[];
+  if (condition==="any" || condition==="open-box") {
+    openBox=await bestBuyOpenBoxForSkus(products.map(p=>p.sku).filter(Boolean),{query,category});
+  }
+
+  if (condition==="new") return newItems;
+  if (condition==="open-box") return openBox;
+  if (condition==="used") return [];
+  return [...newItems,...openBox];
 }
 
 let ebayTokenCache={token:null,expiresAt:0};
@@ -294,6 +377,7 @@ export function rankDeals(items,market,{query,partBudget,buildBudget,committed,s
 export async function liveSearch(input) {
   const jobs=[
     searchSerpApi(input).catch(error=>({__error:true,provider:"Google Shopping",message:error.message})),
+    searchBestBuy(input).catch(error=>({__error:true,provider:"Best Buy",message:error.message})),
     searchEbay(input).catch(error=>({__error:true,provider:"eBay",message:error.message}))
   ];
   const settled=await Promise.all(jobs);
