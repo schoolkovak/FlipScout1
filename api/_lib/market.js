@@ -10,31 +10,41 @@ export function providerStatus() {
       id:"serper",
       name:"Serper Shopping",
       status: env("SERPER_API_KEY") ? "Connected" : "Missing credentials",
-      coverage:"Recommended free starter: 2,500 real-time Google Shopping queries"
+      coverage:"Recommended free starter: 2,500 real-time Google Shopping queries",
+      signupUrl:"https://serper.dev/",
+      freeAllowance:"2,500 free queries"
     },
     {
       id:"searchapi",
       name:"SearchAPI",
       status: env("SEARCHAPI_API_KEY") ? "Connected" : "Missing credentials",
-      coverage:"Direct eBay, Walmart and Best Buy public search results; use sparingly on free credits"
+      coverage:"Direct eBay, Walmart and Best Buy public search results; use sparingly on free credits",
+      signupUrl:"https://www.searchapi.io/",
+      freeAllowance:"100 free requests"
     },
     {
       id:"serpapi",
       name:"SerpApi Google Shopping",
       status: env("SERPAPI_API_KEY") ? "Connected" : "Missing credentials",
-      coverage:"Optional Google Shopping provider; 250 free searches/month"
+      coverage:"Optional Google Shopping provider; 250 free searches/month",
+      signupUrl:"https://serpapi.com/",
+      freeAllowance:"250 searches/month"
     },
     {
       id:"bestbuy",
       name:"Best Buy",
       status: env("BESTBUY_API_KEY") ? "Connected" : "Missing credentials",
-      coverage:"Near-real-time new pricing plus official Open Box offers"
+      coverage:"Near-real-time new pricing plus official Open Box offers",
+      signupUrl:"https://developer.bestbuy.com/",
+      freeAllowance:"50,000 calls/day if approved"
     },
     {
       id:"ebay",
       name:"eBay",
       status: env("EBAY_CLIENT_ID") && env("EBAY_CLIENT_SECRET") ? "Connected" : "Missing credentials / production approval",
-      coverage:"Live new and used asking prices"
+      coverage:"Live new and used asking prices",
+      signupUrl:"https://developer.ebay.com/",
+      freeAllowance:"Developer registration is free; production Buy API approval required"
     }
   ];
 }
