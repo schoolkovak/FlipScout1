@@ -614,8 +614,11 @@ export function buildSalesEvidence(items){
     x=>Math.min(12,1+Math.log2(1+Number(x.soldCount||0)))
   );
   const totalUnits=qualifying.reduce((s,x)=>s+Number(x.soldCount||0),0);
+  const prices=qualifying.map(x=>x.totalPrice).sort((a,b)=>a-b);
   return {
     median:medianPrice===null?null:Math.round(medianPrice*100)/100,
+    low:prices.length?Math.round(quantile(prices,.20)*100)/100:null,
+    high:prices.length?Math.round(quantile(prices,.80)*100)/100:null,
     listingCount:qualifying.length,
     totalReportedUnitsSold:totalUnits,
     confidence:qualifying.length>=15?"High":qualifying.length>=6?"Medium":qualifying.length>=2?"Low":"Insufficient",
