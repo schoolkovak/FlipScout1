@@ -23,3 +23,5 @@
 .keyGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.keyActions{display:flex;gap:10px;margin-top:12px}
 .keyPanel input[type=password]{letter-spacing:.08em}
 @media(max-width:720px){.keyGrid{grid-template-columns:1fr}}
+
+.costBreakdown{display:grid;gap:4px;margin-top:10px;padding:9px 10px;background:#0d1725;border-radius:9px;color:#8193aa;font-size:11px}
