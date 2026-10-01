@@ -69,6 +69,10 @@ function salesEvidencePublicShape(evidence){
 export default async function handler(req,res){
   if(req.method!=="POST") return res.status(405).json({error:"POST required"});
   const body=req.body||{};
+  const providerKeys={
+    SERPER_API_KEY:body?.providerKeys?.SERPER_API_KEY||"",
+    SEARCHAPI_API_KEY:body?.providerKeys?.SEARCHAPI_API_KEY||""
+  };
   const resolved=resolveBuildParts(body);
 
   if(!resolved.cpu.item || !resolved.gpu.item){
@@ -87,15 +91,15 @@ export default async function handler(req,res){
   };
 
   const searches={
-    gpu:baseInput(canonicalBody.gpu,"GPU","used",{componentEstimate:true}),
-    cpu:baseInput(canonicalBody.cpu,"CPU","used",{componentEstimate:true}),
-    storage:baseInput(canonicalBody.storage,"SSD / NVMe","new",{componentEstimate:true}),
-    ram:baseInput(canonicalBody.ram,"RAM","new",{componentEstimate:true}),
-    motherboard:baseInput(canonicalBody.motherboard,"Motherboard","used",{componentEstimate:true}),
-    psu:baseInput(canonicalBody.psu,"PSU","new",{componentEstimate:true}),
-    caseType:baseInput(canonicalBody.caseType,"Case","new",{componentEstimate:true}),
-    cooler:baseInput(canonicalBody.cooler,canonicalBody.cooler?.includes("AIO")?"AIO Cooler":"CPU Cooler","new",{componentEstimate:true}),
-    completePc:baseInput(completePcQuery(canonicalBody,resolved),"Complete PC","used")
+    gpu:baseInput(canonicalBody.gpu,"GPU","used",{componentEstimate:true,providerKeys}),
+    cpu:baseInput(canonicalBody.cpu,"CPU","used",{componentEstimate:true,providerKeys}),
+    storage:baseInput(canonicalBody.storage,"SSD / NVMe","new",{componentEstimate:true,providerKeys}),
+    ram:baseInput(canonicalBody.ram,"RAM","new",{componentEstimate:true,providerKeys}),
+    motherboard:baseInput(canonicalBody.motherboard,"Motherboard","used",{componentEstimate:true,providerKeys}),
+    psu:baseInput(canonicalBody.psu,"PSU","new",{componentEstimate:true,providerKeys}),
+    caseType:baseInput(canonicalBody.caseType,"Case","new",{componentEstimate:true,providerKeys}),
+    cooler:baseInput(canonicalBody.cooler,canonicalBody.cooler?.includes("AIO")?"AIO Cooler":"CPU Cooler","new",{componentEstimate:true,providerKeys}),
+    completePc:baseInput(completePcQuery(canonicalBody,resolved),"Complete PC","used",{providerKeys})
   };
 
   const keys=Object.keys(searches);
@@ -148,7 +152,8 @@ export default async function handler(req,res){
   const localData=canonicalBody.postalCode
     ? await searchLocalEbay(baseInput(completePcQuery(canonicalBody,resolved),"Complete PC","used",{
         postalCode:String(canonicalBody.postalCode),
-        distanceRadius:Number(canonicalBody.distanceRadius||50)
+        distanceRadius:Number(canonicalBody.distanceRadius||50),
+        providerKeys
       }))
     : null;
 
