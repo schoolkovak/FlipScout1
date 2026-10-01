@@ -48,8 +48,36 @@ function normalizeText(value) {
 
 function importantTokens(query) {
   const q=normalizeText(query);
-  const stop=new Set(["gb","tb","ssd","nvme","gpu","cpu","graphics","card","gaming","pc","desktop","new","used"]);
+  const stop=new Set(["ssd","nvme","gpu","cpu","graphics","card","gaming","pc","desktop","new","used","preowned","pre","owned"]);
   return q.split(" ").filter(t=>t.length>1 && !stop.has(t));
+}
+
+function capacities(text) {
+  const raw=String(text||"").toLowerCase();
+  const values=[];
+  const re=/(\d+(?:\.\d+)?)\s*(tb|gb)\b/g;
+  let m;
+  while((m=re.exec(raw))){
+    const n=Number(m[1]);
+    values.push(m[2]==="tb"?n*1024:n);
+  }
+  return values;
+}
+
+function primaryCapacity(text) {
+  const values=capacities(text);
+  return values.length?Math.max(...values):null;
+}
+
+function variantPenalty(q,t) {
+  let penalty=0;
+  const variants=["ti","super","xt","xtx","x3d"];
+  for(const v of variants){
+    const qHas=new RegExp("\\b"+v+"\\b").test(q) || (v==="x3d"&&q.includes("x3d"));
+    const tHas=new RegExp("\\b"+v+"\\b").test(t) || (v==="x3d"&&t.includes("x3d"));
+    if(qHas!==tHas) penalty+=.22;
+  }
+  return Math.min(.55,penalty);
 }
 
 function relevanceScore(title, query, category) {
@@ -62,18 +90,63 @@ function relevanceScore(title, query, category) {
   let score=tokens.length ? matched/tokens.length : (t.includes(q)?1:0.5);
 
   const cat=String(category||"").toLowerCase();
+  const broken=/\b(for parts|parts only|not working|broken|untested|repair|as is)\b/.test(t);
+  if(broken) score-=.7;
+
   if (cat==="gpu") {
-    if (/\b(laptop|notebook|gaming pc|desktop pc|prebuilt|complete pc|computer system)\b/.test(t)) score-=0.45;
-    if (/\b(graphics card|gpu|geforce|radeon|rtx|rx)\b/.test(t)) score+=0.15;
+    if (/\b(laptop|notebook|gaming pc|desktop pc|prebuilt|complete pc|computer system)\b/.test(t)) score-=.55;
+    if (/\b(water ?block|heatsink|backplate|replacement fan|cooler only|empty box|box only|riser|vertical mount)\b/.test(t)) score-=.7;
+    if (/\b(graphics card|gpu|geforce|radeon|rtx|rx|arc)\b/.test(t)) score+=.15;
+    score-=variantPenalty(q,t);
   }
+
   if (cat==="cpu") {
-    if (/\b(laptop|notebook|desktop pc|prebuilt|complete pc)\b/.test(t)) score-=0.4;
-    if (/\b(processor|cpu|ryzen|intel|core)\b/.test(t)) score+=0.12;
+    if (/\b(laptop|notebook|desktop pc|prebuilt|complete pc|motherboard combo|bundle)\b/.test(t)) score-=.5;
+    if (/\b(processor|cpu|ryzen|intel|core)\b/.test(t)) score+=.12;
+    score-=variantPenalty(q,t);
   }
-  if (cat.includes("ssd") || cat.includes("storage")) {
-    if (/\b(enclosure|case|adapter|heatsink|cable)\b/.test(t)) score-=0.5;
-    if (/\b(ssd|nvme|solid state)\b/.test(t)) score+=0.12;
+
+  if (cat.includes("ssd") || cat.includes("storage") || cat==="ssd / nvme") {
+    if (/\b(enclosure|adapter|heatsink|cable|duplicator|dock|case only)\b/.test(t)) score-=.65;
+    if (/\b(ssd|nvme|solid state|m 2|m2)\b/.test(t)) score+=.14;
   }
+
+  if (cat==="ram") {
+    if (/\b(laptop|sodimm|so dimm)\b/.test(t) && !/\b(sodimm|so dimm)\b/.test(q)) score-=.5;
+    if (/\b(memory|ram|ddr4|ddr5)\b/.test(t)) score+=.12;
+  }
+
+  if (cat==="motherboard") {
+    if (/\b(combo|bundle|with cpu|cpu included)\b/.test(t)) score-=.55;
+    if (/\b(motherboard|mainboard|b550|b650|b850|x570|x670|x870|b760|z790|b860|z890)\b/.test(t)) score+=.12;
+  }
+
+  if (cat==="psu") {
+    if (/\b(cable only|replacement cable|extension cable|adapter)\b/.test(t)) score-=.7;
+    if (/\b(power supply|psu|80 plus|atx 3)\b/.test(t)) score+=.12;
+  }
+
+  if (cat==="case") {
+    if (/\b(case fan|fan only|side panel|front panel|replacement panel)\b/.test(t)) score-=.6;
+    if (/\b(pc case|computer case|chassis|mid tower|atx case)\b/.test(t)) score+=.12;
+  }
+
+  if (cat.includes("cooler")) {
+    if (/\b(bracket only|mounting kit|retention kit|replacement fan)\b/.test(t)) score-=.65;
+    if (/\b(cooler|aio|liquid cooling|air cooler|heatsink)\b/.test(t)) score+=.12;
+  }
+
+  if (cat==="complete pc") {
+    if (/\b(gaming pc|gaming desktop|desktop computer|prebuilt|computer)\b/.test(t)) score+=.15;
+    if (/\b(laptop|notebook|parts only|case only)\b/.test(t)) score-=.65;
+  }
+
+  if (["gpu","ram","ssd / nvme","ssd / storage","storage"].includes(cat)) {
+    const qCap=primaryCapacity(query);
+    const tCap=primaryCapacity(title);
+    if(qCap&&tCap&&Math.abs(qCap-tCap)/qCap>.12) score-=.38;
+  }
+
   return Math.max(0,Math.min(1,score));
 }
 
