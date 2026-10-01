@@ -88,7 +88,7 @@ export function fallbackPcEstimate(input){
   const low=Math.max(0,Math.round(estimatedAsking*.91));
   const high=Math.round(estimatedAsking*1.07);
   const resale=Math.round((low+high)/2);
-  const sellingCosts=Math.round(resale*.08+15);
+  const sellingCosts=Math.round((resale*.0735+.40)*100)/100;
   const profit=resale-Number(input.price||0)-sellingCosts;
   const targetProfit=Math.max(120,Math.round(resale*.15));
   const maxBuy=Math.max(0,resale-sellingCosts-targetProfit);
