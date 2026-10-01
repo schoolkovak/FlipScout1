@@ -230,3 +230,118 @@ export function closestFallback(list,name,defaultValue) {
   const partial=list.find(x=>q.includes(x.name.toLowerCase()) || x.name.toLowerCase().includes(q));
   return partial?.fallbackUsed ?? defaultValue;
 }
+
+
+function normalizePartText(value){
+  return String(value||"")
+    .toLowerCase()
+    .replace(/geforce|nvidia|amd\s+radeon|radeon/g," ")
+    .replace(/intel\s+core/g,"intel")
+    .replace(/[^a-z0-9]+/g,"")
+    .trim();
+}
+
+function modelDigits(value){
+  const raw=String(value||"").toLowerCase().replace(/(?<=\d)o\b/g,"0");
+  const nums=raw.match(/\d{3,5}/g)||[];
+  return nums;
+}
+
+function levenshtein(a,b){
+  if(a===b) return 0;
+  if(!a.length) return b.length;
+  if(!b.length) return a.length;
+  const row=Array.from({length:b.length+1},(_,i)=>i);
+  for(let i=1;i<=a.length;i++){
+    let prev=row[0];
+    row[0]=i;
+    for(let j=1;j<=b.length;j++){
+      const temp=row[j];
+      row[j]=Math.min(row[j]+1,row[j-1]+1,prev+(a[i-1]===b[j-1]?0:1));
+      prev=temp;
+    }
+  }
+  return row[b.length];
+}
+
+function aliasKeys(item,type){
+  const keys=new Set([normalizePartText(item.name)]);
+  let n=item.name.toLowerCase();
+  if(type==="gpu"){
+    n=n.replace(/^intel\s+/,"").replace(/^nvidia\s+/,"").replace(/^amd\s+/,"");
+    keys.add(normalizePartText(n));
+    keys.add(normalizePartText(n.replace(/\s+(8gb|10gb|11gb|12gb|16gb|20gb|24gb|32gb)$/i,"")));
+  }
+  if(type==="cpu"){
+    keys.add(normalizePartText(n.replace(/^intel\s+/,"")));
+    keys.add(normalizePartText(n.replace(/processor/g,"")));
+  }
+  return [...keys].filter(Boolean);
+}
+
+export function resolveCatalogPart(type,input){
+  const list=type==="gpu"?GPUS:type==="cpu"?CPUS:[];
+  const raw=String(input||"").trim();
+  if(!raw) return {status:"unknown",input:raw,message:"No part entered."};
+
+  const normalized=normalizePartText(raw.replace(/(?<=\d)[oO]\b/g,"0"));
+  for(const item of list){
+    const aliases=aliasKeys(item,type);
+    if(aliases.includes(normalized)){
+      return {status:"exact",input:raw,canonical:item.name,item,confidence:1};
+    }
+  }
+
+  const inputNums=modelDigits(raw);
+  const candidates=list.filter(item=>{
+    const nums=modelDigits(item.name);
+    return inputNums.length>0 && nums.some(n=>inputNums.includes(n));
+  });
+
+  let best=null;
+  for(const item of candidates){
+    for(const key of aliasKeys(item,type)){
+      const d=levenshtein(normalized,key);
+      const maxLen=Math.max(normalized.length,key.length,1);
+      const similarity=1-d/maxLen;
+      if(!best||similarity>best.similarity) best={item,similarity};
+    }
+  }
+
+  if(best&&best.similarity>=0.72){
+    return {
+      status:"fuzzy",
+      input:raw,
+      canonical:best.item.name,
+      item:best.item,
+      confidence:Number(best.similarity.toFixed(2)),
+      message:"Interpreted as "+best.item.name
+    };
+  }
+
+  const suggestions=list
+    .map(item=>{
+      const key=aliasKeys(item,type)[0];
+      return {name:item.name,d:levenshtein(normalized,key)};
+    })
+    .sort((a,b)=>a.d-b.d)
+    .slice(0,3)
+    .map(x=>x.name);
+
+  return {
+    status:"unknown",
+    input:raw,
+    canonical:null,
+    item:null,
+    confidence:0,
+    suggestions,
+    message:"FlipScout does not recognize this as a known "+type.toUpperCase()+" model."
+  };
+}
+
+export function resolveBuildParts(input){
+  return {
+    cpu:resolveCatalogPart("cpu",input.cpu),
+    gpu:resolveCatalogPart("gpu",input.gpu)
+  };
+}
