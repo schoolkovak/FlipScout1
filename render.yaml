@@ -8,8 +8,3 @@ services:
     startCommand: npm start
     autoDeployTrigger: off
     healthCheckPath: /api/health
-    envVars:
-      - key: SERPER_API_KEY
-        sync: false
-      - key: SEARCHAPI_API_KEY
-        sync: false
