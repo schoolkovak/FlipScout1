@@ -30,5 +30,8 @@ jobs:
           node --check server/index.js
           node --check shared/catalog.js
 
+      - name: Run FlipScout smoke tests
+        run: node scripts/smoke-test.mjs
+
       - name: Build frontend
         run: npm run build
