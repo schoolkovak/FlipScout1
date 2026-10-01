@@ -1,4 +1,6 @@
-const EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope";\nconst searchCache=new Map();\nconst CACHE_MS=10*60*1000;
+const EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope";
+const searchCache=new Map();
+const CACHE_MS=10*60*1000;
 
 function env(name) {
   return process.env[name] || "";
