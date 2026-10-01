@@ -1,4 +1,4 @@
-const EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope";
+const EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope";\nconst searchCache=new Map();\nconst CACHE_MS=10*60*1000;
 
 function env(name) {
   return process.env[name] || "";
@@ -447,21 +447,71 @@ export function rankDeals(items,market,{query,partBudget,buildBudget,committed,s
   return scored.sort(sorts[sortBy]||sorts.best);
 }
 
-export async function liveSearch(input) {
-  const jobs=[
-    searchSerpApi(input).catch(error=>({__error:true,provider:"Google Shopping",message:error.message})),
-    searchBestBuy(input).catch(error=>({__error:true,provider:"Best Buy",message:error.message})),
-    searchEbay(input).catch(error=>({__error:true,provider:"eBay",message:error.message}))
-  ];
-  const settled=await Promise.all(jobs);
-  const errors=[];
-  let items=[];
-  for (const result of settled) {
-    if (Array.isArray(result)) items.push(...result);
-    else if (result?.__error) errors.push({provider:result.provider,message:result.message});
+function cacheKey(input){
+  return [normalizeText(input.query),String(input.category||"").toLowerCase(),input.condition||"any"].join("|");
+}
+
+function chooseProviders(input){
+  const hasEbay=Boolean(env("EBAY_CLIENT_ID")&&env("EBAY_CLIENT_SECRET"));
+  const hasRetail=Boolean(env("SERPAPI_API_KEY")||env("BESTBUY_API_KEY"));
+  const condition=input.condition||"any";
+
+  if(condition==="used"&&hasEbay){
+    return [
+      ["eBay",()=>searchEbay(input)]
+    ];
   }
-  items=dedupe(items).filter(x=>x.relevance>=0.4);
-  const market=buildMarket(items);
-  const ranked=rankDeals(items,market,input);
-  return {items,market,ranked,errors};
+  if(condition==="new"&&hasRetail){
+    const providers=[];
+    if(env("SERPAPI_API_KEY")) providers.push(["Google Shopping",()=>searchSerpApi(input)]);
+    if(env("BESTBUY_API_KEY")) providers.push(["Best Buy",()=>searchBestBuy(input)]);
+    return providers;
+  }
+  if(condition==="open-box"){
+    const providers=[];
+    if(env("BESTBUY_API_KEY")) providers.push(["Best Buy",()=>searchBestBuy(input)]);
+    if(hasEbay) providers.push(["eBay",()=>searchEbay(input)]);
+    if(!providers.length&&env("SERPAPI_API_KEY")) providers.push(["Google Shopping",()=>searchSerpApi(input)]);
+    return providers;
+  }
+
+  const providers=[];
+  if(env("SERPAPI_API_KEY")) providers.push(["Google Shopping",()=>searchSerpApi(input)]);
+  if(env("BESTBUY_API_KEY")) providers.push(["Best Buy",()=>searchBestBuy(input)]);
+  if(hasEbay) providers.push(["eBay",()=>searchEbay(input)]);
+  return providers;
+}
+
+export async function liveSearch(input) {
+  const key=cacheKey(input);
+  const hit=searchCache.get(key);
+  let base;
+
+  if(hit&&Date.now()-hit.savedAt<CACHE_MS){
+    base=hit.value;
+  }else{
+    const providers=chooseProviders(input);
+    const settled=await Promise.all(providers.map(async([name,run])=>{
+      try{return await run();}
+      catch(error){return {__error:true,provider:name,message:error.message};}
+    }));
+
+    const errors=[];
+    let items=[];
+    for(const result of settled){
+      if(Array.isArray(result)) items.push(...result);
+      else if(result?.__error) errors.push({provider:result.provider,message:result.message});
+    }
+    items=dedupe(items).filter(x=>x.relevance>=0.4);
+    const market=buildMarket(items);
+    base={items,market,errors};
+    searchCache.set(key,{savedAt:Date.now(),value:base});
+    if(searchCache.size>150){
+      const oldest=[...searchCache.entries()].sort((a,b)=>a[1].savedAt-b[1].savedAt).slice(0,30);
+      for(const [oldKey] of oldest) searchCache.delete(oldKey);
+    }
+  }
+
+  const ranked=rankDeals(base.items,base.market,input);
+  return {...base,ranked};
 }
