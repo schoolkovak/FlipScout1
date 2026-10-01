@@ -4,9 +4,12 @@ services:
     runtime: node
     plan: free
     region: virginia
-    repo: https://github.com/schoolkovak/FlipScout1
-    branch: main
     buildCommand: npm install
     startCommand: npm start
     autoDeployTrigger: off
     healthCheckPath: /api/health
+    envVars:
+      - key: SERPER_API_KEY
+        sync: false
+      - key: SEARCHAPI_API_KEY
+        sync: false
