@@ -717,9 +717,16 @@ function chooseProviders(input){
   const condition=input.condition||"any";
   const providers=[];
 
-  if(input.componentEstimate&&hasSerper){
-    providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
-    return providers;
+  if(input.componentEstimate){
+    const cat=String(input.category||"").toLowerCase();
+    if(condition==="used"&&hasSearchApi&&(cat==="gpu"||cat==="cpu")){
+      providers.push(["SearchAPI eBay",()=>searchSearchApiEbay(input)]);
+      return providers;
+    }
+    if(hasSerper){
+      providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
+      return providers;
+    }
   }
 
   if(condition==="used"){
