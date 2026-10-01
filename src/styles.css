@@ -25,3 +25,8 @@
 @media(max-width:720px){.keyGrid{grid-template-columns:1fr}}
 
 .costBreakdown{display:grid;gap:4px;margin-top:10px;padding:9px 10px;background:#0d1725;border-radius:9px;color:#8193aa;font-size:11px}
+
+.verificationGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.verificationGrid>div{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:10px;background:#0a111c;border:1px solid #2b3a51;font-size:12px}
+.verificationGrid small{color:#d99aa2}.verifyGood{border-color:#28523f!important;color:#80d8aa}.verifyBad{border-color:#5b3940!important;color:#d8a3aa}
+@media(max-width:720px){.verificationGrid{grid-template-columns:1fr}}
