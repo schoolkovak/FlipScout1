@@ -337,11 +337,26 @@ export function resolveCatalogPart(type,input){
   if(!raw) return {status:"unknown",input:raw,message:"No part entered."};
 
   const normalized=normalizePartText(raw.replace(/(?<=\d)[oO]\b/g,"0"));
+  const directMatches=[];
   for(const item of list){
     const aliases=aliasKeys(item,type);
-    if(aliases.includes(normalized)){
-      return {status:"exact",input:raw,canonical:item.name,item,confidence:1};
-    }
+    if(aliases.includes(normalized)) directMatches.push(item);
+  }
+  const uniqueDirect=[...new Map(directMatches.map(x=>[x.name,x])).values()];
+  if(uniqueDirect.length===1){
+    const item=uniqueDirect[0];
+    return {status:"exact",input:raw,canonical:item.name,item,confidence:1};
+  }
+  if(uniqueDirect.length>1){
+    return {
+      status:"ambiguous",
+      input:raw,
+      canonical:null,
+      item:null,
+      confidence:0,
+      suggestions:uniqueDirect.map(x=>x.name),
+      message:"Multiple real "+type.toUpperCase()+" variants match this input. Specify the exact variant."
+    };
   }
 
   const inputNums=modelDigits(raw);
