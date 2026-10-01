@@ -16,3 +16,10 @@
 .toggleLine{display:flex;flex-direction:row;align-items:flex-start;gap:10px;background:#0a111c;border:1px solid #253550;border-radius:11px;padding:11px 13px;margin:0 0 14px;max-width:520px}.toggleLine input{width:auto;margin-top:3px}.toggleLine span{display:flex;flex-direction:column;gap:3px}.toggleLine small{color:#72849e}.soldChip{color:#77d6a7;font-weight:700}
 .sourceActions{display:flex!important;flex-direction:column!important;align-items:flex-end!important;gap:7px!important}.sourceActions a{display:inline-flex;align-items:center;gap:5px;color:#8dadff;text-decoration:none;font-size:12px;font-weight:700}.allowance{color:#70c99f!important}.providerPlan{margin-top:12px;padding:12px 14px;border-radius:11px;background:#101b2c;color:#8fa2bd;font-size:12px;line-height:1.5}
 @media(max-width:720px){.identityGrid,.resaleGrid,.salesEvidenceHead{grid-template-columns:1fr}.salesStat{text-align:left}.evidenceItem{grid-template-columns:1fr auto}.evidenceItem a{grid-column:2}.sourceActions{align-items:flex-start!important}}
+
+.keyPanel{border-color:#2b3d59;background:linear-gradient(180deg,#0d1726,#0a111c)}
+.keyPanel.keyConnected{border-color:#28523f}
+.keyIntro{margin:-6px 0 14px;color:#8496ae;font-size:12px;line-height:1.5}
+.keyGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.keyActions{display:flex;gap:10px;margin-top:12px}
+.keyPanel input[type=password]{letter-spacing:.08em}
+@media(max-width:720px){.keyGrid{grid-template-columns:1fr}}
