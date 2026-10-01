@@ -9,7 +9,8 @@ export default async function handler(req,res) {
     partBudget:Number(req.body?.partBudget||0),
     buildBudget:Number(req.body?.buildBudget||0),
     committed:Number(req.body?.committed||0),
-    sortBy:req.body?.sortBy||"best"
+    sortBy:req.body?.sortBy||"best",
+    deepScan:Boolean(req.body?.deepScan)
   };
   if (!input.query) return res.status(400).json({available:false,message:"Enter a part or model to search."});
 
@@ -17,7 +18,7 @@ export default async function handler(req,res) {
   if (!connected) {
     return res.status(200).json({
       available:false,
-      message:"No live provider credentials are configured yet. Add SerpApi and/or approved eBay production credentials in the hosting environment.",
+      message:"No live market provider is connected yet. The easiest free starter is Serper (2,500 free queries); SearchAPI is the best optional direct-source backup for eBay, Walmart and Best Buy.",
       sources:providerStatus()
     });
   }
