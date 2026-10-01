@@ -26,6 +26,7 @@ jobs:
           node --check api/_lib/market.js
           node --check api/deals/search.js
           node --check api/market/pc.js
+          node --check api/providers/test.js
           node --check api/sources.js
           node --check server/index.js
           node --check shared/catalog.js
