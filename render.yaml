@@ -6,5 +6,4 @@ services:
     region: virginia
     buildCommand: npm install
     startCommand: npm start
-    autoDeployTrigger: off
     healthCheckPath: /api/health
