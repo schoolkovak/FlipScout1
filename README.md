@@ -1,31 +1,60 @@
 # FlipScout
 
-FlipScout is a PC-flipping and hardware deal-analysis app.
+FlipScout is a PC-flipping and hardware deal-analysis app built around **live comparable listings**, not static AI guesses.
 
-## Current features
-- Complete-PC deal analyzer with deterministic fallback valuation
-- Parts Deal Scanner interface
-- Live provider status panel
-- Live Google Shopping search when `SERPAPI_API_KEY` is configured
-- Current market median from live listings
-- Basic outlier trimming
-- Deal scoring based on market discount and remaining budget
+## What works now
 
-## Planned live sources
-- SerpApi / Google Shopping for broad new-retail coverage
-- Best Buy product/open-box API
-- eBay Browse API for live new/used listings after production approval
+- Complete-PC deal analyzer
+- Fallback valuation only when live comps are unavailable
+- Live parts scanner for GPU, CPU, SSD/storage, RAM, motherboard, PSU, case, cooler and complete PCs
+- Real listing links
+- Delivered-cost calculations when shipping is known
+- Current asking-market median and trimmed price range
+- Outlier removal and title relevance filtering
+- Build-budget impact
+- Deal Score
+- Sort by Best Deal, Lowest Price, Most Under Market, Best for Flip, or Best Fit for Budget
+- Provider health/status panel
+- Automatic GitHub CI build checks
 
-For Facebook Marketplace, Mercari, OfferUp, and Craigslist, FlipScout should use pasted listing URLs/text/screenshots rather than unauthorized scraping.
+## Live data providers
 
-## Run in Codespaces or locally
-1. Run `npm install`
-2. Copy `.env.example` to `.env`
-3. Add provider credentials
-4. Run `npm run dev`
+FlipScout is designed to combine hundreds of current listings where the connected providers allow it:
 
-Frontend: React + Vite
-Backend: Express
+- **Google Shopping via SerpApi** — broad current retail coverage
+- **Best Buy Products + Buying Options APIs** — near-real-time new prices and official Open Box offers
+- **eBay Browse API** — live new/used marketplace listings after production approval
+
+Unsupported marketplaces such as Facebook Marketplace, Mercari, OfferUp and Craigslist should be handled later through pasted listing URLs, listing text or screenshots instead of prohibited scraping.
+
+## Environment variables
+
+Never commit real credentials.
+
+```
+SERPAPI_API_KEY=
+BESTBUY_API_KEY=
+EBAY_CLIENT_ID=
+EBAY_CLIENT_SECRET=
+```
+
+## Development
+
+```bash
+npm install
+npm run dev
+```
+
+Frontend: React + Vite  
+Backend: Express locally, Vercel Functions when deployed  
+Runtime: Node 24
+
+## Hosting / preview
+
+The repo is prepared for Vercel. Once the GitHub repository is imported into Vercel, every push to `main` automatically creates a fresh production deployment and Git branches can receive preview deployments.
+
+Repository: https://github.com/schoolkovak/FlipScout1
 
 ## Security
-Never commit API keys. Store them in GitHub Codespaces secrets or environment variables.
+
+API keys belong only in local environment variables, GitHub Codespaces secrets, or Vercel Environment Variables. Never paste them into source code or commit them to GitHub.
