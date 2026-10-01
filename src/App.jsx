@@ -32,9 +32,36 @@ function loadProviderKeys(){
 function ProviderSetup({providerKeys,setProviderKeys}){
   const [draft,setDraft]=useState(providerKeys);
   const [saved,setSaved]=useState(false);
-  const connected=Boolean(providerKeys.SERPER_API_KEY||providerKeys.SEARCHAPI_API_KEY);
+  const [testing,setTesting]=useState(false);
+  const [verification,setVerification]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem("flipscout-provider-verification")||"null");}
+    catch{return null;}
+  });
+  const configured=Boolean(providerKeys.SERPER_API_KEY||providerKeys.SEARCHAPI_API_KEY);
+  const verified=Boolean(verification?.serper?.verified||verification?.searchapi?.verified);
 
-  function save(){
+  async function verify(clean){
+    setTesting(true);
+    try{
+      const r=await fetch("/api/providers/test",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({providerKeys:clean})
+      });
+      const data=await r.json();
+      setVerification(data);
+      localStorage.setItem("flipscout-provider-verification",JSON.stringify(data));
+      return data;
+    }catch{
+      const data={error:"Could not reach the provider test endpoint."};
+      setVerification(data);
+      return data;
+    }finally{
+      setTesting(false);
+    }
+  }
+
+  async function save(){
     const clean={
       SERPER_API_KEY:String(draft.SERPER_API_KEY||"").trim(),
       SEARCHAPI_API_KEY:String(draft.SEARCHAPI_API_KEY||"").trim()
@@ -42,27 +69,34 @@ function ProviderSetup({providerKeys,setProviderKeys}){
     localStorage.setItem("flipscout-provider-keys",JSON.stringify(clean));
     setProviderKeys(clean);
     setDraft(clean);
+    await verify(clean);
     setSaved(true);
     setTimeout(()=>setSaved(false),1800);
   }
 
   function clear(){
     localStorage.removeItem("flipscout-provider-keys");
+    localStorage.removeItem("flipscout-provider-verification");
     setDraft({...EMPTY_KEYS});
     setProviderKeys({...EMPTY_KEYS});
+    setVerification(null);
   }
 
-  return <section className={"panel keyPanel "+(connected?"keyConnected":"")}>
+  return <section className={"panel keyPanel "+(verified?"keyConnected":"")}>
     <div className="sectionTitle">
-      <div><span className="eyebrow">LIVE DATA CONNECTION</span><h2>{connected?"Live market keys saved":"Connect live market data"}</h2></div>
-      {connected?<CheckCircle2 className="good"/>:<Database/>}
+      <div><span className="eyebrow">LIVE DATA CONNECTION</span><h2>{verified?"Live market data verified":configured?"Keys saved — verification needed":"Connect live market data"}</h2></div>
+      {verified?<CheckCircle2 className="good"/>:<Database/>}
     </div>
-    <p className="keyIntro">Keys are stored only in this browser and sent to FlipScout's own API when you run a search. They are not committed to GitHub.</p>
+    <p className="keyIntro">Keys are stored only in this browser and sent to FlipScout's own API when you run a search. Saving them performs one real test request to each configured provider.</p>
     <div className="keyGrid">
       <label>Serper API key<input type="password" autoComplete="off" value={draft.SERPER_API_KEY} onChange={e=>setDraft({...draft,SERPER_API_KEY:e.target.value})} placeholder="Paste Serper key"/></label>
       <label>SearchAPI key<input type="password" autoComplete="off" value={draft.SEARCHAPI_API_KEY} onChange={e=>setDraft({...draft,SEARCHAPI_API_KEY:e.target.value})} placeholder="Paste SearchAPI key"/></label>
     </div>
-    <div className="keyActions"><button className="primary" onClick={save}>{saved?"Saved":"Save live-data keys"}</button>{connected&&<button className="ghost" onClick={clear}>Clear</button>}</div>
+    {verification&&<div className="verificationGrid">
+      <div className={verification.serper?.verified?"verifyGood":"verifyBad"}><b>Serper</b><span>{verification.serper?.verified?"Verified · "+verification.serper.resultCount+" results":verification.serper?.configured?"Not verified":"Not configured"}</span>{verification.serper?.error&&<small>{verification.serper.error}</small>}</div>
+      <div className={verification.searchapi?.verified?"verifyGood":"verifyBad"}><b>SearchAPI</b><span>{verification.searchapi?.verified?"Verified · "+verification.searchapi.resultCount+" results":verification.searchapi?.configured?"Not verified":"Not configured"}</span>{verification.searchapi?.error&&<small>{verification.searchapi.error}</small>}</div>
+    </div>}
+    <div className="keyActions"><button className="primary" onClick={save} disabled={testing}>{testing?<><RefreshCw className="spin" size={17}/>Testing keys...</>:saved?"Verified & saved":"Save and test keys"}</button>{configured&&<button className="ghost" onClick={()=>verify(providerKeys)} disabled={testing}>Re-test</button>}{configured&&<button className="ghost" onClick={clear}>Clear</button>}</div>
   </section>;
 }
 
