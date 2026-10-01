@@ -265,32 +265,49 @@ async function searchSearchApiEngine(engine,query,extra={}){
   return response.json();
 }
 
-export async function searchSearchApiEbay({query,category,condition}) {
-  const extra={num:"240",sort_by:"best_match",buying_format:"buy_it_now"};
+function mapSearchApiEbayResult(x,index,{query,category}) {
+  const itemPrice=Number(x.extracted_price ?? x.extracted_price_range?.from ?? 0);
+  const shippingKnown=x.extracted_shipping!==undefined || /free/i.test(x.shipping||"");
+  const shipping=/free/i.test(x.shipping||"")?0:Number(x.extracted_shipping||0);
+  return {
+    id:"searchapi-ebay-"+(x.item_id||index),
+    source:"eBay",
+    sourceType:"marketplace",
+    title:x.title||"Untitled eBay listing",
+    condition:normalizeCondition(x.condition),
+    itemPrice,
+    shipping,
+    shippingKnown,
+    totalPrice:itemPrice+shipping,
+    seller:x.seller?.name||"eBay seller",
+    sellerFeedback:Number(x.seller?.positive_feedback_percent||0)||null,
+    soldCount:Number(x.extracted_items_sold||0)||0,
+    watchers:Number(x.extracted_watching||0)||0,
+    url:x.link||null,
+    freshness:null,
+    relevance:relevanceScore(x.title,query,category)
+  };
+}
+
+export async function searchSearchApiEbay({query,category,condition,postalCode,localOnly=false,distanceRadius=50}) {
+  const extra={num:"240",sort_by:localOnly?"distance_nearest":"best_match",buying_format:"buy_it_now"};
   const cond=searchApiCondition(condition);
   if(cond) extra.condition=cond;
+  if(postalCode){
+    extra.postal_code=String(postalCode);
+    extra.distance_radius=String(distanceRadius||50);
+  }
+  if(localOnly) extra.filters="local_pickup";
   const data=await searchSearchApiEngine("ebay_search",query,extra);
   if(!data) return [];
-  return (data.organic_results||[]).map((x,index)=>{
-    const itemPrice=Number(x.extracted_price ?? x.extracted_price_range?.from ?? 0);
-    const shippingKnown=x.extracted_shipping!==undefined || /free/i.test(x.shipping||"");
-    const shipping=/free/i.test(x.shipping||"")?0:Number(x.extracted_shipping||0);
-    return {
-      id:"searchapi-ebay-"+(x.item_id||index),
-      source:"eBay",
-      sourceType:"marketplace",
-      title:x.title||"Untitled eBay listing",
-      condition:normalizeCondition(x.condition),
-      itemPrice,
-      shipping,
-      shippingKnown,
-      totalPrice:itemPrice+shipping,
-      seller:x.seller?.name||"eBay seller",
-      url:x.link||null,
-      freshness:null,
-      relevance:relevanceScore(x.title,query,category)
-    };
-  }).filter(x=>x.itemPrice>0 && (condition==="any" || x.condition===condition || (condition==="open-box"&&x.condition==="open-box")));
+
+  const raw=[...(data.organic_results||[])];
+  for(const section of (data.sections||[])){
+    if(section?.has_items && Array.isArray(section.results)) raw.push(...section.results);
+  }
+
+  return raw.map((x,index)=>mapSearchApiEbayResult(x,index,{query,category}))
+    .filter(x=>x.itemPrice>0 && (condition==="any" || x.condition===condition || (condition==="open-box"&&x.condition==="open-box")));
 }
 
 export async function searchSearchApiBestBuy({query,category,condition}) {
@@ -572,6 +589,49 @@ export function buildMarket(items) {
     confidence:filtered.length>=80?"Very high":filtered.length>=35?"High":filtered.length>=15?"Medium":"Low",
     comps:filtered
   };
+}
+
+
+function weightedMedian(items,valueFn,weightFn){
+  if(!items.length) return null;
+  const rows=items.map(x=>({value:valueFn(x),weight:Math.max(1,weightFn(x))}))
+    .filter(x=>Number.isFinite(x.value)&&x.value>0)
+    .sort((a,b)=>a.value-b.value);
+  const total=rows.reduce((s,x)=>s+x.weight,0);
+  let acc=0;
+  for(const row of rows){
+    acc+=row.weight;
+    if(acc>=total/2) return row.value;
+  }
+  return rows[rows.length-1]?.value||null;
+}
+
+export function buildSalesEvidence(items){
+  const qualifying=robustFilter(items.filter(x=>x.relevance>=0.58 && Number(x.soldCount||0)>0));
+  const medianPrice=weightedMedian(
+    qualifying,
+    x=>x.totalPrice,
+    x=>Math.min(12,1+Math.log2(1+Number(x.soldCount||0)))
+  );
+  const totalUnits=qualifying.reduce((s,x)=>s+Number(x.soldCount||0),0);
+  return {
+    median:medianPrice===null?null:Math.round(medianPrice*100)/100,
+    listingCount:qualifying.length,
+    totalReportedUnitsSold:totalUnits,
+    confidence:qualifying.length>=15?"High":qualifying.length>=6?"Medium":qualifying.length>=2?"Low":"Insufficient",
+    listings:qualifying.sort((a,b)=>(b.soldCount||0)-(a.soldCount||0)).slice(0,12),
+    label:"Sales-backed eBay listing price"
+  };
+}
+
+export async function searchLocalEbay(input){
+  if(!env("SEARCHAPI_API_KEY") || !input.postalCode) return {items:[],market:buildMarket([]),errors:[]};
+  try{
+    const items=await searchSearchApiEbay({...input,localOnly:true,postalCode:input.postalCode,distanceRadius:input.distanceRadius||50});
+    return {items,market:buildMarket(items),errors:[]};
+  }catch(error){
+    return {items:[],market:buildMarket([]),errors:[{provider:"Local eBay",message:error.message}]};
+  }
 }
 
 function conditionQuality(condition) {
