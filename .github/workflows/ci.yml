@@ -13,7 +13,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use Node 22
+      - name: Use Node 24
         uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -21,5 +21,14 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build
+      - name: Check server/API syntax
+        run: |
+          node --check api/_lib/market.js
+          node --check api/deals/search.js
+          node --check api/market/pc.js
+          node --check api/sources.js
+          node --check server/index.js
+          node --check shared/catalog.js
+
+      - name: Build frontend
         run: npm run build
