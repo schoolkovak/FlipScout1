@@ -150,7 +150,7 @@ function Sources(){
   useEffect(()=>{fetch("/api/sources").then(r=>r.json()).then(d=>setSources(d.sources||[])).catch(()=>{});},[]);
   return <section className="panel sourcePanel">
     <div className="sectionTitle"><div><span className="eyebrow">DATA SOURCES</span><h2>Live provider status</h2></div><Database/></div>
-    <div className="sourceGrid">{sources.length?sources.map(s=><div className="sourceRow" key={s.name}><div><span>{s.name}</span><small>{s.coverage}</small></div><b className={s.status==="Connected"?"good":""}>{s.status}</b></div>):<p>Preview mode is running without live provider credentials.</p>}</div>
+    <div className="sourceGrid">{sources.length?sources.map(s=><div className="sourceRow" key={s.name}><div><span>{s.name}</span><small>{s.coverage}</small>{s.id==="bestbuy"&&s.status==="Connected"&&<a className="bestBuyAttribution" href="https://developers.bestbuy.com/" target="_blank" rel="noreferrer"><img src="https://developer.bestbuy.com/images/bestbuy-logo.png" alt="Best Buy Developer API"/></a>}</div><b className={s.status==="Connected"?"good":""}>{s.status}</b></div>):<p>Preview mode is running without live provider credentials.</p>}</div>
   </section>
 }
 
