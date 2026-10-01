@@ -172,7 +172,7 @@ export default async function handler(req,res){
       : Math.round(componentBased);
 
   const liveCount=Object.values(values).filter(x=>x.live).length;
-  const uncertainty=salesBackedAvailable?.06:completePc?.08:liveCount>=4?.10:.13;
+  const uncertainty=salesBackedAvailable ? .06 : completePc ? .08 : liveCount>=4 ? .10 : .13;
   const low=Math.max(0,Math.round(blendedBase*(1-uncertainty)));
   const high=Math.round(blendedBase*(1+uncertainty));
 
