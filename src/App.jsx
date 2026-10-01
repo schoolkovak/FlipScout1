@@ -107,8 +107,8 @@ function IdentityNotice({live,result}){
   return <div className="identityGrid">
     {rows.map(([label,x])=><div className={"identityRow "+(x?.status==="unknown"?"identityBad":"identityGood")} key={label}>
       <b>{label}</b>
-      {x?.status==="unknown"
-        ? <span><AlertTriangle size={15}/>Unknown: “{x.input}”{x.suggestions?.length?<small>Did you mean {x.suggestions.join(", ")}?</small>:null}</span>
+      {!x?.item
+        ? <span><AlertTriangle size={15}/>{x?.status==="ambiguous"?"Exact variant needed":"Unknown"}: “{x?.input}”{x?.suggestions?.length?<small>{x.status==="ambiguous"?"Choose one: ":"Did you mean "}{x.suggestions.join(", ")}?</small>:null}</span>
         : <span><CheckCircle2 size={15}/>{x?.status==="fuzzy"?"Interpreted as ":"Recognized: "}<strong>{x?.canonical}</strong></span>}
     </div>)}
   </div>;
