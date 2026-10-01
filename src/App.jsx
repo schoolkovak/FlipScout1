@@ -84,8 +84,8 @@ function ResaleCards({live,price}){
   if(!live?.valid) return null;
   const online=live.resale?.online;
   const local=live.resale?.local;
-  const onlineCosts=online?.likely?Math.round(online.likely*.08+15):null;
-  const onlineProfit=online?.likely?online.likely-Number(price||0)-onlineCosts:null;
+  const onlineCosts=online?.costs?.estimatedTotal??null;
+  const onlineProfit=online?.likely&&onlineCosts!=null?online.likely-Number(price||0)-onlineCosts:null;
   const localProfit=local?.likely?local.likely-Number(price||0):null;
 
   return <div className="resaleSection">
@@ -97,7 +97,8 @@ function ResaleCards({live,price}){
         <small>{online?.low!=null?money(online.low)+"–"+money(online.high):"Range unavailable"}</small>
         <p>{online?.method||"No online evidence yet."}</p>
         {online?.salesBacked&&<div className="evidenceBadge">Sales-backed · {online.confidence} confidence</div>}
-        {onlineProfit!=null&&<div className={onlineProfit>=0?"profitLine good":"profitLine bad"}>Approx. profit after 8% + $15 online-cost assumption: {money(onlineProfit)}</div>}
+        {online?.costs&&<div className="costBreakdown"><span>eBay fee estimate: {money(online.costs.platformFee)}</span><span>Median comp shipping: {money(online.costs.shippingMedian)}</span><span>Total estimated online selling cost: {money(online.costs.estimatedTotal)}</span></div>}
+        {onlineProfit!=null&&<div className={onlineProfit>=0?"profitLine good":"profitLine bad"}>Approx. online profit after estimated fees/shipping: {money(onlineProfit)}</div>}
       </div>
       <div className="resaleCard">
         <span><MapPin size={13}/> LOCAL LIKELY SALE</span>
@@ -173,7 +174,7 @@ function Analyzer({providerKeys}){
         }
         if(d.available){
           const resale=d.resale?.online?.likely||d.market.median;
-          const sellingCosts=Math.round(resale*.08+15);
+          const sellingCosts=d.resale?.online?.costs?.estimatedTotal??Math.round(resale*.0735+.40);
           const profit=resale-Number(price||0)-sellingCosts;
           const targetProfit=Math.max(120,Math.round(resale*.15));
           const maxBuy=Math.max(0,resale-sellingCosts-targetProfit);
