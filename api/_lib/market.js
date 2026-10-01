@@ -682,13 +682,18 @@ export function rankDeals(items,market,{query,partBudget,buildBudget,committed,s
 }
 
 function cacheKey(input){
-  return [normalizeText(input.query),String(input.category||"").toLowerCase(),input.condition||"any",input.deepScan?"deep":"fast"].join("|");
+  return [normalizeText(input.query),String(input.category||"").toLowerCase(),input.condition||"any",input.deepScan?"deep":"fast",input.componentEstimate?"component":"direct"].join("|");
 }
 
 function chooseProviders(input){
   const hasOfficialEbay=Boolean(env("EBAY_CLIENT_ID")&&env("EBAY_CLIENT_SECRET"));
   const condition=input.condition||"any";
   const providers=[];
+
+  if(input.componentEstimate&&env("SERPER_API_KEY")){
+    providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
+    return providers;
+  }
 
   if(condition==="used"){
     if(env("SEARCHAPI_API_KEY")) providers.push(["SearchAPI eBay",()=>searchSearchApiEbay(input)]);
