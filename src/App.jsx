@@ -1,5 +1,8 @@
 import React,{useEffect,useMemo,useState} from "react";
-import {Search,Cpu,Gauge,ShoppingCart,ExternalLink,Database,AlertTriangle,RefreshCw,CheckCircle2,ShieldCheck} from "lucide-react";
+import {
+  Search,Cpu,Gauge,ShoppingCart,ExternalLink,Database,AlertTriangle,
+  RefreshCw,CheckCircle2,ShieldCheck,MapPin,TrendingUp
+} from "lucide-react";
 import {fallbackPcEstimate} from "./valuation";
 import {
   GPUS,CPUS,RAM_OPTIONS,STORAGE_OPTIONS,MOTHERBOARDS,PSU_OPTIONS,
@@ -15,6 +18,74 @@ function Datalist({id,items}){
   return <datalist id={id}>{items.map(x=><option key={x.name} value={x.name}/>)}</datalist>;
 }
 
+function IdentityNotice({live,result}){
+  const validation=live?.validation||result?.compatibility?.resolved;
+  if(!validation) return null;
+  const rows=[["CPU",validation.cpu],["GPU",validation.gpu]];
+  return <div className="identityGrid">
+    {rows.map(([label,x])=><div className={"identityRow "+(x?.status==="unknown"?"identityBad":"identityGood")} key={label}>
+      <b>{label}</b>
+      {x?.status==="unknown"
+        ? <span><AlertTriangle size={15}/>Unknown: “{x.input}”{x.suggestions?.length?<small>Did you mean {x.suggestions.join(", ")}?</small>:null}</span>
+        : <span><CheckCircle2 size={15}/>{x?.status==="fuzzy"?"Interpreted as ":"Recognized: "}<strong>{x?.canonical}</strong></span>}
+    </div>)}
+  </div>;
+}
+
+function ResaleCards({live,price}){
+  if(!live?.valid) return null;
+  const online=live.resale?.online;
+  const local=live.resale?.local;
+  const onlineCosts=online?.likely?Math.round(online.likely*.08+15):null;
+  const onlineProfit=online?.likely?online.likely-Number(price||0)-onlineCosts:null;
+  const localProfit=local?.likely?local.likely-Number(price||0):null;
+
+  return <div className="resaleSection">
+    <div className="resaleHeader"><TrendingUp size={20}/><div><h3>Likely resale prices from real-market evidence</h3><p>Online and local are calculated separately because buyers and costs differ.</p></div></div>
+    <div className="resaleGrid">
+      <div className="resaleCard">
+        <span>ONLINE LIKELY SALE</span>
+        <strong>{money(online?.likely)}</strong>
+        <small>{online?.low!=null?money(online.low)+"–"+money(online.high):"Range unavailable"}</small>
+        <p>{online?.method||"No online evidence yet."}</p>
+        {online?.salesBacked&&<div className="evidenceBadge">Sales-backed · {online.confidence} confidence</div>}
+        {onlineProfit!=null&&<div className={onlineProfit>=0?"profitLine good":"profitLine bad"}>Approx. profit after 8% + $15 online-cost assumption: {money(onlineProfit)}</div>}
+      </div>
+      <div className="resaleCard">
+        <span><MapPin size={13}/> LOCAL LIKELY SALE</span>
+        <strong>{money(local?.likely)}</strong>
+        {local
+          ? <>
+              <small>{money(local.low)}–{money(local.median)} likely zone · {local.sampleSize} nearby comps</small>
+              <p>Within {local.distanceRadius} miles of ZIP {local.postalCode}. {local.method}</p>
+              {localProfit!=null&&<div className={localProfit>=0?"profitLine good":"profitLine bad"}>Approx. local cash profit before travel/time: {money(localProfit)}</div>}
+            </>
+          : <p>Add a ZIP code and connect SearchAPI to calculate a real nearby local-pickup market.</p>}
+      </div>
+    </div>
+  </div>;
+}
+
+function SalesEvidence({evidence}){
+  if(!evidence) return null;
+  if(!evidence.listingCount) return <div className="evidenceEmpty"><b>No sales-backed listings found for this exact CPU/GPU combo.</b><span>FlipScout will use current asking comps and component data, but it will not pretend those are completed sales.</span></div>;
+  return <div className="salesEvidence">
+    <div className="salesEvidenceHead">
+      <div><span className="eyebrow">REAL SALES EVIDENCE</span><h3>{evidence.listingCount} eBay listings reporting prior sales</h3></div>
+      <div className="salesStat"><b>{money(evidence.median)}</b><span>sales-backed median</span></div>
+      <div className="salesStat"><b>{evidence.totalReportedUnitsSold}</b><span>reported units sold</span></div>
+    </div>
+    <p className="evidenceCaveat">These are active eBay listings that report real prior units sold. Their displayed price is the current listing price; eBay no longer exposes public completed-listing history without signed-in/limited-release access.</p>
+    <div className="evidenceList">
+      {(evidence.listings||[]).slice(0,8).map((x,i)=><div className="evidenceItem" key={i}>
+        <div><b>{x.title}</b><small>{x.soldCount} reported sold · {x.condition||"condition unknown"} · {x.seller||"seller"}</small></div>
+        <div className="evidencePrice">{money(x.price)}</div>
+        {x.url&&<a href={x.url} target="_blank" rel="noreferrer" aria-label="View sales-backed listing"><ExternalLink size={15}/></a>}
+      </div>)}
+    </div>
+  </div>;
+}
+
 function Analyzer(){
   const [price,setPrice]=useState(950);
   const [cpu,setCpu]=useState("Ryzen 5 5600");
@@ -25,6 +96,8 @@ function Analyzer(){
   const [psu,setPsu]=useState("650W 80+ Gold PSU");
   const [caseType,setCaseType]=useState("Midrange Tempered Glass RGB Case");
   const [cooler,setCooler]=useState("Basic Tower Air Cooler");
+  const [postalCode,setPostalCode]=useState("");
+  const [distanceRadius,setDistanceRadius]=useState(50);
   const [purpose,setPurpose]=useState("flip");
   const [result,setResult]=useState(null);
   const [live,setLive]=useState(null);
@@ -38,33 +111,39 @@ function Analyzer(){
   }
 
   async function analyze(){
-    const input={price,cpu,gpu,ram,storage,motherboard,psu,caseType,cooler,purpose};
+    const input={price,cpu,gpu,ram,storage,motherboard,psu,caseType,cooler,postalCode,distanceRadius,purpose};
     const fallback=fallbackPcEstimate(input);
     setResult(fallback);setLive(null);setLoading(true);
     try{
       const r=await fetch("/api/market/pc",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(input)});
       if(r.ok){
         const d=await r.json();
+        setLive(d);
+        if(d.valid===false){
+          setResult({...fallback,score:0,identityValid:false});
+          return;
+        }
         if(d.available){
-          setLive(d);
-          const resale=d.market.median;
+          const resale=d.resale?.online?.likely||d.market.median;
           const sellingCosts=Math.round(resale*.08+15);
           const profit=resale-Number(price||0)-sellingCosts;
           const targetProfit=Math.max(120,Math.round(resale*.15));
           const maxBuy=Math.max(0,resale-sellingCosts-targetProfit);
           const discount=resale?(resale-Number(price||0))/resale:0;
-          const warningPenalty=(fallback.compatibility?.warnings?.length||0)*10;
-          const score=Math.max(0,Math.min(100,Math.round(58+discount*82-warningPenalty)));
-          setResult({...fallback,low:d.market.low,high:d.market.high,resale,sellingCosts,profit,maxBuy,score});
+          const warningPenalty=(fallback.compatibility?.warnings?.length||0)*12;
+          const evidenceBoost=d.resale?.online?.salesBacked?7:0;
+          const score=Math.max(0,Math.min(100,Math.round(54+discount*92-warningPenalty+evidenceBoost)));
+          setResult({...fallback,low:d.market.low,high:d.market.high,resale,sellingCosts,profit,maxBuy,score,identityValid:true});
         }
       }
-    }catch{}
-    finally{setLoading(false);}
+    }catch{
+      setLive({available:false,valid:fallback.identityValid,message:"Live market service is unavailable; showing fallback only."});
+    }finally{setLoading(false);}
   }
 
   return <section className="panel">
     <div className="sectionTitle">
-      <div><span className="eyebrow">COMPLETE PC ANALYZER</span><h2>Price the whole build, not just the GPU</h2></div>
+      <div><span className="eyebrow">COMPLETE PC ANALYZER</span><h2>Price the whole build against the real market</h2></div>
       <button className="ghost" onClick={sample}>Load sample</button>
     </div>
 
@@ -73,48 +152,55 @@ function Analyzer(){
 
     <div className="formGrid">
       <label>Asking price<input type="number" value={price} onChange={e=>setPrice(e.target.value)}/></label>
-      <label>CPU<input list="cpu-options" value={cpu} onChange={e=>setCpu(e.target.value)} placeholder="Any desktop CPU"/></label>
-      <label>GPU<input list="gpu-options" value={gpu} onChange={e=>setGpu(e.target.value)} placeholder="Any desktop GPU"/></label>
+      <label>CPU<input list="cpu-options" value={cpu} onChange={e=>setCpu(e.target.value)} placeholder="e.g. Ryzen5-5600X"/></label>
+      <label>GPU<input list="gpu-options" value={gpu} onChange={e=>setGpu(e.target.value)} placeholder="e.g. RTX5070-Ti"/></label>
       <label>RAM<select value={ram} onChange={e=>setRam(e.target.value)}>{RAM_OPTIONS.map(x=><option key={x.name}>{x.name}</option>)}</select></label>
       <label>Storage<select value={storage} onChange={e=>setStorage(e.target.value)}>{STORAGE_OPTIONS.map(x=><option key={x.name}>{x.name}</option>)}</select></label>
       <label>Motherboard<select value={motherboard} onChange={e=>setMotherboard(e.target.value)}>{MOTHERBOARDS.map(x=><option key={x.name}>{x.name}</option>)}</select></label>
       <label>Power supply<select value={psu} onChange={e=>setPsu(e.target.value)}>{PSU_OPTIONS.map(x=><option key={x.name}>{x.name}</option>)}</select></label>
       <label>Case<select value={caseType} onChange={e=>setCaseType(e.target.value)}>{CASE_OPTIONS.map(x=><option key={x.name}>{x.name}</option>)}</select></label>
       <label>CPU cooling<select value={cooler} onChange={e=>setCooler(e.target.value)}>{COOLER_OPTIONS.map(x=><option key={x.name}>{x.name}</option>)}</select></label>
+      <label>ZIP for local comps<input inputMode="numeric" maxLength={5} value={postalCode} onChange={e=>setPostalCode(e.target.value.replace(/\D/g,"").slice(0,5))} placeholder="Optional"/></label>
+      <label>Local radius<select value={distanceRadius} onChange={e=>setDistanceRadius(Number(e.target.value))}><option value={25}>25 miles</option><option value={50}>50 miles</option><option value={100}>100 miles</option></select></label>
       <label>Purpose<select value={purpose} onChange={e=>setPurpose(e.target.value)}><option value="flip">Flip for profit</option><option value="personal">Personal gaming PC</option></select></label>
     </div>
 
     <button className="primary" onClick={analyze} disabled={loading}>
-      {loading?<><RefreshCw className="spin" size={18}/>Checking current market...</>:<><Gauge size={18}/>Analyze build</>}
+      {loading?<><RefreshCw className="spin" size={18}/>Searching live comps & sales evidence...</>:<><Gauge size={18}/>Analyze build</>}
     </button>
 
-    {result&&<div className="resultsGrid">
+    {(result||live)&&<IdentityNotice live={live} result={result}/>}
+
+    {result&&result.identityValid!==false&&<div className="resultsGrid">
       <div className="scoreCard"><span>FLIP SCORE</span><strong>{result.score}</strong><small>/100</small></div>
-      <div className="metric"><span>Market range</span><b>{money(result.low)}–{money(result.high)}</b><small>{live?"Live-market adjusted":"Fallback snapshot "+MARKET_SNAPSHOT}</small></div>
-      <div className="metric"><span>Expected resale</span><b>{money(result.resale)}</b></div>
-      <div className="metric"><span>Selling costs</span><b>{money(result.sellingCosts)}</b></div>
-      <div className="metric"><span>Potential profit</span><b className={result.profit>=0?"good":"bad"}>{money(result.profit)}</b></div>
+      <div className="metric"><span>Blended market range</span><b>{money(result.low)}–{money(result.high)}</b><small>{live?.available?"Live-market adjusted":"Fallback snapshot "+MARKET_SNAPSHOT}</small></div>
+      <div className="metric"><span>Online likely resale</span><b>{money(live?.resale?.online?.likely||result.resale)}</b><small>{live?.resale?.online?.salesBacked?"Sales-backed":"Asking/model based"}</small></div>
+      <div className="metric"><span>Local likely resale</span><b>{money(live?.resale?.local?.likely)}</b><small>{postalCode?"Nearby pickup comps":"Add ZIP"}</small></div>
+      <div className="metric"><span>Potential online profit</span><b className={result.profit>=0?"good":"bad"}>{money(result.profit)}</b></div>
       <div className="metric"><span>Max buy price</span><b>{money(result.maxBuy)}</b></div>
     </div>}
 
+    {live?.valid&&<ResaleCards live={live} price={price}/>}
+    {live?.valid&&<SalesEvidence evidence={live.salesEvidence}/>}
+
     {result&&<div className="analysisColumns">
       <div className="compatCard">
-        <h3><ShieldCheck size={18}/>Compatibility & flip quality</h3>
+        <h3><ShieldCheck size={18}/>Compatibility & part identity</h3>
         {(result.compatibility?.positives||[]).map((x,i)=><p className="positiveLine" key={"p"+i}><CheckCircle2 size={15}/>{x}</p>)}
         {(result.compatibility?.warnings||[]).map((x,i)=><p className="warningLine" key={"w"+i}><AlertTriangle size={15}/>{x}</p>)}
         {!result.compatibility?.warnings?.length&&<p className="muted">No obvious compatibility problems found from the selected parts.</p>}
       </div>
 
-      {live&&<div className="liveBreakdown">
-        <h3><CheckCircle2 size={18}/>Live value inputs</h3>
+      {live?.components&&<div className="liveBreakdown">
+        <h3><CheckCircle2 size={18}/>Component value inputs</h3>
         <div className="breakdownGrid">
           {Object.entries(live.components||{}).map(([name,x])=><div key={name}><span>{name}</span><b>{money(x.value)}</b><small>{x.source} · {x.sampleSize||0} comps</small></div>)}
         </div>
-        {live.completePc?.sampleSize>0&&<p className="muted">Also blended with {live.completePc.sampleSize} comparable complete-PC listings.</p>}
+        {live.completePc?.sampleSize>0&&<p className="muted">Also checked {live.completePc.sampleSize} comparable complete-PC listings.</p>}
       </div>}
     </div>}
 
-    {result&&<div className="why"><h3>How FlipScout values the build</h3><p>Live comparable listings take priority. GPU and CPU use current used asking-market comps; storage, RAM and supporting hardware use current retail or marketplace comps with resale-contribution adjustments. When live data is thin, the dated fallback snapshot is used and clearly identified.</p></div>}
+    {result&&<div className="why"><h3>How FlipScout values the build</h3><p>Part identity is validated first, including typo and hyphen normalization. Real live comps and sales-backed eBay evidence take priority. If a market source is unavailable, FlipScout labels the fallback instead of presenting it as live data.</p></div>}
   </section>
 }
 
@@ -127,6 +213,7 @@ function Scanner(){
   const [buildBudget,setBuildBudget]=useState(1000);
   const [committed,setCommitted]=useState(350);
   const [sortBy,setSortBy]=useState("best");
+  const [deepScan,setDeepScan]=useState(false);
   const [loading,setLoading]=useState(false);
   const [data,setData]=useState(null);
 
@@ -139,7 +226,7 @@ function Scanner(){
   async function scan(){
     setLoading(true);setData(null);
     try{
-      const r=await fetch("/api/deals/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({category,query,condition,partBudget,buildBudget,committed,sortBy})});
+      const r=await fetch("/api/deals/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({category,query,condition,partBudget,buildBudget,committed,sortBy,deepScan})});
       setData(await r.json());
     }catch{
       setData({available:false,message:"Live search backend is not reachable yet."});
@@ -158,6 +245,8 @@ function Scanner(){
       <label>Rank by<select value={sortBy} onChange={e=>setSortBy(e.target.value)}><option value="best">Best Deal</option><option value="lowest">Lowest Price</option><option value="under">Most Under Market</option><option value="flip">Best for Flip</option><option value="budget">Best Fit for Budget</option></select></label>
     </div>
 
+    <label className="toggleLine"><input type="checkbox" checked={deepScan} onChange={e=>setDeepScan(e.target.checked)}/><span><b>Deep multi-source scan</b><small>Also query direct Walmart / Best Buy / eBay providers when configured. Uses more API credits.</small></span></label>
+
     <button className="primary" onClick={scan} disabled={loading}>{loading?<><RefreshCw className="spin" size={18}/>Scanning real listings...</>:<><Search size={18}/>Scan live deals</>}</button>
 
     {data&&!data.available&&<div className="notice"><AlertTriangle size={20}/><div><b>Live search needs at least one connected market source</b><p>{data.message}</p></div></div>}
@@ -175,7 +264,7 @@ function Scanner(){
       <div className="dealList">{(data.results||[]).map((x,i)=><article className="dealCard" key={x.id||i}>
         <div className="dealTop"><div><span className="source">{x.source}</span><h3>{x.title}</h3></div><div className="dealScore">{x.score}</div></div>
         <div className="dealMeta"><span>{x.condition}</span><span>{money(x.itemPrice)} + {x.shippingKnown?money(x.shipping):"shipping unknown"}</span><strong>{x.shippingKnown?money(x.totalPrice)+" delivered":money(x.itemPrice)+" + shipping"}</strong></div>
-        <div className="dealMeta"><span className={x.percentVsMarket>=10?"good":x.percentVsMarket<0?"bad":""}>{x.percentVsMarket>=0?x.percentVsMarket+"% under market":Math.abs(x.percentVsMarket)+"% over market"}</span><span>Build budget left: {money(x.budgetLeft)}</span><span>{x.withinPartBudget?"Within part budget":"Over part budget"}</span></div>
+        <div className="dealMeta"><span className={x.percentVsMarket>=10?"good":x.percentVsMarket<0?"bad":""}>{x.percentVsMarket>=0?x.percentVsMarket+"% under market":Math.abs(x.percentVsMarket)+"% over market"}</span><span>Build budget left: {money(x.budgetLeft)}</span><span>{x.withinPartBudget?"Within part budget":"Over part budget"}</span>{x.soldCount>0&&<span className="soldChip">{x.soldCount}+ reported sold</span>}</div>
         {x.seller&&<div className="seller">Seller/store: {x.seller}</div>}
         {x.url&&<a className="listingLink" href={x.url} target="_blank" rel="noreferrer">View real listing <ExternalLink size={15}/></a>}
       </article>)}</div>
@@ -188,14 +277,18 @@ function Sources(){
   const [sources,setSources]=useState([]);
   useEffect(()=>{fetch("/api/sources").then(r=>r.json()).then(d=>setSources(d.sources||[])).catch(()=>{});},[]);
   return <section className="panel sourcePanel">
-    <div className="sectionTitle"><div><span className="eyebrow">MARKET DATA</span><h2>Live source status</h2></div><Database/></div>
-    <div className="sourceGrid">{sources.length?sources.map(s=><div className="sourceRow" key={s.name}><div><span>{s.name}</span><small>{s.coverage}</small>{s.id==="bestbuy"&&s.status==="Connected"&&<a className="bestBuyAttribution" href="https://developers.bestbuy.com/" target="_blank" rel="noreferrer"><img src="https://developer.bestbuy.com/images/bestbuy-logo.png" alt="Best Buy Developer API"/></a>}</div><b className={s.status==="Connected"?"good":""}>{s.status}</b></div>):<p>Preview mode is running without live provider credentials.</p>}</div>
+    <div className="sectionTitle"><div><span className="eyebrow">MARKET DATA</span><h2>Live source status & free setup</h2></div><Database/></div>
+    <div className="sourceGrid">{sources.length?sources.map(s=><div className="sourceRow" key={s.name}>
+      <div><span>{s.name}</span><small>{s.coverage}</small>{s.freeAllowance&&<small className="allowance">{s.freeAllowance}</small>}{s.id==="bestbuy"&&s.status==="Connected"&&<a className="bestBuyAttribution" href="https://developers.bestbuy.com/" target="_blank" rel="noreferrer"><img src="https://developer.bestbuy.com/images/bestbuy-logo.png" alt="Best Buy Developer API"/></a>}</div>
+      <div className="sourceActions"><b className={s.status==="Connected"?"good":""}>{s.status}</b>{s.status!=="Connected"&&s.signupUrl&&<a href={s.signupUrl} target="_blank" rel="noreferrer">Get key <ExternalLink size={13}/></a>}</div>
+    </div>):<p>Preview mode is running without live provider credentials.</p>}</div>
+    <div className="providerPlan"><b>Recommended free setup:</b> Serper first for broad shopping coverage, then SearchAPI for sales-backed eBay + nearby/local comps. Official Best Buy and eBay APIs are optional upgrades.</div>
   </section>
 }
 
 export default function App(){
   const [tab,setTab]=useState("analyze");
-  const subtitle=useMemo(()=>tab==="analyze"?"Price complete builds with compatibility-aware market logic.":"Search current listings, compare real asking-market comps, and protect your build budget.",[tab]);
+  const subtitle=useMemo(()=>tab==="analyze"?"Validate parts, check real sales evidence, and estimate local vs online resale.":"Search current listings, compare real asking-market comps, and protect your build budget.",[tab]);
   return <div className="app">
     <header className="hero"><div className="brand"><div className="logo">FS</div><div><h1>FlipScout</h1><p>Real-market PC flip intelligence.</p></div></div><div className="heroText">{subtitle}</div></header>
     <nav className="tabs"><button className={tab==="analyze"?"active":""} onClick={()=>setTab("analyze")}><Cpu size={17}/>PC Analyzer</button><button className={tab==="scan"?"active":""} onClick={()=>setTab("scan")}><Search size={17}/>Parts Deal Scanner</button></nav>
