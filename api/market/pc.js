@@ -38,7 +38,38 @@ function compactRam(ram){
 }
 
 function completePcQuery(body,resolved){
-  return [resolved.cpu.canonical,resolved.gpu.canonical,"gaming PC"].filter(Boolean).join(" ");
+  const ram=String(body.ram||"").match(/\b\d+GB\b/i)?.[0];
+  const storage=String(body.storage||"").match(/\b\d+(?:TB|GB)\b/i)?.[0];
+  return [resolved.cpu.canonical,resolved.gpu.canonical,ram,storage,"gaming PC"].filter(Boolean).join(" ");
+}
+
+function medianNumber(values){
+  const a=values.filter(Number.isFinite).sort((x,y)=>x-y);
+  if(!a.length) return null;
+  const i=Math.floor(a.length/2);
+  return a.length%2?a[i]:(a[i-1]+a[i])/2;
+}
+
+function onlineSellingCosts(salePrice,items){
+  const knownShipping=(items||[])
+    .filter(x=>x.shippingKnown&&Number.isFinite(Number(x.shipping)))
+    .map(x=>Number(x.shipping));
+  const shippingMedian=medianNumber(knownShipping);
+  const feeRate=.0735;
+  const orderFee=.40;
+  const platformFee=Math.round((Number(salePrice||0)*feeRate+orderFee)*100)/100;
+  const estimatedTotal=shippingMedian===null?platformFee:Math.round((platformFee+shippingMedian)*100)/100;
+  return {
+    feeRate,
+    orderFee,
+    platformFee,
+    shippingMedian:shippingMedian===null?null:Math.round(shippingMedian*100)/100,
+    estimatedTotal,
+    netAfterEstimatedCosts:Math.round((Number(salePrice||0)-estimatedTotal)*100)/100,
+    note:shippingMedian===null
+      ?"eBay desktop-PC fee estimate; shipping unavailable from enough comps"
+      :"eBay desktop-PC fee estimate plus median shipping from comparable listings"
+  };
 }
 
 function localLikelyFromMarket(market){
@@ -149,6 +180,8 @@ export default async function handler(req,res){
       ? "Current used complete-PC asking comps"
       : "Component market model";
 
+  const onlineCosts=onlineSellingCosts(onlineLikely,data.completePc?.items||[]);
+
   const localData=canonicalBody.postalCode
     ? await searchLocalEbay(baseInput(completePcQuery(canonicalBody,resolved),"Complete PC","used",{
         postalCode:String(canonicalBody.postalCode),
@@ -182,7 +215,12 @@ export default async function handler(req,res){
   const high=Math.round(blendedBase*(1+uncertainty));
 
   return res.status(200).json({
-    available:true,
+    available:Boolean(
+      Object.values(values).some(x=>x.live) ||
+      completePc ||
+      salesBackedAvailable ||
+      localMarket
+    ),
     valid:true,
     validation:resolved,
     market:{low,high,median:blendedBase},
@@ -193,7 +231,8 @@ export default async function handler(req,res){
         high:salesBackedAvailable?Math.round(salesEvidence.high):completePc?.high||high,
         method:onlineMethod,
         salesBacked:Boolean(salesBackedAvailable),
-        confidence:salesBackedAvailable?salesEvidence.confidence:completePc?.confidence||"Model"
+        confidence:salesBackedAvailable?salesEvidence.confidence:completePc?.confidence||"Model",
+        costs:onlineCosts
       },
       local:localMarket
     },
