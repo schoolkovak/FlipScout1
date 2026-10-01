@@ -1,19 +1,27 @@
 import {
   GPUS, CPUS, RAM_OPTIONS, STORAGE_OPTIONS, MOTHERBOARDS, PSU_OPTIONS,
-  CASE_OPTIONS, COOLER_OPTIONS, findByName, closestFallback, MARKET_SNAPSHOT
+  CASE_OPTIONS, COOLER_OPTIONS, findByName, closestFallback, MARKET_SNAPSHOT,
+  resolveBuildParts
 } from "../shared/catalog.js";
 
 export const gpuValues=Object.fromEntries(GPUS.map(x=>[x.name,x.fallbackUsed]));
 export const cpuValues=Object.fromEntries(CPUS.map(x=>[x.name,x.fallbackUsed]));
 
 export function compatibilityChecks(input){
-  const cpu=findByName(CPUS,input.cpu);
-  const gpu=findByName(GPUS,input.gpu);
+  const resolved=resolveBuildParts(input);
+  const cpu=resolved.cpu.item;
+  const gpu=resolved.gpu.item;
   const ram=findByName(RAM_OPTIONS,input.ram);
   const motherboard=findByName(MOTHERBOARDS,input.motherboard);
   const psu=findByName(PSU_OPTIONS,input.psu);
   const warnings=[];
   const positives=[];
+
+  if(resolved.cpu.status==="fuzzy") positives.push("CPU typo/format normalized to "+resolved.cpu.canonical+".");
+  if(resolved.gpu.status==="fuzzy") positives.push("GPU typo/format normalized to "+resolved.gpu.canonical+".");
+
+  if(!cpu) warnings.push("CPU is not recognized as a real supported model. FlipScout will not trust a valuation until it is corrected.");
+  if(!gpu) warnings.push("GPU is not recognized as a real supported model. FlipScout will not trust a valuation until it is corrected.");
 
   if(cpu&&motherboard&&cpu.socket!==motherboard.socket){
     warnings.push("CPU socket "+cpu.socket+" does not match motherboard "+motherboard.socket+".");
@@ -38,12 +46,19 @@ export function compatibilityChecks(input){
 
   if(gpu?.vram>=12) positives.push(gpu.vram+"GB VRAM improves resale appeal.");
   if(cpu?.appeal>=9) positives.push("Modern CPU platform has strong buyer appeal.");
-  return {warnings,positives};
+  return {warnings,positives,resolved};
 }
 
 export function fallbackPcEstimate(input){
-  const gpu=closestFallback(GPUS,input.gpu,220);
-  const cpu=closestFallback(CPUS,input.cpu,90);
+  const compatibility=compatibilityChecks(input);
+  const resolved=compatibility.resolved;
+  const identityValid=Boolean(resolved.cpu.item&&resolved.gpu.item);
+
+  const canonicalCpu=resolved.cpu.canonical||input.cpu;
+  const canonicalGpu=resolved.gpu.canonical||input.gpu;
+
+  const gpu=identityValid?closestFallback(GPUS,canonicalGpu,0):0;
+  const cpu=identityValid?closestFallback(CPUS,canonicalCpu,0):0;
   const ram=closestFallback(RAM_OPTIONS,input.ram,100);
   const storage=closestFallback(STORAGE_OPTIONS,input.storage,120);
   const motherboard=closestFallback(MOTHERBOARDS,input.motherboard,90);
@@ -51,10 +66,19 @@ export function fallbackPcEstimate(input){
   const pcCase=closestFallback(CASE_OPTIONS,input.caseType,50);
   const cooler=closestFallback(COOLER_OPTIONS,input.cooler,20);
 
-  const gpuObj=findByName(GPUS,input.gpu);
-  const cpuObj=findByName(CPUS,input.cpu);
+  const gpuObj=resolved.gpu.item;
+  const cpuObj=resolved.cpu.item;
   const caseObj=findByName(CASE_OPTIONS,input.caseType);
-  const compatibility=compatibilityChecks(input);
+
+  if(!identityValid){
+    return {
+      low:null,high:null,resale:null,sellingCosts:null,profit:null,maxBuy:null,score:0,
+      compatibility,
+      snapshot:MARKET_SNAPSHOT,
+      components:{gpu,cpu,ram,storage,motherboard,psu,caseType:pcCase,cooler},
+      identityValid:false
+    };
+  }
 
   const partsTotal=gpu+cpu+ram+storage+motherboard+psu+pcCase+cooler;
   const appeal=((gpuObj?.appeal||5)+(cpuObj?.appeal||5)+(caseObj?.appeal||5))/3;
@@ -76,6 +100,7 @@ export function fallbackPcEstimate(input){
     low,high,resale,sellingCosts,profit,maxBuy,score,
     compatibility,
     snapshot:MARKET_SNAPSHOT,
-    components:{gpu,cpu,ram,storage,motherboard,psu,caseType:pcCase,cooler}
+    components:{gpu,cpu,ram,storage,motherboard,psu,caseType:pcCase,cooler},
+    identityValid:true
   };
 }
