@@ -311,6 +311,24 @@ function EvidenceDashboard({live,summary}){
   </section>;
 }
 
+function ComponentEvidence({live}){
+  const entries=Object.entries(live?.components||{});
+  if(!entries.length)return null;
+  return <section className="resultSection">
+    <div className="sectionHeading"><div><span className="eyebrow">COMPONENT EVIDENCE</span><h3>See the comps behind each part value</h3><p>Live medians, trimmed ranges, sample counts, and example listings are shown separately from fallback data.</p></div><Database/></div>
+    <div className="componentEvidenceGrid">{entries.map(([name,x])=><details className={"componentEvidence "+(x.live?"live":"fallback")} key={name}>
+      <summary>
+        <div><span>{name}</span><b>{x.value==null?"No trusted fallback":money(x.value)}</b></div>
+        <div className="componentEvidenceMeta">{x.live?<><strong>{x.sampleSize} comps</strong><small>{money(x.rawLow)}–{money(x.rawHigh)} observed</small></>:<><strong>Fallback only</strong><small>Not used as real-market evidence</small></>}</div>
+      </summary>
+      {x.live?<div className="componentEvidenceBody">
+        <div className="sourceMini">{Object.entries(x.bySource||{}).map(([source,count])=><span key={source}>{source}: {count}</span>)}</div>
+        {(x.examples||[]).map((item,i)=><div className="miniComp" key={i}><div><b>{item.title}</b><small>{item.source} · {item.condition}</small></div><strong>{money(item.price)}</strong>{item.url&&<a href={item.url} target="_blank" rel="noreferrer"><ExternalLink size={13}/></a>}</div>)}
+      </div>:<div className="componentEvidenceBody"><p className="mutedText">This component did not have enough qualifying live comps. FlipScout marks it as fallback instead of counting it toward the evidence grade.</p></div>}
+    </details>)}</div>
+  </section>;
+}
+
 function SalesEvidence({evidence}){
   if(!evidence)return null;
   return <section className="resultSection">
@@ -458,6 +476,7 @@ function Analyze({providerKeys,onSaved}){
       <VerdictHero summary={summary} result={result} live={live}/>
       <ScoreBreakdown summary={summary}/>
       <EvidenceDashboard live={live} summary={summary}/>
+      <ComponentEvidence live={live}/>
       <StrategyStrip summary={summary}/>
       <div className="saveBar"><div><b>{form.gpu} + {form.cpu}</b><span>{money(form.price)} acquisition · {summary.verdict.label}</span></div><button className={saved?"secondary":"primary"} onClick={saveCurrent}>{saved?<><CheckCircle2 size={16}/>Saved</>:<><Save size={16}/>Save to workspace</>}</button></div>
       <ChannelProfit summary={summary}/>
