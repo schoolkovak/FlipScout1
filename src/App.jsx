@@ -170,7 +170,7 @@ function VerdictHero({summary,result,live}){
         <span><Database size={14}/>{live?.resale?.online?.salesBacked?"Sales-backed evidence":"Market-model evidence"}</span>
       </div>
     </div>
-    <ScoreRing value={result.score}/>
+    <ScoreRing value={summary.scoreBreakdown?.finalScore??result.score}/>
   </div>;
 }
 
@@ -178,7 +178,7 @@ function ScoreBreakdown({summary}){
   const b=summary?.scoreBreakdown;
   if(!b)return null;
   return <section className="resultSection">
-    <div className="sectionHeading"><div><span className="eyebrow">WHY THIS SCORE?</span><h3>Transparent deal-quality breakdown</h3></div><BarChart3/></div>
+    <div className="sectionHeading"><div><span className="eyebrow">WHY THIS SCORE?</span><h3>Transparent deal-quality breakdown</h3><p>Evidence grade {b.evidenceGrade} caps this deal at {b.cap}/100 until stronger real-market data exists.</p></div><div className={"evidenceGrade grade"+b.evidenceGrade}>{b.evidenceGrade}</div></div>
     <div className="scoreFactorGrid">{b.factors.map(x=><div className="scoreFactor" key={x.name}>
       <div className="scoreFactorHead"><span>{x.name}</span><b>{x.score}/100</b><em>{x.weight}</em></div>
       <div className="factorBar"><i style={{width:Math.max(2,x.score)+"%"}}></i></div>
@@ -259,6 +259,38 @@ function ListingStudio({summary,input}){
       <div><span className="fieldLabel">Description starter</span><p>{l.description}</p><button className="copyButton" onClick={()=>doCopy("description",l.description)}><Copy size={14}/>Copy description</button></div>
     </div>
     <div className="sellerChecklist"><b>Before listing</b><span>✓ Clean dust & fingerprints</span><span>✓ Show Task Manager / specs</span><span>✓ Include benchmark screenshot</span><span>✓ Show temps under load</span><span>✓ Photograph ports & internals</span><span>✓ State Windows activation / Wi-Fi clearly</span></div>
+  </section>;
+}
+
+function EvidenceDashboard({live,summary}){
+  const e=live?.evidence;
+  if(!e)return null;
+  const online=live?.resale?.online;
+  const local=live?.resale?.local;
+  const observed=e.observedAt?new Date(e.observedAt).toLocaleString():null;
+  const fallbackCount=e.fallbackComponents?.length||0;
+  return <section className="resultSection evidenceDashboard">
+    <div className="sectionHeading">
+      <div><span className="eyebrow">REAL-DATA AUDIT</span><h3>Exactly what supports this valuation</h3><p>{e.reason}</p></div>
+      <div className={"evidenceGrade grade"+e.grade}>{e.grade}</div>
+    </div>
+    <div className="auditGrid">
+      <div><span>Online likely resale</span><b>{money(online?.likely)}</b><small>{online?.method}</small></div>
+      <div><span>Observed range</span><b>{money(online?.low)}–{money(online?.high)}</b><small>{online?.confidence||"Unknown"} confidence</small></div>
+      <div><span>Complete-PC comps</span><b>{e.completePcCompCount}</b><small>filtered relevant listings</small></div>
+      <div><span>Sales-backed listings</span><b>{e.salesBackedListingCount}</b><small>{e.reportedUnitsSold} reported prior units sold</small></div>
+      <div><span>Live components</span><b>{e.liveComponentCount}/{e.componentCount}</b><small>{e.componentCoveragePct}% live-backed · {e.componentCompTotal} component comps</small></div>
+      <div><span>Local comps</span><b>{e.localCompCount}</b><small>{local?money(local.low)+"–"+money(local.high):e.localRequested?"Not enough nearby evidence":"Add ZIP to check"}</small></div>
+    </div>
+    <div className="auditFoot">
+      <span><Database size={13}/>Evidence grade {e.grade} · score cap {e.scoreCap}/100</span>
+      <span><RefreshCw size={13}/>{observed?"Checked "+observed:"Timestamp unavailable"}</span>
+      <span className={fallbackCount?"warnText":"goodText"}>{fallbackCount?fallbackCount+" component fallback"+(fallbackCount===1?"":"s")+": "+e.fallbackComponents.join(", "):"All component inputs live-backed"}</span>
+    </div>
+    {summary&&<div className="realInsightBox">
+      <div><Sparkles size={18}/><b>FlipScout read</b></div>
+      <p>At a {money(summary.channels?.local?.salePrice||summary.localLikely)} local target and {money(summary.onlineLikely)} online target, the strongest modeled channel is <strong>{summary.best?.channel}</strong> at about <strong className={summary.best?.profit>=0?"goodText":"badText"}>{money(summary.best?.profit)}</strong> projected profit ({pct(summary.best?.roi)} ROI). {e.grade==="A"||e.grade==="B"?"The evidence is strong enough to use this as a serious buy/no-buy input.":"The evidence is not deep enough to treat the resale number as guaranteed; use the buy target and risk flags conservatively."}</p>
+    </div>}
   </section>;
 }
 
@@ -400,6 +432,7 @@ function Analyze({providerKeys,onSaved}){
     {result?.identityValid!==false&&summary&&<>
       <VerdictHero summary={summary} result={result} live={live}/>
       <ScoreBreakdown summary={summary}/>
+      <EvidenceDashboard live={live} summary={summary}/>
       <StrategyStrip summary={summary}/>
       <div className="saveBar"><div><b>{form.gpu} + {form.cpu}</b><span>{money(form.price)} acquisition · {summary.verdict.label}</span></div><button className={saved?"secondary":"primary"} onClick={saveCurrent}>{saved?<><CheckCircle2 size={16}/>Saved</>:<><Save size={16}/>Save to workspace</>}</button></div>
       <ChannelProfit summary={summary}/>
@@ -480,7 +513,7 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
       </div>}
       <div className="marketHeadline">
         <div><span>{data.market.valueLabel}</span><strong>{money(data.market.median)}</strong><small>{money(data.market.low)}–{money(data.market.high)} trimmed range</small></div>
-        <div><span>Relevant comps</span><strong>{data.market.sampleSize}</strong><small>{data.market.rawSampleSize} raw listings checked</small></div>
+        <div><span>Relevant comps</span><strong>{data.market.sampleSize}</strong><small>{data.market.rawSampleSize} raw listings checked · {Object.keys(data.market.bySource||{}).length} source{Object.keys(data.market.bySource||{}).length===1?"":"s"}</small></div>
         <div><span>Confidence</span><strong>{data.market.confidence}</strong><small>{data.market.shippingKnownPct}% with known shipping</small></div>
       </div>
       <div className="dealList">{(data.results||[]).map((x,i)=><article className="dealCard" key={x.id||i}>
@@ -526,7 +559,7 @@ function Workspace({refreshKey}){
       {!history.length?<div className="emptyState">Save an analysis and it will appear here.</div>:<div className="historyGrid">{history.map(x=><div className="historyCard" key={x.id}>
         <div className="historyTop"><span>{new Date(x.savedAt).toLocaleDateString()}</span><button onClick={()=>removeAnalysis(x.id)}><Trash2 size={14}/></button></div>
         <h3>{x.label}</h3>
-        <div className="historyMetrics"><div><span>Buy</span><b>{money(x.input?.price)}</b></div><div><span>Likely sale</span><b>{money(x.summary?.onlineLikely||x.result?.resale)}</b></div><div><span>Best profit</span><b className={(x.summary?.best?.profit||0)>=0?"goodText":"badText"}>{money(x.summary?.best?.profit||x.result?.profit)}</b></div><div><span>Score</span><b>{x.result?.score}</b></div></div>
+        <div className="historyMetrics"><div><span>Buy</span><b>{money(x.input?.price)}</b></div><div><span>Likely sale</span><b>{money(x.summary?.onlineLikely||x.result?.resale)}</b></div><div><span>Best profit</span><b className={(x.summary?.best?.profit||0)>=0?"goodText":"badText"}>{money(x.summary?.best?.profit||x.result?.profit)}</b></div><div><span>Score</span><b>{x.summary?.scoreBreakdown?.finalScore??x.result?.score}</b></div></div>
         <div className={"verdictMini "+(x.summary?.verdict?.tone||"")}>{x.summary?.verdict?.label||"Saved"}</div>
       </div>)}</div>}
     </section>
