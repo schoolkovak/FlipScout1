@@ -22,7 +22,7 @@ export default async function handler(req,res) {
   if (!connected) {
     return res.status(200).json({
       available:false,
-      message:"No live market provider is connected yet. The easiest free starter is Serper (2,500 free queries); SearchAPI is the best optional direct-source backup for eBay, Walmart and Best Buy.",
+      message:"Live market search is not available yet. Please try again later.",
       sources:providerStatus(input.providerKeys)
     });
   }
@@ -39,7 +39,9 @@ export default async function handler(req,res) {
 
   res.status(200).json({
     available:true,
-    searchedAt:new Date().toISOString(),
+    searchedAt:result.observedAt,
+    cached:result.cached,
+    stale:result.stale,
     market:{
       median:result.market.median,
       low:result.market.low,

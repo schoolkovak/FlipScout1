@@ -1,5 +1,5 @@
 import {
-  GPUS,CPUS,RAM_OPTIONS,STORAGE_OPTIONS,MOTHERBOARDS,PSU_OPTIONS,COOLER_OPTIONS,CASE_OPTIONS
+  resolveCatalogPart,GPUS,CPUS,RAM_OPTIONS,STORAGE_OPTIONS,MOTHERBOARDS,PSU_OPTIONS,COOLER_OPTIONS,CASE_OPTIONS
 } from "../shared/catalog.js";
 
 function norm(value){
@@ -36,10 +36,15 @@ export function parseListingText(text){
   const lower=raw.toLowerCase();
   const found={confidence:0,notes:[]};
 
-  found.cpu=bestContained(CPUS,raw);
-  found.gpu=bestContained(GPUS,raw);
+  const cpuToken=raw.match(/(?:ryzen\s*[3579]\s*[- ]?\s*\d{4,5}[a-z0-9]*|(?:intel\s*(?:core\s*)?)?i[3579]\s*[- ]?\s*\d{4,5}[a-z]*|(?:intel\s*)?core\s*ultra\s*[579]\s*\d{3}[a-z]*(?:\s*plus)?)/i)?.[0];
+  const gpuToken=raw.match(/(?:(?:RTX|GTX|RX)\s*[- ]?\s*\d{3,4}(?:\s*[- ]?\s*(?:Ti|Super|XTX|XT|GRE))*(?:\s+\d{1,2}\s*GB)?|(?:Intel\s*)?Arc\s*[AB]\d{3}(?:\s+\d{1,2}\s*GB)?)/i)?.[0];
+  for(const [type,token] of [["cpu",cpuToken],["gpu",gpuToken]]){
+    const match=resolveCatalogPart(type,token||"");
+    found[type]=match.status==="exact"?match.canonical:null;
+    if(match.status==="ambiguous")found.notes.push("Choose exact "+type.toUpperCase()+" variant: "+match.suggestions.join(", "));
+  }
 
-  const priceMatches=[...raw.matchAll(/\$\s*([0-9]{2,5}(?:\.[0-9]{1,2})?)/g)].map(m=>Number(m[1]));
+  const priceMatches=[...raw.matchAll(/\$\s*([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?|[0-9]{2,5}(?:\.[0-9]{1,2})?)/g)].map(m=>Number(m[1].replace(/,/g,"")));
   if(priceMatches.length)found.price=priceMatches[0];
 
   const ramMatch=lower.match(/\b(8|16|24|32|48|64|96|128)\s*gb\b[^\n,;]{0,35}\b(ddr4|ddr5)\b/i) ||
@@ -47,11 +52,10 @@ export function parseListingText(text){
   if(ramMatch){
     const capacity=Number(ramMatch[1])||Number(ramMatch[2]);
     const type=(ramMatch.find(x=>/^ddr[45]$/i.test(x))||"").toUpperCase();
-    found.ram=closestOption(RAM_OPTIONS,x=>x.capacity===capacity&&x.type===type) ||
-      closestOption(RAM_OPTIONS,x=>x.capacity===capacity);
+    found.ram=closestOption(RAM_OPTIONS,x=>x.capacity===capacity&&x.type===type);
   }else{
     const capacityOnly=lower.match(/\b(8|16|24|32|48|64)\s*gb\s*(?:ram|memory)\b/i);
-    if(capacityOnly)found.ram=closestOption(RAM_OPTIONS,x=>x.capacity===Number(capacityOnly[1]));
+    if(capacityOnly)found.notes.push("RAM capacity detected; choose DDR generation manually.");
   }
 
   const storageMatch=lower.match(/\b(500|512|1000|1024|2000|2048|4000|4096)\s*gb\b[^\n,;]{0,30}\b(nvme|ssd|hdd)\b/i) ||
@@ -76,15 +80,14 @@ export function parseListingText(text){
   const watts=(lower.match(/\b(450|500|550|600|650|700|750|800|850|900|1000|1200)\s*w(?:att)?\b/i)||[])[1];
   if(watts){
     const w=Number(watts);
-    found.psu=closestOption(PSU_OPTIONS,x=>x.wattage===w) ||
-      [...PSU_OPTIONS].sort((a,b)=>Math.abs(a.wattage-w)-Math.abs(b.wattage-w))[0]?.name;
+    found.notes.push(w+"W PSU detected; verify efficiency and exact model.");
   }
 
   if(/\b(240|280|360)\s*mm\s*(aio|liquid)/i.test(lower)){
     const mm=(lower.match(/\b(240|280|360)\s*mm\b/i)||[])[1];
     found.cooler=closestOption(COOLER_OPTIONS,x=>x.name.startsWith(mm+"mm"));
   }else if(/\b(aio|liquid cool)/i.test(lower)){
-    found.cooler=closestOption(COOLER_OPTIONS,x=>x.name.includes("240mm"));
+    found.notes.push("Liquid cooler detected; verify radiator size.");
   }else if(/\b(tower cooler|air cooler)/i.test(lower)){
     found.cooler=closestOption(COOLER_OPTIONS,x=>x.name.includes("Tower Air"));
   }

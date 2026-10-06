@@ -1,4 +1,4 @@
-import React,{useEffect,useMemo,useState} from "react";
+import React,{useEffect,useMemo,useState,useRef} from "react";
 import {
   Search,Cpu,Gauge,ShoppingCart,ExternalLink,Database,AlertTriangle,RefreshCw,
   CheckCircle2,ShieldCheck,MapPin,TrendingUp,Bookmark,BookmarkCheck,Copy,
@@ -23,19 +23,23 @@ function money(v){
   if(v===null||v===undefined||Number.isNaN(Number(v))) return "—";
   return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0}).format(v);
 }
-function pct(v){return Number.isFinite(Number(v))?Math.round(Number(v))+"%":"—";}
+function pct(v){return v!=null&&Number.isFinite(Number(v))?Math.round(Number(v))+"%":"—";}
 function Datalist({id,items}){return <datalist id={id}>{items.map(x=><option key={x.name} value={x.name}/>)}</datalist>;}
 
 function SpecDropdown({type,value,onChange}){
-  const groups=useMemo(()=>groupedCatalog(type),[type]);
+  const [filter,setFilter]=useState("");
+  const allGroups=useMemo(()=>groupedCatalog(type),[type]);
+  const groups=Object.fromEntries(Object.entries(allGroups).map(([name,items])=>[name,items.filter(x=>x.name===value || x.name.toLowerCase().replace(/[^a-z0-9]/g,"").includes(filter.toLowerCase().replace(/[^a-z0-9]/g,"")))]).filter(([,items])=>items.length));
   const total=Object.values(groups).reduce((n,items)=>n+items.length,0);
   return <div className="specDropdownWrap">
-    <select value={value} onChange={e=>onChange(e.target.value)}>
+    <input aria-label={"Filter "+type.toUpperCase()+" models"} type="search" placeholder={"Find "+type.toUpperCase()+" model…"} value={filter} onChange={e=>setFilter(e.target.value)}/>
+    <select aria-label={type.toUpperCase()+" model"} value={value} onChange={e=>onChange(e.target.value)}>
+      <option value="" disabled>Choose exact model</option>
       {Object.entries(groups).map(([group,items])=><optgroup label={group} key={group}>
         {items.map(item=><option key={item.name} value={item.name}>{item.name}</option>)}
       </optgroup>)}
     </select>
-    <small>{total} desktop {type==="gpu"?"GPU":"CPU"} models in catalog</small>
+    <small>{total} matching desktop {type==="gpu"?"GPU":"CPU"} models in catalog</small>
   </div>;
 }
 async function copyText(text){try{await navigator.clipboard.writeText(text);return true;}catch{return false;}}
@@ -163,6 +167,8 @@ function VerdictHero({summary,result,live}){
       <span className="eyebrow">FLIPSCOUT VERDICT</span>
       <div className="verdictTitle">{summary.verdict.label}</div>
       <p>{summary.verdict.reason}</p>
+      {summary.hasLiveResale&&<div className="decisionMetrics"><div><span>Projected profit</span><b>{money(summary.best?.profit)}</b></div><div><span>Likely online resale</span><b>{money(summary.onlineLikely)}</b></div><div><span>20% ROI buy limit</span><b>{money(summary.buyTargets?.target20)}</b></div></div>}
+      {summary.shippingAssumed&&summary.hasLiveResale&&<p className="finePrint">Shipping unknown: online profit includes a $75 planning allowance. Verify a packed shipping quote.</p>}
       <div className="verdictBadges">
         <span><Zap size={14}/>{summary.tier.label}</span>
         <span><Eye size={14}/>Buyer appeal {summary.appeal}/100</span>
@@ -306,7 +312,7 @@ function EvidenceDashboard({live,summary}){
     </div>
     {summary?.hasLiveResale?<div className="realInsightBox">
       <div><Sparkles size={18}/><b>FlipScout read</b></div>
-      <p>At a {money(summary.channels?.local?.salePrice||summary.localLikely)} local target and {money(summary.onlineLikely)} online target, the strongest modeled channel is <strong>{summary.best?.channel}</strong> at about <strong className={summary.best?.profit>=0?"goodText":"badText"}>{money(summary.best?.profit)}</strong> projected profit ({pct(summary.best?.roi)} ROI). {e.grade==="A"||e.grade==="B"?"The evidence is strong enough to use this as a serious buy/no-buy input.":"The evidence is usable but still thin; use the buy target and downside test conservatively."}</p>
+      <p>With {summary.localLikely?money(summary.localLikely)+" in local asking evidence":"insufficient local evidence"} and a {money(summary.onlineLikely)} online target, the strongest modeled channel is <strong>{summary.best?.channel}</strong> at about <strong className={summary.best?.profit>=0?"goodText":"badText"}>{money(summary.best?.profit)}</strong> projected profit ({pct(summary.best?.roi)} ROI). {e.grade==="A"||e.grade==="B"?"The evidence is strong enough to use this as a serious buy/no-buy input.":"The evidence is usable but still thin; use the buy target and downside test conservatively."}</p>
     </div>:<div className="insufficientEvidence"><AlertTriangle size={18}/><div><b>Insufficient live evidence for a resale/profit recommendation.</b><p>FlipScout is intentionally withholding the likely-sale and profit numbers instead of filling the gaps with static guesses.</p></div></div>}
   </section>;
 }
@@ -369,16 +375,19 @@ function Analyze({providerKeys,onSaved}){
   const [parseResult,setParseResult]=useState(null);
   const [loading,setLoading]=useState(false);
   const [saved,setSaved]=useState(false);
-  const update=(key,value)=>setForm(v=>({...v,[key]:value}));
+  const requestBusy=useRef(false);
+  const [formError,setFormError]=useState("");
+  const update=(key,value)=>{setForm(v=>({...v,[key]:value}));setSummary(null);setResult(null);setLive(null);setSaved(false);};
 
   function parseListing(){
+    setSummary(null);setResult(null);setLive(null);
     const parsed=parseListingText(listingText);
     setParseResult(parsed);
     setForm(v=>({
       ...v,
       ...(parsed.price!=null?{price:parsed.price}:{}),
-      ...(parsed.cpu?{cpu:parsed.cpu}:{}),
-      ...(parsed.gpu?{gpu:parsed.gpu}:{}),
+      cpu:parsed.cpu||"",
+      gpu:parsed.gpu||"",
       ...(parsed.ram?{ram:parsed.ram}:{}),
       ...(parsed.storage?{storage:parsed.storage}:{}),
       ...(parsed.motherboard?{motherboard:parsed.motherboard}:{}),
@@ -389,14 +398,19 @@ function Analyze({providerKeys,onSaved}){
   }
 
   async function analyze(){
+    if(requestBusy.current)return;
+    if(!Number.isFinite(Number(form.price))||Number(form.price)<=0||Number(form.price)>100000){setFormError("Enter a purchase price between $0.01 and $100,000.");return;}
+    if(form.postalCode&&!/^\d{5}$/.test(form.postalCode)){setFormError("Enter a five-digit ZIP or leave it blank.");return;}
+    requestBusy.current=true;setFormError("");
     track("analyze_pc",{gpu:form.gpu,cpu:form.cpu,hasZip:Boolean(form.postalCode)});
     const input={...form,providerKeys};
     const fallback=fallbackPcEstimate(input);
     setResult(fallback);setLive(null);setSummary(null);setLoading(true);setSaved(false);
     try{
-      const r=await fetch("/api/market/pc",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(input)});
+      const r=await fetch("/api/market/pc",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(input),signal:AbortSignal.timeout(40000)});
       const d=await r.json();
       setLive(d);
+      if(!r.ok){setFormError(d.message||"Unable to analyze this input.");return;}
       if(d.valid===false){
         const invalid={...fallback,score:0,identityValid:false};
         setResult(invalid);
@@ -421,6 +435,7 @@ function Analyze({providerKeys,onSaved}){
       }
       setResult(finalResult);
       setSummary(builtSummary);
+      track(builtSummary?.hasLiveResale?"successful_live_analysis":"insufficient_evidence_analysis");
     }catch{
       const unavailable={available:false,valid:fallback.identityValid,message:"Live market service unavailable; fallback-only screening."};
       setLive(unavailable);
@@ -428,13 +443,14 @@ function Analyze({providerKeys,onSaved}){
       const capped={...fallback,score:builtSummary?.scoreBreakdown?.finalScore??Math.min(Number(fallback.score||0),45)};
       setResult(capped);
       setSummary(builtSummary);
-    }finally{setLoading(false);}
+    }finally{requestBusy.current=false;setLoading(false);}
   }
 
   function saveCurrent(){
     if(!result||!summary)return;
     track("save_analysis",{verdict:summary.verdict?.label||"unknown",score:Number(result.score||0)});
-    saveAnalysis({input:form,result,live,summary,label:form.gpu+" + "+form.cpu});
+    try{saveAnalysis({input:form,result,live,summary,label:form.gpu+" + "+form.cpu});}
+    catch{setFormError("Could not save this analysis: browser storage is full or disabled. Your current result is still visible.");return;}
     setSaved(true);onSaved?.();
   }
 
@@ -448,10 +464,10 @@ function Analyze({providerKeys,onSaved}){
         <button className="pasteToggle" onClick={()=>setPasteOpen(!pasteOpen)}><Sparkles size={16}/><span><b>Paste a listing instead</b><small>Auto-detect specs from messy Marketplace/eBay text</small></span>{pasteOpen?<ChevronUp size={16}/>:<ChevronDown size={16}/>}</button>
         {pasteOpen&&<div className="pasteBody">
           <textarea value={listingText} onChange={e=>setListingText(e.target.value)} placeholder="Example: $850 gaming PC, Ryzen 5 5600X, RTX 4060, 16GB DDR4, 1TB NVMe, B550, 650W PSU..."/>
-          <div className="rowActions"><button className="primary small" onClick={parseListing} disabled={!listingText.trim()}><Sparkles size={15}/>Auto-fill specs</button>{parseResult&&<span className="parseConfidence">Detected {parseResult.confidence}% of fields{parseResult.notes?.length?" · "+parseResult.notes.join(" · "):""}</span>}</div>
+          <div className="rowActions"><button className="primary small" onClick={parseListing} disabled={loading||!listingText.trim()}><Sparkles size={15}/>Auto-fill specs</button>{parseResult&&<span className="parseConfidence">Detected {parseResult.confidence}% of fields{parseResult.notes?.length?" · "+parseResult.notes.join(" · "):""}</span>}</div>
         </div>}
       </div>
-      <div className="formGrid">
+      <fieldset className="formGrid" disabled={loading}>
         <label>Purchase / asking price<input type="number" value={form.price} onChange={e=>update("price",e.target.value)}/></label>
         <label>CPU<SpecDropdown type="cpu" value={form.cpu} onChange={v=>update("cpu",v)}/></label>
         <label>GPU<SpecDropdown type="gpu" value={form.gpu} onChange={v=>update("gpu",v)}/></label>
@@ -464,7 +480,8 @@ function Analyze({providerKeys,onSaved}){
         <label>ZIP for local comps<input inputMode="numeric" maxLength={5} value={form.postalCode} onChange={e=>update("postalCode",e.target.value.replace(/\D/g,"").slice(0,5))} placeholder="Optional"/></label>
         <label>Local radius<select value={form.distanceRadius} onChange={e=>update("distanceRadius",Number(e.target.value))}><option value={25}>25 miles</option><option value={50}>50 miles</option><option value={100}>100 miles</option></select></label>
         <label>Goal<select value={form.purpose} onChange={e=>update("purpose",e.target.value)}><option value="flip">Flip for profit</option><option value="personal">Personal gaming PC</option></select></label>
-      </div>
+      </fieldset>
+      {formError&&<p role="alert" className="warningLine">{formError}</p>}
       <div className="analyzeActions">
         <button className="primary large" onClick={analyze} disabled={loading}>{loading?<><RefreshCw className="spin" size={18}/>Building real-market case...</>:<><Gauge size={18}/>Analyze this deal</>}</button>
         <span>Fake or ambiguous parts are rejected instead of guessed.</span>
@@ -512,7 +529,7 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
     track("scan_parts",{category,condition,deepScan});
     setLoading(true);setData(null);
     try{
-      const r=await fetch("/api/deals/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({category,query,condition,partBudget,buildBudget,committed,sortBy,deepScan,providerKeys})});
+      const r=await fetch("/api/deals/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({category,query,condition,partBudget,buildBudget,committed,sortBy,deepScan,providerKeys}),signal:AbortSignal.timeout(40000)});
       const d=await r.json();
       setData(d);
       if(d.available)setTrend(saveMarketSnapshot({category,query,condition},d.market));
@@ -564,7 +581,7 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
       <div className="dealList">{(data.results||[]).map((x,i)=><article className="dealCard" key={x.id||i}>
         <div className="dealTop"><div><div className="dealBadges"><span className="source">{x.source}</span>{x.soldCount>0&&<span className="soldChip">{x.soldCount}+ sold</span>}</div><h3>{x.title}</h3></div><div className="dealScore"><b>{x.score}</b><small>cap {x.scoreCap||100}</small></div></div>
         <div className="dealPriceRow"><strong>{x.shippingKnown?money(x.totalPrice):money(x.itemPrice)}</strong><span>{x.shippingKnown?"delivered":"shipping unknown"}</span></div>
-        <div className="dealMeta"><span>{x.condition}</span><span className={x.percentVsMarket>=10?"goodText":x.percentVsMarket<0?"badText":""}>{x.percentVsMarket>=0?x.percentVsMarket+"% under market":Math.abs(x.percentVsMarket)+"% over market"}</span><span>Build left {money(x.budgetLeft)}</span><span>{x.withinPartBudget?"Fits part budget":"Over part budget"}</span></div>
+        <div className="dealMeta"><span>{x.condition} · {x.seller}</span><span className={x.percentVsMarket>=10?"goodText":x.percentVsMarket<0?"badText":""}>{x.percentVsMarket>=0?x.percentVsMarket+"% under market":Math.abs(x.percentVsMarket)+"% over market"}</span><span>Build left {money(x.budgetLeft)}{!x.shippingKnown?" before shipping":""}</span><span>{x.withinPartBudget?(x.shippingKnown?"Fits part budget":"Check shipping for budget"):"Over part budget"}</span></div>
         {x.riskFlags?.length>0&&<div className="dealRisks">{x.riskFlags.slice(0,3).map((risk,j)=><span key={j}><AlertTriangle size={12}/>{risk}</span>)}</div>}
         <div className="dealActions">{x.url&&<a className="listingLink" href={x.url} target="_blank" rel="noreferrer">Open listing <ExternalLink size={14}/></a>}<button className="watchButton" onClick={()=>toggle(x)}>{watchedNow(x)?<BookmarkCheck size={16}/>:<Bookmark size={16}/>} {watchedNow(x)?"Watching":"Watch"}</button></div>
       </article>)}</div>
@@ -581,7 +598,7 @@ function Workspace({refreshKey}){
   function removeAnalysis(id){setHistory(deleteAnalysis(id));}
   function removeSearch(id){setSearches(deleteSavedSearch(id));}
   function removeWatch(item){setWatchlist(toggleWatchItem(item).items);}
-  const ranked=[...history].sort((a,b)=>(b.summary?.best?.profit||b.result?.profit||0)-(a.summary?.best?.profit||a.result?.profit||0)).slice(0,3);
+  const ranked=history.filter(x=>x.summary?.hasLiveResale).sort((a,b)=>(b.summary?.best?.profit??0)-(a.summary?.best?.profit??0)).slice(0,3);
 
   return <div className="pageStack">
     <section className="workspaceHeader"><div><span className="eyebrow">FLIP WORKSPACE</span><h2>Your deal pipeline</h2><p>Keep the deals worth remembering and compare them before you spend money.</p></div><History size={28}/></section>
@@ -590,12 +607,12 @@ function Workspace({refreshKey}){
     {ranked.length>=2&&<section className="panel comparePanel">
       <div className="sectionHeading"><div><span className="eyebrow">COMPARE DEALS</span><h3>Your strongest saved opportunities</h3><p>Ranked by projected best-channel profit.</p></div><BarChart3/></div>
       <div className="compareGrid">{ranked.map((x,i)=>{
-        const profit=x.summary?.best?.profit||x.result?.profit||0;
-        const roi=x.summary?.best?.roi||0;
+        const profit=x.summary?.hasLiveResale?x.summary?.best?.profit:null;
+        const roi=x.summary?.best?.roi??null;
         return <div className={"compareCard "+(i===0?"compareWinner":"")} key={x.id}>
           {i===0&&<span className="winnerTag">TOP DEAL</span>}
           <h4>{x.label}</h4>
-          <div className="compareRows"><span><em>Buy</em><b>{money(x.input?.price)}</b></span><span><em>Likely sale</em><b>{money(x.summary?.onlineLikely||x.result?.resale)}</b></span><span><em>Best profit</em><b className={profit>=0?"goodText":"badText"}>{money(profit)}</b></span><span><em>ROI</em><b>{pct(roi)}</b></span><span><em>Score</em><b>{x.result?.score}/100</b></span></div>
+          <div className="compareRows"><span><em>Buy</em><b>{money(x.input?.price)}</b></span><span><em>Likely sale</em><b>{money(x.summary?.onlineLikely)}</b></span><span><em>Best profit</em><b className={profit>=0?"goodText":"badText"}>{money(profit)}</b></span><span><em>ROI</em><b>{pct(roi)}</b></span><span><em>Score</em><b>{x.result?.score}/100</b></span></div>
         </div>;
       })}</div>
     </section>}
@@ -605,7 +622,7 @@ function Workspace({refreshKey}){
       {!history.length?<div className="emptyState">Save an analysis and it will appear here.</div>:<div className="historyGrid">{history.map(x=><div className="historyCard" key={x.id}>
         <div className="historyTop"><span>{new Date(x.savedAt).toLocaleDateString()}</span><button onClick={()=>removeAnalysis(x.id)}><Trash2 size={14}/></button></div>
         <h3>{x.label}</h3>
-        <div className="historyMetrics"><div><span>Buy</span><b>{money(x.input?.price)}</b></div><div><span>Likely sale</span><b>{money(x.summary?.onlineLikely||x.result?.resale)}</b></div><div><span>Best profit</span><b className={(x.summary?.best?.profit||0)>=0?"goodText":"badText"}>{money(x.summary?.best?.profit||x.result?.profit)}</b></div><div><span>Score</span><b>{x.summary?.scoreBreakdown?.finalScore??x.result?.score}</b></div></div>
+        <div className="historyMetrics"><div><span>Buy</span><b>{money(x.input?.price)}</b></div><div><span>Likely sale</span><b>{money(x.summary?.onlineLikely)}</b></div><div><span>Best profit</span><b className={(x.summary?.best?.profit||0)>=0?"goodText":"badText"}>{money(x.summary?.hasLiveResale?x.summary?.best?.profit:null)}</b></div><div><span>Score</span><b>{x.summary?.scoreBreakdown?.finalScore??x.result?.score}</b></div></div>
         <div className={"verdictMini "+(x.summary?.verdict?.tone||"")}>{x.summary?.verdict?.label||"Saved"}</div>
       </div>)}</div>}
     </section>

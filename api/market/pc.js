@@ -13,7 +13,7 @@ function usable(data,min=5){
 }
 
 function liveValue(data,fallback,{factor=1,min=5,label="Live asking comps"}={}){
-  if(usable(data,min)){
+  if(usable(data,min) && !data.stale){
     return {
       value:Math.round(data.market.median*factor),
       rawMedian:Math.round(data.market.median),
@@ -68,18 +68,18 @@ function onlineSellingCosts(salePrice,items){
   const knownShipping=(items||[])
     .filter(x=>x.shippingKnown&&Number.isFinite(Number(x.shipping)))
     .map(x=>Number(x.shipping));
-  const shippingMedian=medianNumber(knownShipping);
+  const shippingMedian=knownShipping.length>=3?medianNumber(knownShipping):null;
   const feeRate=.0735;
   const orderFee=.40;
   const platformFee=Math.round((Number(salePrice||0)*feeRate+orderFee)*100)/100;
-  const estimatedTotal=shippingMedian===null?platformFee:Math.round((platformFee+shippingMedian)*100)/100;
+  const estimatedTotal=shippingMedian===null?null:Math.round((platformFee+shippingMedian)*100)/100;
   return {
     feeRate,
     orderFee,
     platformFee,
     shippingMedian:shippingMedian===null?null:Math.round(shippingMedian*100)/100,
     estimatedTotal,
-    netAfterEstimatedCosts:Math.round((Number(salePrice||0)-estimatedTotal)*100)/100,
+    netAfterEstimatedCosts:estimatedTotal===null?null:Math.round((Number(salePrice||0)-estimatedTotal)*100)/100,
     note:shippingMedian===null
       ?"eBay desktop-PC fee estimate; shipping unavailable from enough comps"
       :"eBay desktop-PC fee estimate plus median shipping from comparable listings"
@@ -114,6 +114,8 @@ function salesEvidencePublicShape(evidence){
 export default async function handler(req,res){
   if(req.method!=="POST") return res.status(405).json({error:"POST required"});
   const body=req.body||{};
+  if (!Number.isFinite(Number(body.price)) || Number(body.price)<=0 || Number(body.price)>100000) return res.status(400).json({available:false,valid:false,message:"Enter a purchase price between $0.01 and $100,000."});
+  if (body.postalCode && !/^\d{5}$/.test(String(body.postalCode))) return res.status(400).json({available:false,valid:false,message:"Enter a five-digit ZIP code or leave it blank."});
   const providerKeys={
     SERPER_API_KEY:body?.providerKeys?.SERPER_API_KEY||"",
     SEARCHAPI_API_KEY:body?.providerKeys?.SEARCHAPI_API_KEY||""
@@ -121,45 +123,6 @@ export default async function handler(req,res){
   const resolved=resolveBuildParts(body);
 
   if(!resolved.cpu.item || !resolved.gpu.item){
-    const componentCompTotal=Object.values(values).reduce((sum,x)=>sum+Number(x.sampleSize||0),0);
-  const completeCompCount=Number(completePc?.sampleSize||0);
-  const salesCount=Number(salesEvidence.listingCount||0);
-  const localCompCount=Number(localMarket?.sampleSize||0);
-  const componentCoveragePct=Math.round(liveCount/Object.keys(values).length*100);
-
-  let evidenceGrade="F";
-  let scoreCap=45;
-  let evidenceReason="Very limited live evidence; treat the result as a rough screening estimate only.";
-  if(salesCount>=6 && completeCompCount>=10 && liveCount>=4){
-    evidenceGrade="A";scoreCap=95;evidenceReason="Strong sales-backed evidence, complete-PC comps, and live component coverage.";
-  }else if((salesCount>=2 && completeCompCount>=6) || (completeCompCount>=15 && liveCount>=4)){
-    evidenceGrade="B";scoreCap=88;evidenceReason="Good real-market coverage with multiple complete-PC comps and live component support.";
-  }else if(completeCompCount>=4 && liveCount>=2){
-    evidenceGrade="C";scoreCap=75;evidenceReason="Usable live evidence, but not enough depth for a high-confidence premium score.";
-  }else if(liveCount>=2 || completeCompCount>=2 || salesCount>=1){
-    evidenceGrade="D";scoreCap=60;evidenceReason="Thin market evidence; use the number to negotiate, not as a guaranteed resale price.";
-  }
-
-  const evidence={
-    observedAt:new Date().toISOString(),
-    grade:evidenceGrade,
-    scoreCap,
-    reason:evidenceReason,
-    liveComponentCount:liveCount,
-    componentCount:Object.keys(values).length,
-    componentCoveragePct,
-    componentCompTotal,
-    completePcCompCount:completeCompCount,
-    salesBackedListingCount:salesCount,
-    reportedUnitsSold:Number(salesEvidence.totalReportedUnitsSold||0),
-    localCompCount,
-    localRequested:Boolean(canonicalBody.postalCode),
-    hasSalesBackedEvidence:Boolean(salesBackedAvailable),
-    onlineMethod,
-    localMethod:localMarket?.method||null,
-    fallbackComponents:Object.entries(values).filter(([,x])=>!x.live).map(([name])=>name)
-  };
-
   return res.status(200).json({
       available:false,
       valid:false,
@@ -210,7 +173,7 @@ export default async function handler(req,res){
   const componentBased=Math.max(0,componentTotal+presentationPremium);
 
   let completePc=null;
-  if(usable(data.completePc,4)){
+  if(usable(data.completePc,4) && !data.completePc.stale){
     completePc={
       median:Math.round(data.completePc.market.median),
       low:Math.round(data.completePc.market.low),
@@ -220,7 +183,7 @@ export default async function handler(req,res){
     };
   }
 
-  const salesEvidence=buildSalesEvidence(data.completePc?.items||[]);
+  const salesEvidence=buildSalesEvidence(data.completePc?.stale?[]:data.completePc?.items||[]);
   const salesBackedAvailable=salesEvidence.listingCount>=2 && salesEvidence.median;
 
   let onlineLikely=salesBackedAvailable
@@ -243,7 +206,7 @@ export default async function handler(req,res){
       }))
     : null;
 
-  const localLikely=localLikelyFromMarket(localData?.market);
+  const localLikely=localData?.stale?null:localLikelyFromMarket(localData?.market);
   const localMarket=localData?.market?.sampleSize ? {
     likely:localLikely,
     median:Math.round(localData.market.median),
@@ -282,6 +245,47 @@ export default async function handler(req,res){
   const low=Math.max(0,Math.round(blendedBase*(1-uncertainty)));
   const high=Math.round(blendedBase*(1+uncertainty));
 
+  const componentCompTotal=Object.values(values).reduce((sum,x)=>sum+Number(x.sampleSize||0),0);
+  const completeCompCount=Number(completePc?.sampleSize||0);
+  const salesCount=Number(salesEvidence.listingCount||0);
+  const localCompCount=Number(localMarket?.sampleSize||0);
+  const componentCoveragePct=Math.round(liveCount/Object.keys(values).length*100);
+
+  let evidenceGrade="F";
+  let scoreCap=39;
+  let evidenceReason="Very limited live evidence; treat the result as a rough screening estimate only.";
+  // Current providers expose asking prices, not historical completed sales.
+  if(salesCount>=2 && completeCompCount>=6 && liveCount>=2){
+    evidenceGrade="B";scoreCap=84;evidenceReason="Good real-market coverage with multiple complete-PC comps and live component support.";
+  }else if(completeCompCount>=4 && liveCount>=2){
+    evidenceGrade="C";scoreCap=74;evidenceReason="Usable live evidence, but not enough depth for a high-confidence premium score.";
+  }else if(liveCount>=2 || completeCompCount>=2 || salesCount>=1){
+    evidenceGrade="D";scoreCap=59;evidenceReason="Thin market evidence; use the number to negotiate, not as a guaranteed resale price.";
+  }
+
+  const evidence={
+    observedAt:new Date().toISOString(),
+    grade:evidenceGrade,
+    completedSaleCount:0,
+    evidenceType:salesCount?"active-with-prior-sales":"asking-prices",
+    scoreCap,
+    reason:evidenceReason,
+    liveComponentCount:liveCount,
+    componentCount:Object.keys(values).length,
+    componentCoveragePct,
+    componentCompTotal,
+    completePcCompCount:completeCompCount,
+    salesBackedListingCount:salesCount,
+    reportedUnitsSold:Number(salesEvidence.totalReportedUnitsSold||0),
+    localCompCount,
+    localRequested:Boolean(canonicalBody.postalCode),
+    hasSalesBackedEvidence:Boolean(salesBackedAvailable),
+    onlineMethod,
+    localMethod:localMarket?.method||null,
+    fallbackComponents:Object.entries(values).filter(([,x])=>!x.live).map(([name])=>name)
+  };
+
+
   return res.status(200).json({
     available:Boolean(
       Object.values(values).some(x=>x.live) ||
@@ -306,6 +310,7 @@ export default async function handler(req,res){
     },
     salesEvidence:salesEvidencePublicShape(salesEvidence),
     evidence,
+    providerErrors:Object.values(data).flatMap(x=>x?.errors||[]),
     components:values,
     completePc,
     meta:{

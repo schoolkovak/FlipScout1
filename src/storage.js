@@ -3,7 +3,7 @@ const WATCHLIST_KEY="flipscout-watchlist-v1";
 const SAVED_SEARCH_KEY="flipscout-saved-searches-v1";
 
 function read(key,fallback=[]){
-  try{return JSON.parse(localStorage.getItem(key)||"null")||fallback;}
+  try{const value=JSON.parse(localStorage.getItem(key)||"null");return Array.isArray(value)?value.filter(x=>x&&typeof x==="object"):fallback;}
   catch{return fallback;}
 }
 

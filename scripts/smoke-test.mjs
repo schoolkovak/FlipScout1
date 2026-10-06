@@ -50,7 +50,7 @@ assert.equal(parsed.gpu,"RTX 4060");
 assert.ok(parsed.ram?.includes("16GB"));
 assert.ok(parsed.storage?.includes("1TB"));
 assert.ok(parsed.motherboard?.includes("B550"));
-assert.ok(parsed.psu?.includes("650W"));
+assert.ok(parsed.notes.some(x=>x.includes("650W")),"Do not invent PSU efficiency from wattage");
 assert.equal(parsed.price,850);
 
 assert.ok(GPUS.length>=110,"GPU dropdown should have broad desktop coverage");

@@ -1,6 +1,19 @@
+import { parseListingText } from "../../src/listingParser.js";
+import { createHash } from "node:crypto";
+import { resolveCatalogPart } from "../../shared/catalog.js";
 const EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope";
 const searchCache=new Map();
 const CACHE_MS=10*60*1000;
+const inFlight=new Map();
+async function providerFetch(url,options={}){
+  for(let attempt=0;attempt<2;attempt++){
+    const response=await fetch(url,{...options,signal:AbortSignal.timeout(12000)});
+    if(response.status>=500 && attempt===0){await response.body?.cancel();continue;}
+    return response;
+  }
+}
+function safeUrl(value){try{const u=new URL(value);return ["https:","http:"].includes(u.protocol)?u.href:null;}catch{return null;}}
+
 
 function env(name) {
   return process.env[name] || "";
@@ -110,7 +123,7 @@ function variantPenalty(q,t) {
   return Math.min(.55,penalty);
 }
 
-function relevanceScore(title, query, category) {
+export function relevanceScore(title, query, category) {
   const t=normalizeText(title);
   const q=normalizeText(query);
   if (!t || !q) return 0;
@@ -120,6 +133,19 @@ function relevanceScore(title, query, category) {
   let score=tokens.length ? matched/tokens.length : (t.includes(q)?1:0.5);
 
   const cat=String(category||"").toLowerCase();
+  if(["gpu","cpu"].includes(cat)){
+    const expected=resolveCatalogPart(cat,query);
+    const identified=parseListingText(title)[cat];
+    if(expected.item && identified!==expected.canonical)return 0;
+    const model=String(query).match(/\b(?:\d{3,5}[a-z]*|[ab]\d{3})\b/i)?.[0];
+    if(model && !t.replace(/\s+/g,"").includes(model.toLowerCase()))return 0;
+    if(/\b(laptop|notebook|mobile|waterblock|water block|replacement fan|empty box|box only|riser|adapter|for parts|parts only|not working|broken|untested|repair|as is|gaming pc|desktop pc|prebuilt|bundle|motherboard combo)\b/.test(t))return 0;
+    if(variantPenalty(q,t)>0)return 0;
+    if(cat==="gpu" && expected.item){
+      const caps=capacities(title);
+      if(caps.length && !caps.includes(expected.item.vram))return 0;
+    }
+  }
   const broken=/\b(for parts|parts only|not working|broken|untested|repair|as is)\b/.test(t);
   if(broken) score-=.7;
 
@@ -167,6 +193,8 @@ function relevanceScore(title, query, category) {
   }
 
   if (cat==="complete pc") {
+    const expected=parseListingText(query),actual=parseListingText(title);
+    if((expected.cpu && expected.cpu!==actual.cpu)||(expected.gpu && expected.gpu!==actual.gpu))return 0;
     if (/\b(gaming pc|gaming desktop|desktop computer|prebuilt|computer)\b/.test(t)) score+=.15;
     if (/\b(laptop|notebook|parts only|case only)\b/.test(t)) score-=.65;
   }
@@ -197,7 +225,7 @@ export async function searchSerpApi({query,category,condition}) {
     gl:"us",
     hl:"en"
   });
-  const response=await fetch("https://serpapi.com/search.json?"+params.toString());
+  const response=await providerFetch("https://serpapi.com/search.json?"+params.toString());
   if (!response.ok) throw new Error("SerpApi returned "+response.status);
   const data=await response.json();
   return (data.shopping_results||[]).map((x,index)=>{
@@ -228,7 +256,7 @@ export async function searchSerperShopping(input) {
   const apiKey=providerKey("SERPER_API_KEY",input);
   if (!apiKey) return [];
   const q=condition==="used" ? "used "+query : condition==="open-box" ? "open box "+query : query;
-  const response=await fetch("https://google.serper.dev/shopping",{
+  const response=await providerFetch("https://google.serper.dev/shopping",{
     method:"POST",
     headers:{
       "X-API-KEY":apiKey,
@@ -241,13 +269,13 @@ export async function searchSerperShopping(input) {
   return (data.shopping||[]).map((x,index)=>{
     const itemPrice=parseMoney(x.price);
     const ship=parseShippingFromSerp({delivery:x.delivery});
-    const inferredCondition=condition==="any" ? normalizeCondition((x.title||"")+" "+(x.source||"")) : condition;
+    const inferredCondition=normalizeCondition((x.title||"")+" "+(x.condition||""));
     return {
       id:"serper-"+(x.productId||index)+"-"+itemPrice,
       source:"Google Shopping",
       sourceType:"retail-aggregator",
       title:x.title||"Untitled shopping result",
-      condition:inferredCondition==="unknown"?"new":inferredCondition,
+      condition:inferredCondition,
       itemPrice:itemPrice||0,
       shipping:ship.shipping,
       shippingKnown:ship.shippingKnown,
@@ -271,7 +299,7 @@ async function searchSearchApiEngine(engine,query,extra={},providerKeys={}){
   const apiKey=providerKeys?.SEARCHAPI_API_KEY || env("SEARCHAPI_API_KEY");
   if(!apiKey) return null;
   const params=new URLSearchParams({engine,q:query,api_key:apiKey,...extra});
-  const response=await fetch("https://www.searchapi.io/api/v1/search?"+params.toString());
+  const response=await providerFetch("https://www.searchapi.io/api/v1/search?"+params.toString());
   if(!response.ok) throw new Error("SearchAPI "+engine+" returned "+response.status);
   return response.json();
 }
@@ -406,7 +434,7 @@ async function bestBuyOpenBoxForSkus(skus,{query,category}) {
   if (!skus.length || !env("BESTBUY_API_KEY")) return [];
   const list=skus.slice(0,100).join(",");
   const url="https://api.bestbuy.com/beta/products/openBox(sku%20in("+list+"))?apiKey="+encodeURIComponent(env("BESTBUY_API_KEY"));
-  const response=await fetch(url);
+  const response=await providerFetch(url);
   if (!response.ok) throw new Error("Best Buy Open Box returned "+response.status);
   const data=await response.json();
   const out=[];
@@ -439,7 +467,7 @@ export async function searchBestBuy({query,category,condition}) {
   if (!env("BESTBUY_API_KEY")) return [];
   const terms=bestBuySearchTerms(query);
   const searchUrl="https://api.bestbuy.com/v1/products("+terms+"&active=true)?format=json&show=sku,name,salePrice,url,onlineAvailability&sort=salePrice.asc&pageSize=100&apiKey="+encodeURIComponent(env("BESTBUY_API_KEY"));
-  const response=await fetch(searchUrl);
+  const response=await providerFetch(searchUrl);
   if (!response.ok) throw new Error("Best Buy Products returned "+response.status);
   const data=await response.json();
   const products=data.products||[];
@@ -480,7 +508,7 @@ async function getEbayToken() {
   if (!env("EBAY_CLIENT_ID") || !env("EBAY_CLIENT_SECRET")) return null;
   if (ebayTokenCache.token && Date.now()<ebayTokenCache.expiresAt-60000) return ebayTokenCache.token;
   const credentials=Buffer.from(env("EBAY_CLIENT_ID")+":"+env("EBAY_CLIENT_SECRET")).toString("base64");
-  const response=await fetch("https://api.ebay.com/identity/v1/oauth2/token",{
+  const response=await providerFetch("https://api.ebay.com/identity/v1/oauth2/token",{
     method:"POST",
     headers:{
       "Authorization":"Basic "+credentials,
@@ -490,7 +518,7 @@ async function getEbayToken() {
   });
   if (!response.ok) {
     const body=await response.text();
-    throw new Error("eBay OAuth failed ("+response.status+"): "+body.slice(0,180));
+    throw new Error("eBay authentication failed ("+response.status+")");
   }
   const data=await response.json();
   ebayTokenCache={token:data.access_token,expiresAt:Date.now()+Number(data.expires_in||7200)*1000};
@@ -509,7 +537,7 @@ export async function searchEbay({query,category,condition}) {
   const params=new URLSearchParams({q:query,limit:"200"});
   const cond=ebayConditionFilter(condition);
   if (cond) params.set("filter",cond);
-  const response=await fetch("https://api.ebay.com/buy/browse/v1/item_summary/search?"+params.toString(),{
+  const response=await providerFetch("https://api.ebay.com/buy/browse/v1/item_summary/search?"+params.toString(),{
     headers:{
       "Authorization":"Bearer "+token,
       "X-EBAY-C-MARKETPLACE-ID":"EBAY_US"
@@ -580,7 +608,7 @@ function dedupe(items) {
 }
 
 export function buildMarket(items) {
-  const relevant=items.filter(x=>x.relevance>=0.58);
+  const relevant=dedupe(items).filter(x=>x.relevance>=0.72 && Number.isFinite(x.totalPrice) && x.totalPrice>0);
   const filtered=robustFilter(relevant);
   const prices=filtered.map(x=>x.totalPrice);
   const byCondition={};
@@ -621,7 +649,7 @@ function weightedMedian(items,valueFn,weightFn){
 }
 
 export function buildSalesEvidence(items){
-  const qualifying=robustFilter(items.filter(x=>x.relevance>=0.58 && Number(x.soldCount||0)>0));
+  const qualifying=robustFilter(dedupe(items).filter(x=>x.relevance>=0.72 && Number.isFinite(x.totalPrice) && x.totalPrice>0 && Number(x.soldCount||0)>0));
   const medianPrice=weightedMedian(
     qualifying,
     x=>x.totalPrice,
@@ -637,18 +665,13 @@ export function buildSalesEvidence(items){
     totalReportedUnitsSold:totalUnits,
     confidence:qualifying.length>=15?"High":qualifying.length>=6?"Medium":qualifying.length>=2?"Low":"Insufficient",
     listings:qualifying.sort((a,b)=>(b.soldCount||0)-(a.soldCount||0)).slice(0,12),
-    label:"Sales-backed eBay listing price"
+    label:"Active asking price with prior units sold (not a completed-sale price)"
   };
 }
 
 export async function searchLocalEbay(input){
   if(!providerKey("SEARCHAPI_API_KEY",input) || !input.postalCode) return {items:[],market:buildMarket([]),errors:[]};
-  try{
-    const items=await searchSearchApiEbay({...input,localOnly:true,postalCode:input.postalCode,distanceRadius:input.distanceRadius||50});
-    return {items,market:buildMarket(items),errors:[]};
-  }catch(error){
-    return {items:[],market:buildMarket([]),errors:[{provider:"Local eBay",message:error.message}]};
-  }
+  return liveSearch({...input,localOnly:true,distanceRadius:input.distanceRadius||50});
 }
 
 function conditionQuality(condition) {
@@ -702,11 +725,12 @@ export function rankDeals(items,market,{query,partBudget,buildBudget,committed,s
     if(sample<8) riskFlags.push("Market sample is small; score is capped.");
     if(item.condition==="unknown") riskFlags.push("Condition is not clearly identified.");
 
-    const score=Math.max(0,Math.min(evidenceCap,Math.round(raw)));
+    const itemCap=Math.min(evidenceCap,item.shippingKnown?100:69,under>.45?59:100,relevance<.72?59:100,item.condition==="unknown"?69:100);
+    const score=Math.max(0,Math.min(itemCap,Math.round(raw)));
     return {
       ...item,
       score,
-      scoreCap:evidenceCap,
+      scoreCap:itemCap,
       riskFlags,
       evidenceSampleSize:sample,
       percentVsMarket:medianValue?Math.round((medianValue-item.totalPrice)/medianValue*100):0,
@@ -727,6 +751,8 @@ export function rankDeals(items,market,{query,partBudget,buildBudget,committed,s
 function cacheKey(input){
   return [
     normalizeText(input.query),
+    String(input.postalCode||""),String(input.distanceRadius||50),Boolean(input.localOnly),
+    createHash("sha256").update(JSON.stringify([providerKey("SERPER_API_KEY",input),providerKey("SEARCHAPI_API_KEY",input),env("SERPAPI_API_KEY"),env("BESTBUY_API_KEY"),env("EBAY_CLIENT_ID")])).digest("hex"),
     String(input.category||"").toLowerCase(),
     input.condition||"any",
     input.deepScan?"deep":"fast",
@@ -798,36 +824,31 @@ function chooseProviders(input){
   return providers;
 }
 
-export async function liveSearch(input) {
+async function fetchMarket(input,key,hit){
+  const providers=input.localOnly?[["Local eBay",()=>searchSearchApiEbay(input)]]:chooseProviders(input);
+  const settled=await Promise.all(providers.map(async([name,run])=>{
+    try{return {items:await run(),name};}
+    catch(error){return {name,error:error.name==="TimeoutError"?"Provider timed out":String(error.message).replace(/https?:\/\/\S+/g,"[provider]")};}
+  }));
+  const errors=settled.filter(x=>x.error).map(x=>({provider:x.name,message:x.error}));
+  if(providers.length && errors.length===providers.length && hit && Date.now()-hit.savedAt<60*60*1000)return {...hit.value,errors,stale:true};
+  const items=dedupe(settled.flatMap(x=>x.items||[])).filter(x=>x.relevance>=.72 && Number.isFinite(x.totalPrice) && x.totalPrice>0).map(x=>({...x,url:safeUrl(x.url)}));
+  const value={items,market:buildMarket(items),errors,observedAt:new Date().toISOString(),stale:false};
+  // Short negative cache avoids hammering failed/quota-limited providers.
+  searchCache.set(key,{savedAt:Date.now(),ttl:errors.length?30000:CACHE_MS,value});
+  if(searchCache.size>150)searchCache.delete(searchCache.keys().next().value);
+  return value;
+}
+
+export async function liveSearch(input){
   const key=cacheKey(input);
   const hit=searchCache.get(key);
   let base;
-
-  if(hit&&Date.now()-hit.savedAt<CACHE_MS){
-    base=hit.value;
-  }else{
-    const providers=chooseProviders(input);
-    const settled=await Promise.all(providers.map(async([name,run])=>{
-      try{return await run();}
-      catch(error){return {__error:true,provider:name,message:error.message};}
-    }));
-
-    const errors=[];
-    let items=[];
-    for(const result of settled){
-      if(Array.isArray(result)) items.push(...result);
-      else if(result?.__error) errors.push({provider:result.provider,message:result.message});
-    }
-    items=dedupe(items).filter(x=>x.relevance>=0.4);
-    const market=buildMarket(items);
-    base={items,market,errors};
-    searchCache.set(key,{savedAt:Date.now(),value:base});
-    if(searchCache.size>150){
-      const oldest=[...searchCache.entries()].sort((a,b)=>a[1].savedAt-b[1].savedAt).slice(0,30);
-      for(const [oldKey] of oldest) searchCache.delete(oldKey);
-    }
+  const cached=Boolean(hit && Date.now()-hit.savedAt<hit.ttl);
+  if(cached)base=hit.value;
+  else{
+    if(!inFlight.has(key))inFlight.set(key,fetchMarket(input,key,hit).finally(()=>inFlight.delete(key)));
+    base=await inFlight.get(key);
   }
-
-  const ranked=rankDeals(base.items,base.market,input);
-  return {...base,ranked};
+  return {...base,cached,ranked:rankDeals(base.items,base.market,input)};
 }

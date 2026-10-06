@@ -96,7 +96,7 @@ const GPU_CATALOG_EXPANSION = [
   ["RX 580 4GB",4,500,2],["RX 580 8GB",8,500,4],["RX 590 8GB",8,550,4],
   ["RX Vega 56 8GB",8,650,3],["RX Vega 64 8GB",8,750,3],["Radeon VII 16GB",16,750,4],
   ["RX 5500 XT 4GB",4,450,3],["RX 5500 XT 8GB",8,450,4],["RX 5700 8GB",8,600,4],
-  ["RX 6600M 8GB",8,500,3],["RX 6700 10GB",10,600,5],
+  ["RX 6700 10GB",10,600,5],
 
   // Current AMD RDNA 4 additions reflected in AMD's desktop lineup
   ["RX 9070 GRE 12GB",12,650,9],["RX 9060 XT LP 16GB",16,550,8],["RX 9060 8GB",8,500,8],
@@ -419,7 +419,7 @@ function aliasKeys(item,type){
   if(type==="gpu"){
     n=n.replace(/^intel\s+/,"").replace(/^nvidia\s+/,"").replace(/^amd\s+/,"");
     keys.add(normalizePartText(n));
-    keys.add(normalizePartText(n.replace(/\s+(8gb|10gb|11gb|12gb|16gb|20gb|24gb|32gb)$/i,"")));
+    keys.add(normalizePartText(n.replace(/\s+(2gb|3gb|4gb|6gb|8gb|10gb|11gb|12gb|16gb|20gb|24gb|32gb)$/i,"")));
   }
   if(type==="cpu"){
     keys.add(normalizePartText(n.replace(/^intel\s+/,"")));
@@ -462,8 +462,15 @@ export function resolveCatalogPart(type,input){
     return inputNums.length>0 && nums.some(n=>inputNums.includes(n));
   });
 
+  const signature=value=>{
+    const n=normalizePartText(value);
+    const model=n.match(/(?:\d{3,5})(x3d|xtx|super|ti|xt|gre|kf|ks|k|f|g|x|t|s|m)?/);
+    return [model?.[1]||"",n.match(/(\d+)gb/)?.[1]||""];
+  };
   let best=null;
   for(const item of candidates){
+    const requested=signature(raw),candidate=signature(item.name);
+    if(requested[0]!==candidate[0] || (requested[1]&&requested[1]!==candidate[1]))continue;
     for(const key of aliasKeys(item,type)){
       const d=levenshtein(normalized,key);
       const maxLen=Math.max(normalized.length,key.length,1);

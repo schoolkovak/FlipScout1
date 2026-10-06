@@ -9,13 +9,13 @@ export default async function handler(req,res){
 
   const result={
     checkedAt:new Date().toISOString(),
-    serper:{configured:Boolean(providerKeys.SERPER_API_KEY),verified:false,resultCount:0},
-    searchapi:{configured:Boolean(providerKeys.SEARCHAPI_API_KEY),verified:false,resultCount:0}
+    serper:{configured:Boolean(providerKeys.SERPER_API_KEY||process.env.SERPER_API_KEY),verified:false,resultCount:0},
+    searchapi:{configured:Boolean(providerKeys.SEARCHAPI_API_KEY||process.env.SEARCHAPI_API_KEY),verified:false,resultCount:0}
   };
 
   const jobs=[];
 
-  if(providerKeys.SERPER_API_KEY){
+  if(result.serper.configured){
     jobs.push(
       searchSerperShopping({
         query:"RTX 4060",
@@ -31,7 +31,7 @@ export default async function handler(req,res){
     );
   }
 
-  if(providerKeys.SEARCHAPI_API_KEY){
+  if(result.searchapi.configured){
     jobs.push(
       searchSearchApiEbay({
         query:"RTX 4060",

@@ -4,7 +4,7 @@ function read(){
   try{return JSON.parse(localStorage.getItem(KEY)||"{}")||{};}
   catch{return {};}
 }
-function write(data){localStorage.setItem(KEY,JSON.stringify(data));}
+function write(data){try{localStorage.setItem(KEY,JSON.stringify(data));}catch{/* A history quota failure must not discard live scan results. */}}
 
 function idFor({category,query,condition}){
   return [String(category||"").toLowerCase(),String(query||"").toLowerCase().replace(/\s+/g," ").trim(),condition||"any"].join("|");
@@ -14,14 +14,16 @@ export function saveMarketSnapshot(search,market){
   if(!market?.median)return null;
   const all=read();
   const id=idFor(search);
-  const current=all[id]||[];
+  const current=Array.isArray(all[id])?all[id]:[];
   const entry={
     at:new Date().toISOString(),
     median:Number(market.median),
     low:Number(market.low||0),
     high:Number(market.high||0),
-    sampleSize:Number(market.sampleSize||0)
+    sampleSize:Number(market.sampleSize||0),
+    bySource:market.bySource||{}
   };
+  if(current.length && Date.now()-Date.parse(current.at(-1).at)<10*60*1000)return getMarketTrend(search);
   const next=[...current,entry].slice(-30);
   all[id]=next;
   write(all);

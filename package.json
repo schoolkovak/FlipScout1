@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "concurrently \"vite --host 0.0.0.0\" \"node --watch server/index.js\"",
     "build": "vite build",
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "test": "node scripts/smoke-test.mjs && node --test scripts/regression.test.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",

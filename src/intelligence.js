@@ -38,6 +38,7 @@ export function buildSaleStrategy({onlineLikely,localLikely,marketLow,marketHigh
 
 export function channelEconomics({salePrice,acquisitionCost,shippingCost=0,channel}){
   const cfg=CHANNELS[channel];
+  if(!cfg) throw new Error("Unknown selling channel");
   const price=Number(salePrice||0);
   const buy=Number(acquisitionCost||0);
   const ship=cfg.shipping?Number(shippingCost||0):0;
@@ -51,9 +52,9 @@ export function channelEconomics({salePrice,acquisitionCost,shippingCost=0,chann
 
 export function channelScenarios({onlineLikely,localLikely,acquisitionCost,shippingMedian}){
   const online=Number(onlineLikely||0);
-  const local=Number(localLikely||online*.92||0);
+  const local=Number(localLikely||0);
   return {
-    local:channelEconomics({salePrice:local,acquisitionCost,channel:"local"}),
+    ...(local>0?{local:channelEconomics({salePrice:local,acquisitionCost,channel:"local"})}:{}),
     ebay:channelEconomics({salePrice:online,acquisitionCost,shippingCost:shippingMedian||0,channel:"ebay"}),
     jawa:channelEconomics({salePrice:online*.98,acquisitionCost,shippingCost:shippingMedian||0,channel:"jawa"})
   };
@@ -65,10 +66,10 @@ export function marginBuyTargets({resale,shipping=0}){
   const ebayFees=r*CHANNELS.ebay.feeRate+CHANNELS.ebay.fixedFee+Number(shipping||0);
   const net=r-ebayFees;
   return {
-    target15:round(net/1.15),
-    target20:round(net/1.20),
-    target25:round(net/1.25),
-    target30:round(net/1.30)
+    target15:Math.max(0,Math.floor(net/1.15)),
+    target20:Math.max(0,Math.floor(net/1.20)),
+    target25:Math.max(0,Math.floor(net/1.25)),
+    target30:Math.max(0,Math.floor(net/1.30))
   };
 }
 
@@ -133,7 +134,7 @@ export function liquidityScore({gpu,cpu,onlineEvidenceCount=0,completePcCompCoun
 export function verdict({score,profit,roi,evidenceConfidence,evidenceGrade,hasLiveResale=true,compatWarnings=0}){
   if(compatWarnings>0) return {label:"FIX / VERIFY",tone:"warn",reason:"Compatibility or identity issues need attention before buying."};
   if(!hasLiveResale || evidenceGrade==="F" || evidenceGrade==="D") return {label:"VERIFY",tone:"warn",reason:"There is not enough real market evidence yet to publish a trusted resale/profit number."};
-  if(score>=82 && profit>=150 && roi>=20) return {label:"STRONG BUY",tone:"good",reason:"High projected margin with strong overall deal quality."};
+  if(["A","B"].includes(evidenceGrade) && evidenceConfidence!=="Insufficient" && score>=85 && profit>=150 && roi>=20) return {label:"STRONG BUY",tone:"good",reason:"High projected margin with strong overall deal quality."};
   if(score>=70 && profit>=100 && roi>=14) return {label:"BUY",tone:"good",reason:"Good projected economics if the hardware checks out."};
   if(score>=55 && profit>=40) return {label:"NEGOTIATE",tone:"warn",reason:"Potential deal, but margin needs a better purchase price."};
   if(evidenceConfidence==="Insufficient") return {label:"VERIFY",tone:"warn",reason:"Not enough evidence to trust the market estimate yet."};
@@ -171,7 +172,7 @@ export function generateListingCopy(input,{localLikely,onlineLikely,tier}={}){
     input.caseType,
     input.cooler
   ].filter(Boolean);
-  const description=`Clean gaming PC built around ${spec.join(", ")}. Great fit for ${tier?.label||"gaming"}. Fully test the system before listing and include benchmark screenshots, temperatures, storage health, and clear photos of the inside and outside. Local target price: ${localLikely?"$"+round(localLikely):"check local comps"}. Online target price: ${onlineLikely?"$"+round(onlineLikely):"check live comps"}.`;
+  const description=`Gaming PC with ${spec.join(", ")}. Great fit for ${tier?.label||"gaming"}. Fully test the system before listing and include benchmark screenshots, temperatures, storage health, and clear photos of the inside and outside. Local target price: ${localLikely?"$"+round(localLikely):"check local comps"}. Online target price: ${onlineLikely?"$"+round(onlineLikely):"check live comps"}.`;
   return {title,bullets,description};
 }
 
@@ -187,7 +188,10 @@ export function scoreBreakdown({result,live,best,appeal,liquidity}){
   const evidenceGrade=evidenceMeta.grade||"F";
   const evidenceScoreMap={A:95,B:82,C:65,D:42,F:18};
   const evidenceScore=evidenceScoreMap[evidenceGrade]||18;
-  const scoreCap=Number(evidenceMeta.scoreCap||45);
+  let scoreCap=Math.min({A:95,B:84,C:74,D:59,F:39}[evidenceGrade]??39,Number(evidenceMeta.scoreCap)||39);
+  if(live?.resale?.online?.costs?.shippingMedian==null)scoreCap=Math.min(scoreCap,69);
+  if(Number(evidenceMeta.completePcCompCount||0)<4)scoreCap=Math.min(scoreCap,59);
+  if(Number(best?.roi||0)>100)scoreCap=Math.min(scoreCap,59);
 
   const warningCount=result?.compatibility?.warnings?.length||0;
   const compatibility=clamp(100-warningCount*40);
@@ -268,10 +272,15 @@ export function buildOpportunitySummary(input,result,live){
   const hasLiveResale=Boolean(live?.available && live?.resale?.online?.likely && ["A","B","C"].includes(live?.evidence?.grade));
   const onlineLikely=hasLiveResale?Number(live.resale.online.likely):null;
   const localLikely=live?.resale?.local?.likely?Number(live.resale.local.likely):null;
-  const shipping=live?.resale?.online?.costs?.shippingMedian||0;
+  const shippingObserved=live?.resale?.online?.costs?.shippingMedian;
+  const shipping=shippingObserved==null?75:Number(shippingObserved);
+  const shippingAssumed=shippingObserved==null;
   const channels=hasLiveResale
-    ? channelScenarios({onlineLikely,localLikely:localLikely||onlineLikely*.92,acquisitionCost:input.price,shippingMedian:shipping})
+    ? channelScenarios({onlineLikely,localLikely,acquisitionCost:input.price,shippingMedian:shipping})
     : {};
+  for(const [key,value] of Object.entries(channels)){
+    if(key!=="local"&&shippingAssumed)value.note+=" Includes a $75 shipping/packing planning allowance, not a carrier quote. Verify before buying.";
+  }
   const best=Object.values(channels).sort((a,b)=>b.profit-a.profit)[0]||null;
   const buyTargets=hasLiveResale?marginBuyTargets({resale:onlineLikely,shipping}):null;
   const negotiation=hasLiveResale?negotiationPlan({askingPrice:input.price,maxBuy:buyTargets?.target20||result.maxBuy}):null;
@@ -284,8 +293,8 @@ export function buildOpportunitySummary(input,result,live){
   });
   const breakdown=scoreBreakdown({result,live,best,appeal,liquidity});
   const v=verdict({
-    score:breakdown.finalScore||result.score,
-    profit:best?.profit||result.profit,
+    score:breakdown.finalScore??result.score,
+    profit:best?.profit??0,
     roi:best?.roi||0,
     evidenceConfidence:live?.resale?.online?.confidence,
     evidenceGrade:live?.evidence?.grade,
@@ -293,7 +302,7 @@ export function buildOpportunitySummary(input,result,live){
     compatWarnings:result.compatibility?.warnings?.length||0
   });
   return {
-    onlineLikely,localLikely,shipping,channels,best,buyTargets,negotiation,
+    onlineLikely,localLikely,shipping,shippingAssumed,channels,best,buyTargets,negotiation,
     appeal,liquidity,verdict:v,scoreBreakdown:breakdown,
     sensitivity:hasLiveResale?sensitivityAnalysis({onlineLikely,localLikely,acquisitionCost:input.price,shippingMedian:shipping}):null,
     tier:gamingTier(input.gpu),
