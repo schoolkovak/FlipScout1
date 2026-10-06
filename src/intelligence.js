@@ -263,13 +263,17 @@ export function sensitivityAnalysis({onlineLikely,localLikely,acquisitionCost,sh
 
 export function buildOpportunitySummary(input,result,live){
   if(!result?.identityValid) return null;
-  const onlineLikely=live?.resale?.online?.likely||result.resale;
-  const localLikely=live?.resale?.local?.likely||Math.round(Number(onlineLikely||0)*.92);
+
+  const hasLiveResale=Boolean(live?.available && live?.resale?.online?.likely);
+  const onlineLikely=hasLiveResale?Number(live.resale.online.likely):null;
+  const localLikely=live?.resale?.local?.likely?Number(live.resale.local.likely):null;
   const shipping=live?.resale?.online?.costs?.shippingMedian||0;
-  const channels=channelScenarios({onlineLikely,localLikely,acquisitionCost:input.price,shippingMedian:shipping});
-  const best=Object.values(channels).sort((a,b)=>b.profit-a.profit)[0];
-  const buyTargets=marginBuyTargets({resale:onlineLikely,shipping});
-  const negotiation=negotiationPlan({askingPrice:input.price,maxBuy:buyTargets?.target20||result.maxBuy});
+  const channels=hasLiveResale
+    ? channelScenarios({onlineLikely,localLikely:localLikely||onlineLikely*.92,acquisitionCost:input.price,shippingMedian:shipping})
+    : {};
+  const best=Object.values(channels).sort((a,b)=>b.profit-a.profit)[0]||null;
+  const buyTargets=hasLiveResale?marginBuyTargets({resale:onlineLikely,shipping}):null;
+  const negotiation=hasLiveResale?negotiationPlan({askingPrice:input.price,maxBuy:buyTargets?.target20||result.maxBuy}):null;
   const appeal=buyerAppealScore(input);
   const liquidity=liquidityScore({
     gpu:input.gpu,
@@ -288,10 +292,11 @@ export function buildOpportunitySummary(input,result,live){
   return {
     onlineLikely,localLikely,shipping,channels,best,buyTargets,negotiation,
     appeal,liquidity,verdict:v,scoreBreakdown:breakdown,
-    sensitivity:sensitivityAnalysis({onlineLikely,localLikely,acquisitionCost:input.price,shippingMedian:shipping}),
+    sensitivity:hasLiveResale?sensitivityAnalysis({onlineLikely,localLikely,acquisitionCost:input.price,shippingMedian:shipping}):null,
     tier:gamingTier(input.gpu),
     upgrades:upgradeIdeas(input),
     listing:generateListingCopy(input,{localLikely,onlineLikely,tier:gamingTier(input.gpu)}),
-    saleStrategy:buildSaleStrategy({onlineLikely,localLikely,marketLow:result.low,marketHigh:result.high})
+    saleStrategy:hasLiveResale?buildSaleStrategy({onlineLikely,localLikely,marketLow:live?.resale?.online?.low,marketHigh:live?.resale?.online?.high}):null,
+    hasLiveResale
   };
 }
