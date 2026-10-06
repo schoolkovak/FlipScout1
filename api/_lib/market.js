@@ -464,21 +464,27 @@ function marketplaceIdFromResult(seller,url){
   try{host=new URL(url||"").hostname.toLowerCase();}catch{}
   const hay=s+" "+host;
   if(hay.includes("amazon")) return "amazon";
+  if(hay.includes("bestbuy") || hay.includes("best buy")) return "bestbuy";
+  if(hay.includes("walmart")) return "walmart";
   if(hay.includes("newegg")) return "newegg";
   if(hay.includes("ebay")) return "ebay";
+  if(hay.includes("aliexpress") || hay.includes("ali express")) return "aliexpress";
+  if(hay.includes("bhphotovideo") || hay.includes("b&h photo")) return "bhphoto";
+  if(hay.includes("adorama")) return "adorama";
+  if(hay.includes("microcenter") || hay.includes("micro center")) return "microcenter";
   if(hay.includes("mercari")) return "mercari";
   return null;
 }
 
 function marketplaceName(id){
-  return id==="amazon"?"Amazon":id==="newegg"?"Newegg":id==="ebay"?"eBay":id==="mercari"?"Mercari":id||"Marketplace";
+  return id==="amazon"?"Amazon":id==="bestbuy"?"Best Buy":id==="walmart"?"Walmart":id==="newegg"?"Newegg":id==="ebay"?"eBay":id==="aliexpress"?"AliExpress":id==="bhphoto"?"B&H Photo":id==="adorama"?"Adorama":id==="microcenter"?"Micro Center":id==="mercari"?"Mercari":id||"Marketplace";
 }
 
 export async function searchSerperMarketplaces(input){
   const {query,category,condition,marketplaces=[]}=input;
   const apiKey=providerKey("SERPER_API_KEY",input);
   if(!apiKey) return [];
-  const selected=new Set(marketplaces.length?marketplaces:["amazon","newegg","ebay","mercari"]);
+  const selected=new Set(marketplaces.length?marketplaces:["amazon","bestbuy","walmart","newegg","ebay","aliexpress","bhphoto","adorama","microcenter","mercari"]);
   const conditionTerm=conditionSearchTerm(condition);
   const q=[conditionTerm,query].filter(Boolean).join(" ");
   const response=await providerFetch("https://google.serper.dev/shopping",{
@@ -566,7 +572,8 @@ function structuredGooglePrice(x){
 
 export async function searchSearchApiSiteMarketplace(input,marketplace){
   const {query,category,condition,providerKeys={}}=input;
-  const domain=marketplace==="newegg"?"newegg.com":marketplace==="mercari"?"mercari.com":null;
+  const domains={newegg:"newegg.com",mercari:"mercari.com",bestbuy:"bestbuy.com",walmart:"walmart.com",aliexpress:"aliexpress.us",bhphoto:"bhphotovideo.com",adorama:"adorama.com",microcenter:"microcenter.com"};
+  const domain=domains[marketplace]||null;
   if(!domain)return [];
   const q=["site:"+domain,conditionSearchTerm(condition),query].filter(Boolean).join(" ");
   const data=await searchSearchApiEngine("google",q,{gl:"us",hl:"en",link:"resolved"},providerKeys);
@@ -1028,7 +1035,7 @@ export async function liveSearch(input){
 }
 
 export async function searchPartsSniper(input){
-  const selected=[...new Set((input.marketplaces||["amazon","newegg","ebay","mercari"]).filter(Boolean))];
+  const selected=[...new Set((input.marketplaces||["amazon","bestbuy","walmart","newegg","ebay","aliexpress","bhphoto","adorama","microcenter","mercari"]).filter(Boolean))];
   const key="sniper|"+cacheKey({...input,marketplaces:selected});
   const hit=searchCache.get(key);
   if(hit && Date.now()-hit.savedAt<hit.ttl)return {...hit.value,cached:true};
@@ -1048,7 +1055,7 @@ export async function searchPartsSniper(input){
   }
 
   if(!hasSerper&&hasSearchApi){
-    for(const marketplace of ["newegg","mercari"]){
+    for(const marketplace of ["bestbuy","walmart","newegg","aliexpress","bhphoto","adorama","microcenter","mercari"]){
       if(selected.includes(marketplace))providers.push([marketplaceName(marketplace),()=>searchSearchApiSiteMarketplace(input,marketplace)]);
     }
   }
