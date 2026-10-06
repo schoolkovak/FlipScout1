@@ -56,12 +56,12 @@ function TopNav({tab,setTab}){
   const items=[
     ["analyze","Analyze",Gauge],
     ["scan","Deal Scanner",Search],
-    ["sniper","Parts & Sniper",Target],
+    ["sniper","Deal Hunt",Target],
     ["workspace","Workspace",Layers],
     ["pro","FlipScout Pro",Trophy]
   ];
   return <nav className="topNav">
-    <div className="navBrand" onClick={()=>setTab("analyze")}><div className="logo">FS</div><div><b>FlipScout</b><span>PC flip intelligence</span></div></div>
+    <div className="navBrand" onClick={()=>setTab("analyze")}><div className="logo">FS</div><div><b>FlipScout</b><span>PC market intelligence</span></div></div>
     <div className="navTabs">{items.map(([id,label,Icon])=><button key={id} className={tab===id?"active":""} onClick={()=>setTab(id)}><Icon size={16}/>{label}</button>)}</div>
     <div className="betaPill">BETA · PRO UNLOCKED</div>
   </nav>;
@@ -70,18 +70,18 @@ function TopNav({tab,setTab}){
 function Hero({tab,setTab}){
   return <section className="heroNew">
     <div className="heroCopy">
-      <span className="eyebrow">BUILT FOR PC FLIPPERS</span>
-      <h1>Know the <em>real margin</em> before you buy.</h1>
-      <p>Validate the parts, compare live market evidence, estimate local vs. online resale, calculate selling costs, and get a negotiation number in one place.</p>
+      <span className="eyebrow">PC MARKET INTELLIGENCE</span>
+      <h1>Know what PC hardware is <em>actually worth.</em></h1>
+      <p>Validate parts, compare live prices across trusted stores and marketplaces, plan smarter builds, estimate resale, and know when a listing is genuinely worth buying.</p>
       <div className="heroActions">
         <button className="primary large" onClick={()=>setTab("analyze")}><Gauge size={18}/>Analyze a PC</button>
         <button className="secondary large" onClick={()=>setTab("scan")}><Search size={18}/>Find part deals</button>
       </div>
     </div>
     <div className="heroProof">
-      <div><b>Real comps</b><span>Current listings, not AI guesses</span></div>
-      <div><b>Sell strategy</b><span>Quick / likely / stretch pricing</span></div>
-      <div><b>Profit by channel</b><span>Local, eBay, Jawa</span></div>
+      <div><b>Live price evidence</b><span>Trusted retailers + marketplaces</span></div>
+      <div><b>Buy smarter</b><span>Fair value, deal quality, risk flags</span></div>
+      <div><b>Build + resale</b><span>Budget fit and exit-value intelligence</span></div>
       <div><b>300+ CPU/GPU SKUs</b><span>Grouped desktop catalog through current 2026 generations</span></div>
     </div>
   </section>;
@@ -596,7 +596,7 @@ function PartsSniper({providerKeys,onWatchChange}){
   const [targets,setTargets]=useState(()=>[
     {id:"target-1",category:"GPU",query:"RTX 5070",condition:"used",maxPrice:550,buildBudget:1000,committed:300}
   ]);
-  const [marketplaces,setMarketplaces]=useState(["amazon","newegg","ebay","mercari"]);
+  const [marketplaces,setMarketplaces]=useState(["amazon","bestbuy","walmart","newegg","ebay","aliexpress","bhphoto","adorama","microcenter","mercari"]);
   const [deepScan,setDeepScan]=useState(false);
   const [loading,setLoading]=useState(false);
   const [data,setData]=useState(null);
@@ -658,18 +658,18 @@ function PartsSniper({providerKeys,onWatchChange}){
         signal:AbortSignal.timeout(45000)
       });
       const d=await r.json();
-      if(!r.ok){setError(d.message||"Parts & Sniper could not run this scan.");return;}
+      if(!r.ok){setError(d.message||"Deal Hunt could not run this scan.");return;}
       setData(d);
       if(!d.available)setError(d.message||"No qualifying live listings were found.");
     }catch{
-      setError("Parts & Sniper could not reach the live marketplace service. Try again.");
+      setError("Deal Hunt could not reach the live shopping service. Try again.");
     }finally{setLoading(false);}
   }
 
   return <div className="pageStack">
     <section className="sniperHero">
-      <div><span className="eyebrow">PARTS & SNIPER</span><h2>Hunt several PC parts at once.</h2><p>Track up to five targets across Amazon, Newegg, eBay, and Mercari. FlipScout filters junk results, compares delivered prices, and ranks the listings that deserve attention.</p></div>
-      <div className="sniperHeroStats"><div><b>38</b><span>part categories</span></div><div><b>4</b><span>marketplaces</span></div><div><b>5</b><span>targets per scan</span></div><div><b>6</b><span>condition filters</span></div></div>
+      <div><span className="eyebrow">DEAL HUNT</span><h2>Search the PC market from one place.</h2><p>Track up to five parts across trusted retailers and marketplaces. FlipScout filters irrelevant results, compares delivered prices, and ranks the listings that deserve attention.</p></div>
+      <div className="sniperHeroStats"><div><b>38</b><span>part categories</span></div><div><b>10</b><span>shopping sources</span></div><div><b>5</b><span>targets per scan</span></div><div><b>6</b><span>condition filters</span></div></div>
     </section>
 
     <section className="panel">
