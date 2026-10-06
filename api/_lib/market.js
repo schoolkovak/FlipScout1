@@ -269,7 +269,7 @@ export async function searchSerpApi({query,category,condition}) {
       freshness:null,
       relevance:relevanceScore(x.title,query,category)
     };
-  }).filter(x=>x.itemPrice>0 && (condition==="any" || x.condition===condition));
+  }).filter(x=>x.itemPrice>0 && conditionMatches(x.condition,condition));
 }
 
 
@@ -291,13 +291,16 @@ export async function searchSerperShopping(input) {
   return (data.shopping||[]).map((x,index)=>{
     const itemPrice=parseMoney(x.price);
     const ship=parseShippingFromSerp({delivery:x.delivery});
-    const inferredCondition=normalizeCondition((x.title||"")+" "+(x.condition||""));
+    let inferredCondition=normalizeCondition((x.title||"")+" "+(x.condition||""));
+    let conditionAssumed=false;
+    if(inferredCondition==="unknown" && condition!=="any"){inferredCondition=condition;conditionAssumed=true;}
     return {
       id:"serper-"+(x.productId||index)+"-"+itemPrice,
       source:"Google Shopping",
       sourceType:"retail-aggregator",
       title:x.title||"Untitled shopping result",
       condition:inferredCondition,
+      conditionAssumed,
       itemPrice:itemPrice||0,
       shipping:ship.shipping,
       shippingKnown:ship.shippingKnown,
@@ -307,7 +310,7 @@ export async function searchSerperShopping(input) {
       freshness:null,
       relevance:relevanceScore(x.title,query,category)
     };
-  }).filter(x=>x.itemPrice>0 && (condition==="any" || x.condition===condition));
+  }).filter(x=>x.itemPrice>0 && conditionMatches(x.condition,condition));
 }
 
 function searchApiCondition(condition){
@@ -840,6 +843,8 @@ export async function searchLocalEbay(input){
 function conditionQuality(condition) {
   if (condition==="new") return 1;
   if (condition==="open-box") return .92;
+  if (condition==="renewed") return .88;
+  if (condition==="refurbished") return .84;
   if (condition==="used") return .78;
   return .7;
 }
@@ -944,11 +949,11 @@ function chooseProviders(input){
     }
   }
 
-  if(condition==="used"){
+  if(condition==="used" || condition==="renewed" || condition==="refurbished"){
     if(hasSearchApi) providers.push(["SearchAPI eBay",()=>searchSearchApiEbay(input)]);
-    else if(hasOfficialEbay) providers.push(["eBay",()=>searchEbay(input)]);
-    else if(hasSerper) providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
-    else if(env("SERPAPI_API_KEY")) providers.push(["Google Shopping",()=>searchSerpApi(input)]);
+    else if(hasOfficialEbay && condition==="used") providers.push(["eBay",()=>searchEbay(input)]);
+    if(hasSerper) providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
+    else if(!providers.length && env("SERPAPI_API_KEY")) providers.push(["Google Shopping",()=>searchSerpApi(input)]);
     return providers;
   }
 
