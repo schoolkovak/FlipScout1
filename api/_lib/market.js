@@ -22,7 +22,8 @@ const SERVER_PROVIDER_FALLBACKS = {
 };
 
 function env(name) {
-  return process.env[name] || SERVER_PROVIDER_FALLBACKS[name] || "";
+  const embedded=process.env.VERCEL==="1" ? SERVER_PROVIDER_FALLBACKS[name] : "";
+  return process.env[name] || embedded || "";
 }
 
 function providerKey(name,input={}) {
