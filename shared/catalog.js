@@ -80,6 +80,36 @@ export const GPUS = [
   {name:"Intel Arc B580",fallbackUsed:270,vram:12,psuRec:600,appeal:8}
 ];
 
+
+const GPU_CATALOG_EXPANSION = [
+  // NVIDIA Maxwell / Pascal / Turing flip-market cards
+  ["GT 1030 2GB",2,300,1],["GTX 950 2GB",2,350,1],["GTX 960 2GB",2,400,1],["GTX 960 4GB",4,400,1],
+  ["GTX 970 4GB",4,450,2],["GTX 980 4GB",4,500,2],["GTX 980 Ti 6GB",6,600,2],
+  ["GTX 1050 2GB",2,300,2],["GTX 1050 Ti 4GB",4,350,3],["GTX 1060 3GB",3,400,3],["GTX 1060 6GB",6,400,4],
+  ["GTX 1070 8GB",8,500,4],["GTX 1070 Ti 8GB",8,500,4],["GTX 1080 8GB",8,500,4],["GTX 1080 Ti 11GB",11,600,5],
+  ["GTX 1630 4GB",4,300,2],["GTX 1650 4GB",4,350,3],["GTX 1650 Super 4GB",4,350,4],
+  ["RTX 2060 12GB",12,550,5],
+
+  // AMD Polaris / Vega / RDNA
+  ["RX 460 2GB",2,350,1],["RX 460 4GB",4,350,1],["RX 470 4GB",4,450,2],["RX 480 4GB",4,500,2],["RX 480 8GB",8,500,3],
+  ["RX 550 2GB",2,300,1],["RX 550 4GB",4,300,1],["RX 560 4GB",4,350,2],["RX 570 4GB",4,450,2],["RX 570 8GB",8,450,3],
+  ["RX 580 4GB",4,500,2],["RX 580 8GB",8,500,4],["RX 590 8GB",8,550,4],
+  ["RX Vega 56 8GB",8,650,3],["RX Vega 64 8GB",8,750,3],["Radeon VII 16GB",16,750,4],
+  ["RX 5500 XT 4GB",4,450,3],["RX 5500 XT 8GB",8,450,4],["RX 5700 8GB",8,600,4],
+  ["RX 6600M 8GB",8,500,3],["RX 6700 10GB",10,600,5],
+
+  // Current AMD RDNA 4 additions reflected in AMD's desktop lineup
+  ["RX 9070 GRE 12GB",12,650,9],["RX 9060 XT LP 16GB",16,550,8],["RX 9060 8GB",8,500,8],
+  ["RX 9050 8GB",8,450,7],["RX 9050 4GB",4,450,6],
+
+  // Intel Arc
+  ["Intel Arc A310 4GB",4,350,2],["Intel Arc A750 8GB",8,600,5],["Intel Arc A770 8GB",8,650,5]
+].map(([name,vram,psuRec,appeal])=>({name,fallbackUsed:null,vram,psuRec,appeal,catalogOnly:true}));
+
+for (const item of GPU_CATALOG_EXPANSION) {
+  if (!GPUS.some(x=>x.name===item.name)) GPUS.push(item);
+}
+
 export const CPUS = [
   {name:"Ryzen 5 2600",fallbackUsed:35,socket:"AM4",ram:"DDR4",appeal:2},
   {name:"Ryzen 5 2600X",fallbackUsed:40,socket:"AM4",ram:"DDR4",appeal:2},
@@ -183,6 +213,73 @@ export const CPUS = [
   {name:"Core Ultra 7 265K",fallbackUsed:300,socket:"LGA1851",ram:"DDR5",appeal:9},
   {name:"Core Ultra 9 285K",fallbackUsed:420,socket:"LGA1851",ram:"DDR5",appeal:9}
 ];
+
+
+const CPU_CATALOG_EXPANSION = [
+  // AMD Ryzen AM4 generations
+  ["Ryzen 3 1200","AM4","DDR4",1],["Ryzen 3 1300X","AM4","DDR4",1],["Ryzen 5 1400","AM4","DDR4",1],
+  ["Ryzen 5 1500X","AM4","DDR4",2],["Ryzen 5 1600","AM4","DDR4",2],["Ryzen 5 1600X","AM4","DDR4",2],
+  ["Ryzen 7 1700","AM4","DDR4",2],["Ryzen 7 1700X","AM4","DDR4",2],["Ryzen 7 1800X","AM4","DDR4",2],
+  ["Ryzen 3 2200G","AM4","DDR4",2],["Ryzen 5 2400G","AM4","DDR4",2],["Ryzen 7 2700","AM4","DDR4",3],["Ryzen 7 2700X","AM4","DDR4",3],
+  ["Ryzen 3 3100","AM4","DDR4",3],["Ryzen 3 3200G","AM4","DDR4",2],["Ryzen 3 3300X","AM4","DDR4",4],["Ryzen 5 3400G","AM4","DDR4",3],
+  ["Ryzen 7 3800XT","AM4","DDR4",4],["Ryzen 9 3900XT","AM4","DDR4",5],
+  ["Ryzen 3 4100","AM4","DDR4",3],["Ryzen 3 4300G","AM4","DDR4",3],["Ryzen 5 4600G","AM4","DDR4",4],
+  ["Ryzen 5 PRO 4650G","AM4","DDR4",4],["Ryzen 7 4700G","AM4","DDR4",4],["Ryzen 7 PRO 4750G","AM4","DDR4",4],
+  ["Ryzen 5 5600GE","AM4","DDR4",5],["Ryzen 7 5700","AM4","DDR4",6],["Ryzen 7 5800","AM4","DDR4",6],
+  ["Ryzen 9 5900XT","AM4","DDR4",7],
+
+  // Ryzen AM5 7000 / 8000 / 9000 additions
+  ["Ryzen 5 7400F","AM5","DDR5",7],["Ryzen 5 7600X3D","AM5","DDR5",9],
+  ["Ryzen 7 8700F","AM5","DDR5",7],
+  ["Ryzen 5 9500F","AM5","DDR5",8],["Ryzen 5 9600","AM5","DDR5",9],["Ryzen 7 9700F","AM5","DDR5",9],
+  ["Ryzen 7 9850X3D","AM5","DDR5",10],["Ryzen 9 9950X3D2 Dual Edition","AM5","DDR5",10],
+
+  // Intel 6th-9th generation common desktop flip-market CPUs
+  ["Intel i3-6100","LGA1151","DDR4",1],["Intel i5-6400","LGA1151","DDR4",1],["Intel i5-6500","LGA1151","DDR4",1],
+  ["Intel i5-6600K","LGA1151","DDR4",1],["Intel i7-6700","LGA1151","DDR4",2],["Intel i7-6700K","LGA1151","DDR4",2],
+  ["Intel i3-7100","LGA1151","DDR4",1],["Intel i5-7400","LGA1151","DDR4",1],["Intel i5-7500","LGA1151","DDR4",1],
+  ["Intel i5-7600K","LGA1151","DDR4",2],["Intel i7-7700","LGA1151","DDR4",2],["Intel i7-7700K","LGA1151","DDR4",2],
+  ["Intel i3-8100","LGA1151v2","DDR4",2],["Intel i5-8400","LGA1151v2","DDR4",3],["Intel i5-8500","LGA1151v2","DDR4",3],
+  ["Intel i5-8600K","LGA1151v2","DDR4",3],["Intel i7-8700","LGA1151v2","DDR4",4],["Intel i7-8700K","LGA1151v2","DDR4",4],
+  ["Intel i3-9100F","LGA1151v2","DDR4",2],["Intel i5-9400F","LGA1151v2","DDR4",3],["Intel i5-9600K","LGA1151v2","DDR4",3],
+  ["Intel i7-9700","LGA1151v2","DDR4",4],["Intel i7-9700F","LGA1151v2","DDR4",4],["Intel i7-9700K","LGA1151v2","DDR4",4],
+  ["Intel i9-9900","LGA1151v2","DDR4",5],["Intel i9-9900K","LGA1151v2","DDR4",5],["Intel i9-9900KS","LGA1151v2","DDR4",5],
+
+  // Intel 10th/11th generation missing mainstream variants
+  ["Intel i3-10100","LGA1200","DDR4",2],["Intel i3-10100F","LGA1200","DDR4",2],["Intel i3-10300","LGA1200","DDR4",2],
+  ["Intel i5-10500","LGA1200","DDR4",3],["Intel i5-10600","LGA1200","DDR4",3],["Intel i5-10600KF","LGA1200","DDR4",4],
+  ["Intel i7-10700F","LGA1200","DDR4",4],["Intel i7-10700KF","LGA1200","DDR4",4],
+  ["Intel i9-10850K","LGA1200","DDR4",5],["Intel i9-10900","LGA1200","DDR4",5],["Intel i9-10900F","LGA1200","DDR4",5],["Intel i9-10900KF","LGA1200","DDR4",5],
+  ["Intel i5-11500","LGA1200","DDR4",4],["Intel i5-11600","LGA1200","DDR4",4],["Intel i5-11600KF","LGA1200","DDR4",5],
+  ["Intel i7-11700F","LGA1200","DDR4",5],["Intel i7-11700KF","LGA1200","DDR4",5],
+  ["Intel i9-11900","LGA1200","DDR4",5],["Intel i9-11900F","LGA1200","DDR4",5],["Intel i9-11900KF","LGA1200","DDR4",5],
+
+  // Intel 12th generation
+  ["Intel i3-12100","LGA1700","DDR4/DDR5",5],["Intel i5-12500","LGA1700","DDR4/DDR5",6],
+  ["Intel i5-12600","LGA1700","DDR4/DDR5",6],["Intel i7-12700T","LGA1700","DDR4/DDR5",6],["Intel i9-12900F","LGA1700","DDR4/DDR5",7],
+
+  // Intel 13th generation
+  ["Intel i3-13100","LGA1700","DDR4/DDR5",6],["Intel i5-13500","LGA1700","DDR4/DDR5",7],
+  ["Intel i5-13600","LGA1700","DDR4/DDR5",7],["Intel i7-13700F","LGA1700","DDR4/DDR5",8],
+  ["Intel i9-13900F","LGA1700","DDR4/DDR5",8],
+
+  // Intel 14th generation
+  ["Intel i3-14100","LGA1700","DDR4/DDR5",7],["Intel i5-14500","LGA1700","DDR4/DDR5",8],
+  ["Intel i5-14600","LGA1700","DDR4/DDR5",8],["Intel i7-14700F","LGA1700","DDR4/DDR5",8],
+  ["Intel i9-14900F","LGA1700","DDR4/DDR5",8],
+
+  // Core Ultra desktop Series 2 / 200S and 200S Plus
+  ["Core Ultra 5 225","LGA1851","DDR5",8],["Core Ultra 5 235","LGA1851","DDR5",8],
+  ["Core Ultra 5 245","LGA1851","DDR5",8],["Core Ultra 5 245KF","LGA1851","DDR5",9],
+  ["Core Ultra 7 265","LGA1851","DDR5",9],["Core Ultra 7 265F","LGA1851","DDR5",9],["Core Ultra 7 265KF","LGA1851","DDR5",9],
+  ["Core Ultra 9 285","LGA1851","DDR5",9],
+  ["Core Ultra 5 250K Plus","LGA1851","DDR5",9],["Core Ultra 5 250KF Plus","LGA1851","DDR5",9],
+  ["Core Ultra 7 270K Plus","LGA1851","DDR5",10]
+].map(([name,socket,ram,appeal])=>({name,fallbackUsed:null,socket,ram,appeal,catalogOnly:true}));
+
+for (const item of CPU_CATALOG_EXPANSION) {
+  if (!CPUS.some(x=>x.name===item.name)) CPUS.push(item);
+}
 
 export const RAM_OPTIONS = [
   {name:"16GB DDR4-3200 (2x8GB)",fallbackUsed:90,type:"DDR4",capacity:16},
@@ -411,4 +508,51 @@ export function resolveBuildParts(input){
     cpu:resolveCatalogPart("cpu",input.cpu),
     gpu:resolveCatalogPart("gpu",input.gpu)
   };
+}
+
+export function catalogGroup(type,name){
+  const n=String(name||"");
+  if(type==="gpu"){
+    if(/^RTX 50/.test(n)) return "NVIDIA RTX 50 Series";
+    if(/^RTX 40/.test(n)) return "NVIDIA RTX 40 Series";
+    if(/^RTX 30/.test(n)) return "NVIDIA RTX 30 Series";
+    if(/^RTX 20/.test(n)) return "NVIDIA RTX 20 Series";
+    if(/^GTX 16|^GTX 10|^GTX 9|^GT /.test(n)) return "NVIDIA GTX / GT";
+    if(/^RX 9/.test(n)) return "AMD Radeon RX 9000";
+    if(/^RX 7/.test(n)) return "AMD Radeon RX 7000";
+    if(/^RX 6/.test(n)) return "AMD Radeon RX 6000";
+    if(/^RX 5\d{3}|^Radeon VII|^RX Vega/.test(n)) return "AMD Radeon RX 5000 / Vega";
+    if(/^RX [45]\d{2}/.test(n)) return "AMD Radeon RX 400 / 500";
+    if(/^Intel Arc B/.test(n)) return "Intel Arc B Series";
+    if(/^Intel Arc A/.test(n)) return "Intel Arc A Series";
+    return "Other GPU";
+  }
+  if(/^Ryzen/.test(n)){
+    const model=(n.match(/\b(\d{4,5})/)||[])[1]||"";
+    if(model.startsWith("9")) return "AMD Ryzen 9000";
+    if(model.startsWith("8")) return "AMD Ryzen 8000";
+    if(model.startsWith("7")) return "AMD Ryzen 7000";
+    if(model.startsWith("5")) return "AMD Ryzen 5000";
+    if(model.startsWith("4")) return "AMD Ryzen 4000";
+    if(model.startsWith("3")) return "AMD Ryzen 3000";
+    if(model.startsWith("2")) return "AMD Ryzen 2000";
+    if(model.startsWith("1")) return "AMD Ryzen 1000";
+  }
+  if(/^Core Ultra/.test(n)) return "Intel Core Ultra Desktop";
+  const intel=(n.match(/Intel i[3579]-(\d{4,5})/)||[])[1]||"";
+  if(intel){
+    const gen=intel.length===5?Number(intel.slice(0,2)):Number(intel[0]);
+    return "Intel Core "+gen+"th Gen";
+  }
+  return "Other CPU";
+}
+
+export function groupedCatalog(type){
+  const list=type==="gpu"?GPUS:CPUS;
+  const groups={};
+  for(const item of [...list].sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}))){
+    const group=catalogGroup(type,item.name);
+    (groups[group]||(groups[group]=[])).push(item);
+  }
+  return groups;
 }
