@@ -214,6 +214,23 @@ function ChannelProfit({summary}){
   </section>;
 }
 
+function SensitivityPanel({summary}){
+  const s=summary?.sensitivity;
+  if(!s)return null;
+  return <section className="resultSection">
+    <div className="sectionHeading"><div><span className="eyebrow">STRESS TEST</span><h3>Does the deal survive a weaker sale?</h3><p>Downside matters more than the optimistic case when you're tying up cash.</p></div><ShieldCheck/></div>
+    <div className="stressHeadline">
+      <div><span>Online break-even sale</span><b>{money(s.onlineBreakEven)}</b></div>
+      <div><span>Margin of safety</span><b className={s.marginOfSafetyPct>=15?"goodText":s.marginOfSafetyPct>=5?"":"badText"}>{s.marginOfSafetyPct}%</b></div>
+      <div><span>10% downside test</span><b className={s.survivesOnlineDownside?"goodText":"badText"}>{s.survivesOnlineDownside?"Still profitable":"Turns negative"}</b></div>
+    </div>
+    <div className="stressGrid">
+      <div><span className="fieldLabel">Online / eBay scenario</span>{s.online.map((x,i)=><div className="stressRow" key={i}><span>{x.label}</span><b>{money(x.sale)}</b><strong className={x.profit>=0?"goodText":"badText"}>{money(x.profit)} profit</strong></div>)}</div>
+      <div><span className="fieldLabel">Local cash scenario</span>{s.local.length?s.local.map((x,i)=><div className="stressRow" key={i}><span>{x.label}</span><b>{money(x.sale)}</b><strong className={x.profit>=0?"goodText":"badText"}>{money(x.profit)} profit</strong></div>):<div className="emptyState">Add a ZIP and enough local comps to stress-test local resale.</div>}</div>
+    </div>
+  </section>;
+}
+
 function BuyTargets({summary}){
   if(!summary?.buyTargets)return null;
   return <section className="resultSection">
@@ -436,6 +453,7 @@ function Analyze({providerKeys,onSaved}){
       <StrategyStrip summary={summary}/>
       <div className="saveBar"><div><b>{form.gpu} + {form.cpu}</b><span>{money(form.price)} acquisition · {summary.verdict.label}</span></div><button className={saved?"secondary":"primary"} onClick={saveCurrent}>{saved?<><CheckCircle2 size={16}/>Saved</>:<><Save size={16}/>Save to workspace</>}</button></div>
       <ChannelProfit summary={summary}/>
+      <SensitivityPanel summary={summary}/>
       <BuyTargets summary={summary}/>
       <UpgradeIdeas summary={summary}/>
       <ListingStudio summary={summary} input={form}/>
