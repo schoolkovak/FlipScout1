@@ -76,7 +76,7 @@ function Hero({tab,setTab}){
       <div><b>Real comps</b><span>Current listings, not AI guesses</span></div>
       <div><b>Sell strategy</b><span>Quick / likely / stretch pricing</span></div>
       <div><b>Profit by channel</b><span>Local, eBay, Jawa</span></div>
-      <div><b>Bad-data guardrails</b><span>Fake and ambiguous parts rejected</span></div>
+      <div><b>340+ CPU/GPU SKUs</b><span>Grouped desktop catalog through current 2026 generations</span></div>
     </div>
   </section>;
 }
