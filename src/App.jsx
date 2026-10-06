@@ -517,9 +517,10 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
         <div><span>Confidence</span><strong>{data.market.confidence}</strong><small>{data.market.shippingKnownPct}% with known shipping</small></div>
       </div>
       <div className="dealList">{(data.results||[]).map((x,i)=><article className="dealCard" key={x.id||i}>
-        <div className="dealTop"><div><div className="dealBadges"><span className="source">{x.source}</span>{x.soldCount>0&&<span className="soldChip">{x.soldCount}+ sold</span>}</div><h3>{x.title}</h3></div><div className="dealScore">{x.score}</div></div>
+        <div className="dealTop"><div><div className="dealBadges"><span className="source">{x.source}</span>{x.soldCount>0&&<span className="soldChip">{x.soldCount}+ sold</span>}</div><h3>{x.title}</h3></div><div className="dealScore"><b>{x.score}</b><small>cap {x.scoreCap||100}</small></div></div>
         <div className="dealPriceRow"><strong>{x.shippingKnown?money(x.totalPrice):money(x.itemPrice)}</strong><span>{x.shippingKnown?"delivered":"shipping unknown"}</span></div>
         <div className="dealMeta"><span>{x.condition}</span><span className={x.percentVsMarket>=10?"goodText":x.percentVsMarket<0?"badText":""}>{x.percentVsMarket>=0?x.percentVsMarket+"% under market":Math.abs(x.percentVsMarket)+"% over market"}</span><span>Build left {money(x.budgetLeft)}</span><span>{x.withinPartBudget?"Fits part budget":"Over part budget"}</span></div>
+        {x.riskFlags?.length>0&&<div className="dealRisks">{x.riskFlags.slice(0,3).map((risk,j)=><span key={j}><AlertTriangle size={12}/>{risk}</span>)}</div>}
         <div className="dealActions">{x.url&&<a className="listingLink" href={x.url} target="_blank" rel="noreferrer">Open listing <ExternalLink size={14}/></a>}<button className="watchButton" onClick={()=>toggle(x)}>{watchedNow(x)?<BookmarkCheck size={16}/>:<Bookmark size={16}/>} {watchedNow(x)?"Watching":"Watch"}</button></div>
       </article>)}</div>
     </>}
