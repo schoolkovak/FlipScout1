@@ -41,8 +41,14 @@ export const SNIPER_CATEGORIES = [
 
 export const SNIPER_MARKETPLACES = [
   {id:"amazon",name:"Amazon",domain:"amazon.com",supports:["new","renewed","refurbished","used","any"]},
+  {id:"bestbuy",name:"Best Buy",domain:"bestbuy.com",supports:["new","open-box","any"],trust:"retailer"},
+  {id:"walmart",name:"Walmart",domain:"walmart.com",supports:["new","refurbished","any"],trust:"retailer-marketplace"},
   {id:"newegg",name:"Newegg",domain:"newegg.com",supports:["new","open-box","refurbished","used","any"]},
   {id:"ebay",name:"eBay",domain:"ebay.com",supports:["new","open-box","renewed","refurbished","used","any"]},
+  {id:"aliexpress",name:"AliExpress",domain:"aliexpress.us",supports:["new","any"],trust:"marketplace"},
+  {id:"bhphoto",name:"B&H Photo",domain:"bhphotovideo.com",supports:["new","used","any"],trust:"retailer"},
+  {id:"adorama",name:"Adorama",domain:"adorama.com",supports:["new","used","any"],trust:"retailer"},
+  {id:"microcenter",name:"Micro Center",domain:"microcenter.com",supports:["new","open-box","any"],trust:"retailer"},
   {id:"mercari",name:"Mercari",domain:"mercari.com",supports:["new","open-box","renewed","refurbished","used","any"]}
 ];
 
