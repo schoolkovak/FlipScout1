@@ -397,11 +397,19 @@ function Analyze({providerKeys,onSaved}){
         const score=Math.max(0,Math.min(100,Math.round(54+discount*92-warningPenalty+evidenceBoost)));
         finalResult={...fallback,low:d.market.low,high:d.market.high,resale,sellingCosts,profit,maxBuy,score,identityValid:true};
       }
+      const builtSummary=buildOpportunitySummary(form,finalResult,d);
+      if(builtSummary?.scoreBreakdown?.finalScore!=null){
+        finalResult={...finalResult,score:builtSummary.scoreBreakdown.finalScore};
+      }
       setResult(finalResult);
-      setSummary(buildOpportunitySummary(form,finalResult,d));
+      setSummary(builtSummary);
     }catch{
-      setLive({available:false,valid:fallback.identityValid,message:"Live market service unavailable; fallback shown."});
-      setSummary(buildOpportunitySummary(form,fallback,null));
+      const unavailable={available:false,valid:fallback.identityValid,message:"Live market service unavailable; fallback-only screening."};
+      setLive(unavailable);
+      const builtSummary=buildOpportunitySummary(form,fallback,unavailable);
+      const capped={...fallback,score:builtSummary?.scoreBreakdown?.finalScore??Math.min(Number(fallback.score||0),45)};
+      setResult(capped);
+      setSummary(builtSummary);
     }finally{setLoading(false);}
   }
 
