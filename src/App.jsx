@@ -462,10 +462,24 @@ function Workspace({refreshKey}){
   function removeAnalysis(id){setHistory(deleteAnalysis(id));}
   function removeSearch(id){setSearches(deleteSavedSearch(id));}
   function removeWatch(item){setWatchlist(toggleWatchItem(item).items);}
+  const ranked=[...history].sort((a,b)=>(b.summary?.best?.profit||b.result?.profit||0)-(a.summary?.best?.profit||a.result?.profit||0)).slice(0,3);
 
   return <div className="pageStack">
     <section className="workspaceHeader"><div><span className="eyebrow">FLIP WORKSPACE</span><h2>Your deal pipeline</h2><p>Keep the deals worth remembering and compare them before you spend money.</p></div><History size={28}/></section>
     <div className="workspaceStats"><div><span>Saved analyses</span><b>{history.length}</b></div><div><span>Watched listings</span><b>{watchlist.length}</b></div><div><span>Saved searches</span><b>{searches.length}</b></div></div>
+
+    {ranked.length>=2&&<section className="panel comparePanel">
+      <div className="sectionHeading"><div><span className="eyebrow">COMPARE DEALS</span><h3>Your strongest saved opportunities</h3><p>Ranked by projected best-channel profit.</p></div><BarChart3/></div>
+      <div className="compareGrid">{ranked.map((x,i)=>{
+        const profit=x.summary?.best?.profit||x.result?.profit||0;
+        const roi=x.summary?.best?.roi||0;
+        return <div className={"compareCard "+(i===0?"compareWinner":"")} key={x.id}>
+          {i===0&&<span className="winnerTag">TOP DEAL</span>}
+          <h4>{x.label}</h4>
+          <div className="compareRows"><span><em>Buy</em><b>{money(x.input?.price)}</b></span><span><em>Likely sale</em><b>{money(x.summary?.onlineLikely||x.result?.resale)}</b></span><span><em>Best profit</em><b className={profit>=0?"goodText":"badText"}>{money(profit)}</b></span><span><em>ROI</em><b>{pct(roi)}</b></span><span><em>Score</em><b>{x.result?.score}/100</b></span></div>
+        </div>;
+      })}</div>
+    </section>}
 
     <section className="panel">
       <div className="sectionHeading"><div><span className="eyebrow">SAVED PCS</span><h3>Best opportunities</h3></div>{history.length>0&&<button className="ghost small" onClick={()=>{clearHistory();setHistory([])}}><Trash2 size={14}/>Clear</button>}</div>
