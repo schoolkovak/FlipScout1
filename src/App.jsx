@@ -8,7 +8,7 @@ import {
 import {fallbackPcEstimate} from "./valuation";
 import {
   GPUS,CPUS,RAM_OPTIONS,STORAGE_OPTIONS,MOTHERBOARDS,PSU_OPTIONS,
-  CASE_OPTIONS,COOLER_OPTIONS,SCANNER_CATEGORIES,MARKET_SNAPSHOT
+  CASE_OPTIONS,COOLER_OPTIONS,SCANNER_CATEGORIES,MARKET_SNAPSHOT,groupedCatalog
 } from "../shared/catalog.js";
 import {buildOpportunitySummary} from "./intelligence";
 import {parseListingText} from "./listingParser";
@@ -25,6 +25,19 @@ function money(v){
 }
 function pct(v){return Number.isFinite(Number(v))?Math.round(Number(v))+"%":"—";}
 function Datalist({id,items}){return <datalist id={id}>{items.map(x=><option key={x.name} value={x.name}/>)}</datalist>;}
+
+function SpecDropdown({type,value,onChange}){
+  const groups=useMemo(()=>groupedCatalog(type),[type]);
+  const total=Object.values(groups).reduce((n,items)=>n+items.length,0);
+  return <div className="specDropdownWrap">
+    <select value={value} onChange={e=>onChange(e.target.value)}>
+      {Object.entries(groups).map(([group,items])=><optgroup label={group} key={group}>
+        {items.map(item=><option key={item.name} value={item.name}>{item.name}</option>)}
+      </optgroup>)}
+    </select>
+    <small>{total} desktop {type==="gpu"?"GPU":"CPU"} models in catalog</small>
+  </div>;
+}
 async function copyText(text){try{await navigator.clipboard.writeText(text);return true;}catch{return false;}}
 
 const EMPTY_KEYS={SERPER_API_KEY:"",SEARCHAPI_API_KEY:""};
@@ -356,7 +369,6 @@ function Analyze({providerKeys,onSaved}){
         <div><span className="eyebrow">DEAL ANALYZER</span><h2>Would you actually make money on this PC?</h2><p>Enter the build. FlipScout validates it before calculating the deal.</p></div>
         <SlidersHorizontal/>
       </div>
-      <Datalist id="cpu-options" items={CPUS}/><Datalist id="gpu-options" items={GPUS}/>
       <div className="pasteListing">
         <button className="pasteToggle" onClick={()=>setPasteOpen(!pasteOpen)}><Sparkles size={16}/><span><b>Paste a listing instead</b><small>Auto-detect specs from messy Marketplace/eBay text</small></span>{pasteOpen?<ChevronUp size={16}/>:<ChevronDown size={16}/>}</button>
         {pasteOpen&&<div className="pasteBody">
@@ -366,8 +378,8 @@ function Analyze({providerKeys,onSaved}){
       </div>
       <div className="formGrid">
         <label>Purchase / asking price<input type="number" value={form.price} onChange={e=>update("price",e.target.value)}/></label>
-        <label>CPU<input list="cpu-options" value={form.cpu} onChange={e=>update("cpu",e.target.value)} placeholder="Ryzen5-5600X"/></label>
-        <label>GPU<input list="gpu-options" value={form.gpu} onChange={e=>update("gpu",e.target.value)} placeholder="RTX5070-Ti"/></label>
+        <label>CPU<SpecDropdown type="cpu" value={form.cpu} onChange={v=>update("cpu",v)}/></label>
+        <label>GPU<SpecDropdown type="gpu" value={form.gpu} onChange={v=>update("gpu",v)}/></label>
         <label>RAM<select value={form.ram} onChange={e=>update("ram",e.target.value)}>{RAM_OPTIONS.map(x=><option key={x.name}>{x.name}</option>)}</select></label>
         <label>Storage<select value={form.storage} onChange={e=>update("storage",e.target.value)}>{STORAGE_OPTIONS.map(x=><option key={x.name}>{x.name}</option>)}</select></label>
         <label>Motherboard<select value={form.motherboard} onChange={e=>update("motherboard",e.target.value)}>{MOTHERBOARDS.map(x=><option key={x.name}>{x.name}</option>)}</select></label>
