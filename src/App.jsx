@@ -167,7 +167,7 @@ function VerdictHero({summary,result,live}){
         <span><Zap size={14}/>{summary.tier.label}</span>
         <span><Eye size={14}/>Buyer appeal {summary.appeal}/100</span>
         <span><TrendingUp size={14}/>Liquidity {summary.liquidity}/100</span>
-        <span><Database size={14}/>{live?.resale?.online?.salesBacked?"Sales-backed evidence":"Market-model evidence"}</span>
+        <span><Database size={14}/>Evidence grade {summary.scoreBreakdown?.evidenceGrade||live?.evidence?.grade||"F"}</span>
       </div>
     </div>
     <ScoreRing value={summary.scoreBreakdown?.finalScore??result.score}/>
@@ -199,7 +199,7 @@ function StrategyStrip({summary}){
 }
 
 function ChannelProfit({summary}){
-  if(!summary)return null;
+  if(!summary?.hasLiveResale)return null;
   return <section className="resultSection">
     <div className="sectionHeading"><div><span className="eyebrow">CHANNEL ECONOMICS</span><h3>Where should you sell it?</h3></div><WalletCards/></div>
     <div className="channelGrid">
@@ -304,10 +304,10 @@ function EvidenceDashboard({live,summary}){
       <span><RefreshCw size={13}/>{observed?"Checked "+observed:"Timestamp unavailable"}</span>
       <span className={fallbackCount?"warnText":"goodText"}>{fallbackCount?fallbackCount+" component fallback"+(fallbackCount===1?"":"s")+": "+e.fallbackComponents.join(", "):"All component inputs live-backed"}</span>
     </div>
-    {summary&&<div className="realInsightBox">
+    {summary?.hasLiveResale?<div className="realInsightBox">
       <div><Sparkles size={18}/><b>FlipScout read</b></div>
-      <p>At a {money(summary.channels?.local?.salePrice||summary.localLikely)} local target and {money(summary.onlineLikely)} online target, the strongest modeled channel is <strong>{summary.best?.channel}</strong> at about <strong className={summary.best?.profit>=0?"goodText":"badText"}>{money(summary.best?.profit)}</strong> projected profit ({pct(summary.best?.roi)} ROI). {e.grade==="A"||e.grade==="B"?"The evidence is strong enough to use this as a serious buy/no-buy input.":"The evidence is not deep enough to treat the resale number as guaranteed; use the buy target and risk flags conservatively."}</p>
-    </div>}
+      <p>At a {money(summary.channels?.local?.salePrice||summary.localLikely)} local target and {money(summary.onlineLikely)} online target, the strongest modeled channel is <strong>{summary.best?.channel}</strong> at about <strong className={summary.best?.profit>=0?"goodText":"badText"}>{money(summary.best?.profit)}</strong> projected profit ({pct(summary.best?.roi)} ROI). {e.grade==="A"||e.grade==="B"?"The evidence is strong enough to use this as a serious buy/no-buy input.":"The evidence is usable but still thin; use the buy target and downside test conservatively."}</p>
+    </div>:<div className="insufficientEvidence"><AlertTriangle size={18}/><div><b>Insufficient live evidence for a resale/profit recommendation.</b><p>FlipScout is intentionally withholding the likely-sale and profit numbers instead of filling the gaps with static guesses.</p></div></div>}
   </section>;
 }
 
