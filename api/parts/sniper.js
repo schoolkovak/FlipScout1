@@ -20,7 +20,7 @@ export default async function handler(req,res){
 
   const rawTargets=Array.isArray(req.body?.targets)?req.body.targets:[];
   if(!rawTargets.length)return res.status(400).json({available:false,message:"Add at least one target."});
-  if(rawTargets.length>5)return res.status(400).json({available:false,message:"Parts & Sniper supports up to five targets per scan."});
+  if(rawTargets.length>5)return res.status(400).json({available:false,message:"Deal Hunt supports up to five targets per scan."});
 
   const targets=rawTargets.map(cleanTarget);
   const invalid=targets.find(x=>!x.query);
@@ -89,7 +89,7 @@ export default async function handler(req,res){
         available:false,
         market:{sampleSize:0},
         results:[],
-        errors:[{provider:"Parts & Sniper",message:String(error?.message||error).slice(0,180)}]
+        errors:[{provider:"Deal Hunt",message:String(error?.message||error).slice(0,180)}]
       };
     }
   }));
