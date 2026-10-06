@@ -225,6 +225,42 @@ export function scoreBreakdown({result,live,best,appeal,liquidity}){
   };
 }
 
+export function sensitivityAnalysis({onlineLikely,localLikely,acquisitionCost,shippingMedian}){
+  const buy=Number(acquisitionCost||0);
+  const online=Number(onlineLikely||0);
+  const local=Number(localLikely||0);
+  if(!online&&!local)return null;
+
+  const ebayProfit=(sale)=>{
+    const fee=Number(sale||0)*CHANNELS.ebay.feeRate+CHANNELS.ebay.fixedFee;
+    return Number(sale||0)-fee-Number(shippingMedian||0)-buy;
+  };
+  const localProfit=(sale)=>Number(sale||0)-buy;
+
+  const onlineRows=[
+    {label:"Downside -10%",sale:round(online*.90),profit:round(ebayProfit(online*.90))},
+    {label:"Likely",sale:round(online),profit:round(ebayProfit(online))},
+    {label:"Stretch +5%",sale:round(online*1.05),profit:round(ebayProfit(online*1.05))}
+  ];
+  const localRows=local?[
+    {label:"Downside -10%",sale:round(local*.90),profit:round(localProfit(local*.90))},
+    {label:"Likely",sale:round(local),profit:round(localProfit(local))},
+    {label:"Stretch +5%",sale:round(local*1.05),profit:round(localProfit(local*1.05))}
+  ]:[];
+
+  const onlineBreakEven=(buy+Number(shippingMedian||0)+CHANNELS.ebay.fixedFee)/(1-CHANNELS.ebay.feeRate);
+  const cushion=online?((online-onlineBreakEven)/online)*100:0;
+  return {
+    online:onlineRows,
+    local:localRows,
+    onlineBreakEven:round(onlineBreakEven),
+    localBreakEven:buy,
+    marginOfSafetyPct:Math.round(cushion),
+    survivesOnlineDownside:ebayProfit(online*.90)>0,
+    survivesLocalDownside:local?localProfit(local*.90)>0:null
+  };
+}
+
 export function buildOpportunitySummary(input,result,live){
   if(!result?.identityValid) return null;
   const onlineLikely=live?.resale?.online?.likely||result.resale;
@@ -252,6 +288,7 @@ export function buildOpportunitySummary(input,result,live){
   return {
     onlineLikely,localLikely,shipping,channels,best,buyTargets,negotiation,
     appeal,liquidity,verdict:v,scoreBreakdown:breakdown,
+    sensitivity:sensitivityAnalysis({onlineLikely,localLikely,acquisitionCost:input.price,shippingMedian:shipping}),
     tier:gamingTier(input.gpu),
     upgrades:upgradeIdeas(input),
     listing:generateListingCopy(input,{localLikely,onlineLikely,tier:gamingTier(input.gpu)}),
