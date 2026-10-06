@@ -11,6 +11,7 @@ import {
   CASE_OPTIONS,COOLER_OPTIONS,SCANNER_CATEGORIES,MARKET_SNAPSHOT
 } from "../shared/catalog.js";
 import {buildOpportunitySummary} from "./intelligence";
+import {parseListingText} from "./listingParser";
 import {
   getHistory,saveAnalysis,deleteAnalysis,clearHistory,
   getWatchlist,toggleWatchItem,getSavedSearches,saveSearch,deleteSavedSearch
@@ -268,9 +269,29 @@ function Analyze({providerKeys,onSaved}){
   const [result,setResult]=useState(null);
   const [live,setLive]=useState(null);
   const [summary,setSummary]=useState(null);
+  const [pasteOpen,setPasteOpen]=useState(false);
+  const [listingText,setListingText]=useState("");
+  const [parseResult,setParseResult]=useState(null);
   const [loading,setLoading]=useState(false);
   const [saved,setSaved]=useState(false);
   const update=(key,value)=>setForm(v=>({...v,[key]:value}));
+
+  function parseListing(){
+    const parsed=parseListingText(listingText);
+    setParseResult(parsed);
+    setForm(v=>({
+      ...v,
+      ...(parsed.price!=null?{price:parsed.price}:{}),
+      ...(parsed.cpu?{cpu:parsed.cpu}:{}),
+      ...(parsed.gpu?{gpu:parsed.gpu}:{}),
+      ...(parsed.ram?{ram:parsed.ram}:{}),
+      ...(parsed.storage?{storage:parsed.storage}:{}),
+      ...(parsed.motherboard?{motherboard:parsed.motherboard}:{}),
+      ...(parsed.psu?{psu:parsed.psu}:{}),
+      ...(parsed.cooler?{cooler:parsed.cooler}:{}),
+      ...(parsed.caseType?{caseType:parsed.caseType}:{})
+    }));
+  }
 
   async function analyze(){
     const input={...form,providerKeys};
@@ -319,6 +340,13 @@ function Analyze({providerKeys,onSaved}){
         <SlidersHorizontal/>
       </div>
       <Datalist id="cpu-options" items={CPUS}/><Datalist id="gpu-options" items={GPUS}/>
+      <div className="pasteListing">
+        <button className="pasteToggle" onClick={()=>setPasteOpen(!pasteOpen)}><Sparkles size={16}/><span><b>Paste a listing instead</b><small>Auto-detect specs from messy Marketplace/eBay text</small></span>{pasteOpen?<ChevronUp size={16}/>:<ChevronDown size={16}/>}</button>
+        {pasteOpen&&<div className="pasteBody">
+          <textarea value={listingText} onChange={e=>setListingText(e.target.value)} placeholder="Example: $850 gaming PC, Ryzen 5 5600X, RTX 4060, 16GB DDR4, 1TB NVMe, B550, 650W PSU..."/>
+          <div className="rowActions"><button className="primary small" onClick={parseListing} disabled={!listingText.trim()}><Sparkles size={15}/>Auto-fill specs</button>{parseResult&&<span className="parseConfidence">Detected {parseResult.confidence}% of fields{parseResult.notes?.length?" · "+parseResult.notes.join(" · "):""}</span>}</div>
+        </div>}
+      </div>
       <div className="formGrid">
         <label>Purchase / asking price<input type="number" value={form.price} onChange={e=>update("price",e.target.value)}/></label>
         <label>CPU<input list="cpu-options" value={form.cpu} onChange={e=>update("cpu",e.target.value)} placeholder="Ryzen5-5600X"/></label>
