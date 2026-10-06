@@ -107,7 +107,46 @@ export default async function handler(req,res){
   const resolved=resolveBuildParts(body);
 
   if(!resolved.cpu.item || !resolved.gpu.item){
-    return res.status(200).json({
+    const componentCompTotal=Object.values(values).reduce((sum,x)=>sum+Number(x.sampleSize||0),0);
+  const completeCompCount=Number(completePc?.sampleSize||0);
+  const salesCount=Number(salesEvidence.listingCount||0);
+  const localCompCount=Number(localMarket?.sampleSize||0);
+  const componentCoveragePct=Math.round(liveCount/Object.keys(values).length*100);
+
+  let evidenceGrade="F";
+  let scoreCap=45;
+  let evidenceReason="Very limited live evidence; treat the result as a rough screening estimate only.";
+  if(salesCount>=6 && completeCompCount>=10 && liveCount>=4){
+    evidenceGrade="A";scoreCap=95;evidenceReason="Strong sales-backed evidence, complete-PC comps, and live component coverage.";
+  }else if((salesCount>=2 && completeCompCount>=6) || (completeCompCount>=15 && liveCount>=4)){
+    evidenceGrade="B";scoreCap=88;evidenceReason="Good real-market coverage with multiple complete-PC comps and live component support.";
+  }else if(completeCompCount>=4 && liveCount>=2){
+    evidenceGrade="C";scoreCap=75;evidenceReason="Usable live evidence, but not enough depth for a high-confidence premium score.";
+  }else if(liveCount>=2 || completeCompCount>=2 || salesCount>=1){
+    evidenceGrade="D";scoreCap=60;evidenceReason="Thin market evidence; use the number to negotiate, not as a guaranteed resale price.";
+  }
+
+  const evidence={
+    observedAt:new Date().toISOString(),
+    grade:evidenceGrade,
+    scoreCap,
+    reason:evidenceReason,
+    liveComponentCount:liveCount,
+    componentCount:Object.keys(values).length,
+    componentCoveragePct,
+    componentCompTotal,
+    completePcCompCount:completeCompCount,
+    salesBackedListingCount:salesCount,
+    reportedUnitsSold:Number(salesEvidence.totalReportedUnitsSold||0),
+    localCompCount,
+    localRequested:Boolean(canonicalBody.postalCode),
+    hasSalesBackedEvidence:Boolean(salesBackedAvailable),
+    onlineMethod,
+    localMethod:localMarket?.method||null,
+    fallbackComponents:Object.entries(values).filter(([,x])=>!x.live).map(([name])=>name)
+  };
+
+  return res.status(200).json({
       available:false,
       valid:false,
       validation:resolved,
@@ -237,11 +276,14 @@ export default async function handler(req,res){
       local:localMarket
     },
     salesEvidence:salesEvidencePublicShape(salesEvidence),
+    evidence,
     components:values,
     completePc,
     meta:{
       liveComponentCount:liveCount,
       componentCount:Object.keys(values).length,
+      evidenceGrade,
+      scoreCap,
       componentBased:Math.round(componentBased),
       snapshot:MARKET_SNAPSHOT,
       method:salesBackedAvailable
