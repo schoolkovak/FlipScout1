@@ -130,8 +130,9 @@ export function liquidityScore({gpu,cpu,onlineEvidenceCount=0,completePcCompCoun
   return clamp(score);
 }
 
-export function verdict({score,profit,roi,evidenceConfidence,compatWarnings=0}){
+export function verdict({score,profit,roi,evidenceConfidence,evidenceGrade,hasLiveResale=true,compatWarnings=0}){
   if(compatWarnings>0) return {label:"FIX / VERIFY",tone:"warn",reason:"Compatibility or identity issues need attention before buying."};
+  if(!hasLiveResale || evidenceGrade==="F") return {label:"VERIFY",tone:"warn",reason:"There is not enough real market evidence yet to publish a trusted resale/profit number."};
   if(score>=82 && profit>=150 && roi>=20) return {label:"STRONG BUY",tone:"good",reason:"High projected margin with strong overall deal quality."};
   if(score>=70 && profit>=100 && roi>=14) return {label:"BUY",tone:"good",reason:"Good projected economics if the hardware checks out."};
   if(score>=55 && profit>=40) return {label:"NEGOTIATE",tone:"warn",reason:"Potential deal, but margin needs a better purchase price."};
@@ -287,6 +288,8 @@ export function buildOpportunitySummary(input,result,live){
     profit:best?.profit||result.profit,
     roi:best?.roi||0,
     evidenceConfidence:live?.resale?.online?.confidence,
+    evidenceGrade:live?.evidence?.grade,
+    hasLiveResale,
     compatWarnings:result.compatibility?.warnings?.length||0
   });
   return {
