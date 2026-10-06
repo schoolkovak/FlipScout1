@@ -5,6 +5,7 @@ import sourcesHandler from "../api/sources.js";
 import dealsHandler from "../api/deals/search.js";
 import providerTestHandler from "../api/providers/test.js";
 import pcHandler from "../api/market/pc.js";
+import sniperHandler from "../api/parts/sniper.js";
 
 const app=express();
 app.use(cors());
@@ -15,6 +16,7 @@ app.get("/api/sources",sourcesHandler);
 app.post("/api/deals/search",dealsHandler);
 app.post("/api/market/pc",pcHandler);
 app.post("/api/providers/test",providerTestHandler);
+app.post("/api/parts/sniper",sniperHandler);
 app.use((error,req,res,next)=>{console.error("API request failed",error.name);res.status(500).json({available:false,message:"Market service unavailable. Please try again."});});
 
 const port=process.env.PORT||8787;
