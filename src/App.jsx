@@ -17,6 +17,7 @@ import {
   getHistory,saveAnalysis,deleteAnalysis,clearHistory,
   getWatchlist,toggleWatchItem,getSavedSearches,saveSearch,deleteSavedSearch
 } from "./storage";
+import {saveMarketSnapshot} from "./marketHistory";
 
 function money(v){
   if(v===null||v===undefined||Number.isNaN(Number(v))) return "—";
@@ -410,6 +411,7 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
   const [deepScan,setDeepScan]=useState(false);
   const [loading,setLoading]=useState(false);
   const [data,setData]=useState(null);
+  const [trend,setTrend]=useState(null);
   const [watched,setWatched]=useState(()=>getWatchlist());
 
   function changeCategory(value){
@@ -421,7 +423,9 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
     setLoading(true);setData(null);
     try{
       const r=await fetch("/api/deals/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({category,query,condition,partBudget,buildBudget,committed,sortBy,deepScan,providerKeys})});
-      setData(await r.json());
+      const d=await r.json();
+      setData(d);
+      if(d.available)setTrend(saveMarketSnapshot({category,query,condition},d.market));
     }catch{setData({available:false,message:"Live search backend is unavailable."});}
     finally{setLoading(false);}
   }
@@ -458,6 +462,10 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
 
     {data&&!data.available&&<div className="notice"><AlertTriangle size={20}/><div><b>Live provider data unavailable</b><p>{data.message}</p></div></div>}
     {data?.available&&<>
+      {trend&&<div className="trendCard">
+        <div><span className="eyebrow">PRICE MEMORY</span><b>{trend.count<2?"First market snapshot saved":(trend.changeSinceLast>=0?"+":"")+trend.changeSinceLast.toFixed(1)+"% vs last scan"}</b><small>{trend.count} snapshot{trend.count===1?"":"s"} stored on this device</small></div>
+        <div className="sparkBars">{trend.series.slice(-12).map((v,i)=>{const max=Math.max(...trend.series.slice(-12)),min=Math.min(...trend.series.slice(-12));const h=max===min?50:20+((v-min)/(max-min))*80;return <i key={i} style={{height:h+"%"}} title={money(v)}></i>})}</div>
+      </div>}
       <div className="marketHeadline">
         <div><span>{data.market.valueLabel}</span><strong>{money(data.market.median)}</strong><small>{money(data.market.low)}–{money(data.market.high)} trimmed range</small></div>
         <div><span>Relevant comps</span><strong>{data.market.sampleSize}</strong><small>{data.market.rawSampleSize} raw listings checked</small></div>
