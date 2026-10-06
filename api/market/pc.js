@@ -17,19 +17,33 @@ function liveValue(data,fallback,{factor=1,min=5,label="Live asking comps"}={}){
     return {
       value:Math.round(data.market.median*factor),
       rawMedian:Math.round(data.market.median),
+      rawLow:Math.round(data.market.low),
+      rawHigh:Math.round(data.market.high),
       source:label,
       sampleSize:data.market.sampleSize,
       confidence:data.market.confidence,
-      live:true
+      live:true,
+      bySource:data.market.bySource||{},
+      examples:(data.market.comps||[]).slice(0,4).map(x=>({
+        title:x.title,
+        source:x.source,
+        condition:x.condition,
+        price:Math.round(Number(x.totalPrice||x.itemPrice||0)),
+        url:x.url||null
+      }))
     };
   }
   return {
-    value:Math.round(fallback),
+    value:fallback==null?null:Math.round(fallback),
     rawMedian:null,
+    rawLow:null,
+    rawHigh:null,
     source:"Fallback snapshot "+MARKET_SNAPSHOT,
     sampleSize:data?.market?.sampleSize||0,
     confidence:"Fallback",
-    live:false
+    live:false,
+    bySource:{},
+    examples:[]
   };
 }
 
@@ -187,7 +201,7 @@ export default async function handler(req,res){
     cooler:liveValue(data.cooler,closestFallback(COOLER_OPTIONS,canonicalBody.cooler,20),{factor:.50,min:5,label:"Live new-market median × resale factor"})
   };
 
-  const componentTotal=Object.values(values).reduce((sum,x)=>sum+x.value,0);
+  const componentTotal=Object.values(values).reduce((sum,x)=>sum+Number(x.value||0),0);
   const gpu=findByName(GPUS,canonicalBody.gpu);
   const cpu=findByName(CPUS,canonicalBody.cpu);
   const pcCase=findByName(CASE_OPTIONS,canonicalBody.caseType);
