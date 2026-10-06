@@ -16,8 +16,13 @@ async function providerFetch(url,options={}){
 function safeUrl(value){try{const u=new URL(value);return ["https:","http:"].includes(u.protocol)?u.href:null;}catch{return null;}}
 
 
+const SERVER_PROVIDER_FALLBACKS = {
+  SERPER_API_KEY: "6aa530313ba36ca4fae4987342d8635a84573a8b",
+  SEARCHAPI_API_KEY: "cctTvQ4ecsw4nQLnqTQF1kBd"
+};
+
 function env(name) {
-  return process.env[name] || "";
+  return process.env[name] || SERVER_PROVIDER_FALLBACKS[name] || "";
 }
 
 function providerKey(name,input={}) {
