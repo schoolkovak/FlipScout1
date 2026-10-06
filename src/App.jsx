@@ -160,6 +160,19 @@ function VerdictHero({summary,result,live}){
   </div>;
 }
 
+function ScoreBreakdown({summary}){
+  const b=summary?.scoreBreakdown;
+  if(!b)return null;
+  return <section className="resultSection">
+    <div className="sectionHeading"><div><span className="eyebrow">WHY THIS SCORE?</span><h3>Transparent deal-quality breakdown</h3></div><BarChart3/></div>
+    <div className="scoreFactorGrid">{b.factors.map(x=><div className="scoreFactor" key={x.name}>
+      <div className="scoreFactorHead"><span>{x.name}</span><b>{x.score}/100</b><em>{x.weight}</em></div>
+      <div className="factorBar"><i style={{width:Math.max(2,x.score)+"%"}}></i></div>
+    </div>)}</div>
+    <div className="riskStrip">{b.risks.length?b.risks.map((x,i)=><span key={i}><AlertTriangle size={13}/>{x}</span>):<span className="riskGood"><CheckCircle2 size={13}/>No major model risk flags</span>}</div>
+  </section>;
+}
+
 function StrategyStrip({summary}){
   if(!summary?.saleStrategy)return null;
   const s=summary.saleStrategy;
@@ -373,6 +386,7 @@ function Analyze({providerKeys,onSaved}){
 
     {result?.identityValid!==false&&summary&&<>
       <VerdictHero summary={summary} result={result} live={live}/>
+      <ScoreBreakdown summary={summary}/>
       <StrategyStrip summary={summary}/>
       <div className="saveBar"><div><b>{form.gpu} + {form.cpu}</b><span>{money(form.price)} acquisition · {summary.verdict.label}</span></div><button className={saved?"secondary":"primary"} onClick={saveCurrent}>{saved?<><CheckCircle2 size={16}/>Saved</>:<><Save size={16}/>Save to workspace</>}</button></div>
       <ChannelProfit summary={summary}/>
