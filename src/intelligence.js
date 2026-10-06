@@ -264,7 +264,7 @@ export function sensitivityAnalysis({onlineLikely,localLikely,acquisitionCost,sh
 export function buildOpportunitySummary(input,result,live){
   if(!result?.identityValid) return null;
 
-  const hasLiveResale=Boolean(live?.available && live?.resale?.online?.likely);
+  const hasLiveResale=Boolean(live?.available && live?.resale?.online?.likely && live?.evidence?.grade && live.evidence.grade!=="F");
   const onlineLikely=hasLiveResale?Number(live.resale.online.likely):null;
   const localLikely=live?.resale?.local?.likely?Number(live.resale.local.likely):null;
   const shipping=live?.resale?.online?.costs?.shippingMedian||0;
