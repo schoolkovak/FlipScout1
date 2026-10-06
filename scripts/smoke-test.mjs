@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { resolveCatalogPart } from "../shared/catalog.js";
 import { fallbackPcEstimate } from "../src/valuation.js";
+import { parseListingText } from "../src/listingParser.js";
 
 const gpuTypo=resolveCatalogPart("gpu","RTX5070-Ti");
 assert.equal(gpuTypo.canonical,"RTX 5070 Ti");
@@ -41,3 +42,12 @@ const mismatch=fallbackPcEstimate({...validBuild,motherboard:"B650 AM5 Motherboa
 assert.ok(mismatch.compatibility.warnings.some(x=>x.includes("does not match")));
 
 console.log("FlipScout smoke tests passed");
+
+const parsed=parseListingText("$850 Gaming PC - Ryzen5 5600X, RTX 4060, 16GB DDR4, 1TB NVMe, B550 motherboard, 650W PSU");
+assert.equal(parsed.cpu,"Ryzen 5 5600X");
+assert.equal(parsed.gpu,"RTX 4060");
+assert.ok(parsed.ram?.includes("16GB"));
+assert.ok(parsed.storage?.includes("1TB"));
+assert.ok(parsed.motherboard?.includes("B550"));
+assert.ok(parsed.psu?.includes("650W"));
+assert.equal(parsed.price,850);
