@@ -671,18 +671,44 @@ export function rankDeals(items,market,{query,partBudget,buildBudget,committed,s
   const medianValue=market.median||0;
   const remainingBefore=Math.max(0,Number(buildBudget||0)-Number(committed||0));
   const maxPart=Number(partBudget||0);
+  const sample=Number(market.sampleSize||0);
+  const evidenceCap=sample>=35?95:sample>=15?88:sample>=8?78:sample>=4?65:50;
+
   const scored=market.comps.map(item=>{
     const under=medianValue ? (medianValue-item.totalPrice)/medianValue : 0;
-    const underScore=Math.max(0,Math.min(1,(under+.15)/.45));
-    const budgetScore=maxPart ? Math.max(0,Math.min(1,1-(item.totalPrice/maxPart-0.65))) : .5;
-    const buildFit=remainingBefore ? Math.max(0,Math.min(1,(remainingBefore-item.totalPrice)/Math.max(remainingBefore,.01)+.4)) : .5;
+    const underScore=Math.max(0,Math.min(1,(under+.10)/.35));
+    const budgetScore=maxPart ? Math.max(0,Math.min(1,1-(item.totalPrice/maxPart-0.70))) : .55;
+    const buildFit=remainingBefore ? Math.max(0,Math.min(1,(remainingBefore-item.totalPrice)/Math.max(remainingBefore,.01)+.35)) : .5;
     const conditionScore=conditionQuality(item.condition);
     const appeal=resaleAppeal(query,item.title);
-    const shippingScore=item.shippingKnown?1:.55;
-    const score=Math.round(100*(.38*underScore+.18*budgetScore+.14*buildFit+.10*conditionScore+.14*appeal+.06*shippingScore));
+    const shippingScore=item.shippingKnown?1:.45;
+    const relevance=Math.max(0,Math.min(1,Number(item.relevance||0)));
+
+    let raw=100*(.36*underScore+.15*budgetScore+.12*buildFit+.09*conditionScore+.10*appeal+.08*shippingScore+.10*relevance);
+    const riskFlags=[];
+
+    if(under>.45){
+      raw-=18;
+      riskFlags.push("Price is >45% below the filtered market median — verify condition, completeness, and seller.");
+    }
+    if(!item.shippingKnown){
+      raw-=5;
+      riskFlags.push("Shipping cost is unknown.");
+    }
+    if(relevance<.72){
+      raw-=8;
+      riskFlags.push("Listing-title match is weaker than ideal.");
+    }
+    if(sample<8) riskFlags.push("Market sample is small; score is capped.");
+    if(item.condition==="unknown") riskFlags.push("Condition is not clearly identified.");
+
+    const score=Math.max(0,Math.min(evidenceCap,Math.round(raw)));
     return {
       ...item,
       score,
+      scoreCap:evidenceCap,
+      riskFlags,
+      evidenceSampleSize:sample,
       percentVsMarket:medianValue?Math.round((medianValue-item.totalPrice)/medianValue*100):0,
       budgetLeft:remainingBefore-item.totalPrice,
       withinPartBudget:!maxPart || item.totalPrice<=maxPart
