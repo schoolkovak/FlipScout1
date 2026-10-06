@@ -12,6 +12,7 @@ import {
 } from "../shared/catalog.js";
 import {buildOpportunitySummary} from "./intelligence";
 import {parseListingText} from "./listingParser";
+import { track } from "@vercel/analytics";
 import {
   getHistory,saveAnalysis,deleteAnalysis,clearHistory,
   getWatchlist,toggleWatchItem,getSavedSearches,saveSearch,deleteSavedSearch
@@ -294,6 +295,7 @@ function Analyze({providerKeys,onSaved}){
   }
 
   async function analyze(){
+    track("analyze_pc",{gpu:form.gpu,cpu:form.cpu,hasZip:Boolean(form.postalCode)});
     const input={...form,providerKeys};
     const fallback=fallbackPcEstimate(input);
     setResult(fallback);setLive(null);setSummary(null);setLoading(true);setSaved(false);
@@ -329,6 +331,7 @@ function Analyze({providerKeys,onSaved}){
 
   function saveCurrent(){
     if(!result||!summary)return;
+    track("save_analysis",{verdict:summary.verdict?.label||"unknown",score:Number(result.score||0)});
     saveAnalysis({input:form,result,live,summary,label:form.gpu+" + "+form.cpu});
     setSaved(true);onSaved?.();
   }
@@ -400,6 +403,7 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
     setQuery(SCANNER_CATEGORIES.find(x=>x.name===value)?.example||"");
   }
   async function scan(){
+    track("scan_parts",{category,condition,deepScan});
     setLoading(true);setData(null);
     try{
       const r=await fetch("/api/deals/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({category,query,condition,partBudget,buildBudget,committed,sortBy,deepScan,providerKeys})});
@@ -408,6 +412,7 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
     finally{setLoading(false);}
   }
   function toggle(item){
+    track("toggle_watch",{category,source:item.source||"unknown"});
     const out=toggleWatchItem({...item,category,query});
     setWatched(out.items);onWatchChange?.();
   }
@@ -416,6 +421,7 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
     return watched.some(x=>(x.url||x.id||x.title)===key);
   }
   function saveThisSearch(){
+    track("save_search",{category,condition,deepScan});
     saveSearch({category,query,condition,partBudget,buildBudget,committed,sortBy,deepScan});
     onSearchSaved?.();
   }
@@ -504,6 +510,7 @@ function Workspace({refreshKey}){
 }
 
 function ProPage(){
+  useEffect(()=>{track("view_pro_pricing");},[]);
   return <div className="pageStack">
     <section className="proHero">
       <span className="eyebrow">FLIPSCOUT PRO</span>
