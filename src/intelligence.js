@@ -174,6 +174,46 @@ export function generateListingCopy(input,{localLikely,onlineLikely,tier}={}){
   return {title,bullets,description};
 }
 
+export function scoreBreakdown({result,live,best,appeal,liquidity}){
+  const roi=Number(best?.roi||0);
+  const marginScore=clamp(roi*2.5);
+  const evidenceCount=Number(live?.salesEvidence?.listingCount||0);
+  const completeCount=Number(live?.completePc?.sampleSize||0);
+  const liveParts=Number(live?.meta?.liveComponentCount||0);
+  let evidence=20;
+  if(live?.resale?.online?.salesBacked)evidence+=35;
+  evidence+=Math.min(20,evidenceCount*3);
+  evidence+=Math.min(15,completeCount*2);
+  evidence+=Math.min(10,liveParts*2);
+  evidence=clamp(evidence);
+  const warningCount=result?.compatibility?.warnings?.length||0;
+  const compatibility=clamp(100-warningCount*35);
+  const weighted=Math.round(
+    marginScore*.36+
+    Number(appeal||0)*.18+
+    Number(liquidity||0)*.18+
+    evidence*.18+
+    compatibility*.10
+  );
+  const risks=[];
+  if(roi<12)risks.push("Thin projected ROI");
+  if(!live?.resale?.online?.salesBacked)risks.push("No sales-backed complete-PC evidence");
+  if(completeCount<4)risks.push("Few complete-PC comps");
+  if(warningCount)risks.push(warningCount+" compatibility / identity warning"+(warningCount>1?"s":""));
+  if(live?.resale?.online?.costs?.shippingMedian==null)risks.push("Shipping cost not supported by enough comps");
+  return {
+    weighted,
+    factors:[
+      {name:"Margin",score:Math.round(marginScore),weight:"36%"},
+      {name:"Buyer appeal",score:Math.round(appeal||0),weight:"18%"},
+      {name:"Liquidity",score:Math.round(liquidity||0),weight:"18%"},
+      {name:"Evidence quality",score:Math.round(evidence),weight:"18%"},
+      {name:"Compatibility",score:Math.round(compatibility),weight:"10%"}
+    ],
+    risks
+  };
+}
+
 export function buildOpportunitySummary(input,result,live){
   if(!result?.identityValid) return null;
   const onlineLikely=live?.resale?.online?.likely||result.resale;
@@ -190,8 +230,9 @@ export function buildOpportunitySummary(input,result,live){
     onlineEvidenceCount:live?.salesEvidence?.listingCount||0,
     completePcCompCount:live?.completePc?.sampleSize||0
   });
+  const breakdown=scoreBreakdown({result,live,best,appeal,liquidity});
   const v=verdict({
-    score:result.score,
+    score:breakdown.weighted||result.score,
     profit:best?.profit||result.profit,
     roi:best?.roi||0,
     evidenceConfidence:live?.resale?.online?.confidence,
@@ -199,7 +240,7 @@ export function buildOpportunitySummary(input,result,live){
   });
   return {
     onlineLikely,localLikely,shipping,channels,best,buyTargets,negotiation,
-    appeal,liquidity,verdict:v,
+    appeal,liquidity,verdict:v,scoreBreakdown:breakdown,
     tier:gamingTier(input.gpu),
     upgrades:upgradeIdeas(input),
     listing:generateListingCopy(input,{localLikely,onlineLikely,tier:gamingTier(input.gpu)}),
