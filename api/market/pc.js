@@ -192,7 +192,7 @@ export default async function handler(req,res){
   const cpu=findByName(CPUS,canonicalBody.cpu);
   const pcCase=findByName(CASE_OPTIONS,canonicalBody.caseType);
   const appeal=((gpu?.appeal||5)+(cpu?.appeal||5)+(pcCase?.appeal||5))/3;
-  const presentationPremium=appeal>=9?85:appeal>=8?55:appeal>=6?25:0;
+  const presentationPremium=appeal>=9?40:appeal>=8?25:appeal>=6?10:0;
   const componentBased=Math.max(0,componentTotal+presentationPremium);
 
   let completePc=null;
@@ -242,14 +242,29 @@ export default async function handler(req,res){
     method:"Nearby eBay local-pickup asking comps; likely price uses lower half of the local asking range"
   } : null;
 
-  const blendedBase=salesBackedAvailable
-    ? Math.round(componentBased*.35 + onlineLikely*.65)
-    : completePc
-      ? Math.round(componentBased*.55 + completePc.median*.45)
-      : Math.round(componentBased);
-
   const liveCount=Object.values(values).filter(x=>x.live).length;
-  const uncertainty=salesBackedAvailable ? .06 : completePc ? .08 : liveCount>=4 ? .10 : .13;
+  const componentCoverage=liveCount/Object.keys(values).length;
+
+  let blendedBase;
+  let blendMethod;
+  if(salesBackedAvailable){
+    const componentWeight=componentCoverage>=.5?.25:.10;
+    blendedBase=Math.round(componentBased*componentWeight + onlineLikely*(1-componentWeight));
+    blendMethod=Math.round(componentWeight*100)+"% component model + "+Math.round((1-componentWeight)*100)+"% sales-backed complete-PC evidence";
+  }else if(completePc){
+    const componentWeight=componentCoverage>=.5?.40:.20;
+    blendedBase=Math.round(componentBased*componentWeight + completePc.median*(1-componentWeight));
+    blendMethod=Math.round(componentWeight*100)+"% component model + "+Math.round((1-componentWeight)*100)+"% complete-PC asking comps";
+  }else{
+    blendedBase=Math.round(componentBased);
+    blendMethod=liveCount>=4?"Live-component market model":"Fallback-heavy component model";
+  }
+
+  const uncertainty=salesBackedAvailable
+    ? (salesEvidence.listingCount>=6?.06:.09)
+    : completePc
+      ? (completePc.sampleSize>=15?.09:.12)
+      : liveCount>=4?.14:.20;
   const low=Math.max(0,Math.round(blendedBase*(1-uncertainty)));
   const high=Math.round(blendedBase*(1+uncertainty));
 
@@ -286,11 +301,7 @@ export default async function handler(req,res){
       scoreCap,
       componentBased:Math.round(componentBased),
       snapshot:MARKET_SNAPSHOT,
-      method:salesBackedAvailable
-        ? "35% component market model + 65% sales-backed complete-PC evidence"
-        : completePc
-          ? "55% component market model + 45% complete-PC asking comps"
-          : "component market model"
+      method:blendMethod
     }
   });
 }
