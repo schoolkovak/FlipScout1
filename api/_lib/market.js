@@ -1,6 +1,7 @@
 import { parseListingText } from "../../src/listingParser.js";
 import { createHash } from "node:crypto";
 import { resolveCatalogPart } from "../../shared/catalog.js";
+import { SNIPER_CATEGORIES } from "../../shared/sniper.js";
 const EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope";
 const searchCache=new Map();
 const CACHE_MS=10*60*1000;
@@ -79,10 +80,23 @@ function parseMoney(text) {
 
 function normalizeCondition(value) {
   const s=String(value||"").toLowerCase();
-  if (s.includes("open") || s.includes("certified") || s.includes("excellent")) return "open-box";
+  if (s.includes("renewed")) return "renewed";
+  if (s.includes("refurb")) return "refurbished";
+  if (s.includes("open box") || s.includes("open-box") || s.includes("new opened") || s.includes("like new")) return "open-box";
   if (s.includes("new")) return "new";
-  if (s.includes("used") || s.includes("pre-owned") || s.includes("second")) return "used";
+  if (s.includes("used") || s.includes("pre-owned") || s.includes("preowned") || s.includes("second hand")) return "used";
   return "unknown";
+}
+
+function conditionMatches(actual,requested){
+  if(requested==="any") return true;
+  if(actual===requested) return true;
+  if(requested==="renewed" && actual==="refurbished") return true;
+  return false;
+}
+
+function conditionSearchTerm(condition){
+  return condition==="open-box"?"open box":condition==="any"?"":condition;
 }
 
 function normalizeText(value) {
@@ -199,10 +213,18 @@ export function relevanceScore(title, query, category) {
     if (/\b(laptop|notebook|parts only|case only)\b/.test(t)) score-=.65;
   }
 
-  if (["gpu","ram","ssd / nvme","ssd / storage","storage"].includes(cat)) {
+  if (["gpu","ram","ram / memory","nvme ssd","sata ssd","ssd / nvme","ssd / storage","storage","hard drive / hdd"].includes(cat)) {
     const qCap=primaryCapacity(query);
     const tCap=primaryCapacity(title);
     if(qCap&&tCap&&Math.abs(qCap-tCap)/qCap>.12) score-=.38;
+  }
+
+  const sniperProfile=SNIPER_CATEGORIES.find(x=>x.name.toLowerCase()===cat);
+  if(sniperProfile){
+    const excluded=(sniperProfile.exclude||[]).some(term=>t.includes(normalizeText(term)));
+    if(excluded) score-=.72;
+    const included=(sniperProfile.include||[]).some(term=>t.includes(normalizeText(term)));
+    if(included) score+=.12;
   }
 
   return Math.max(0,Math.min(1,score));
@@ -292,6 +314,7 @@ function searchApiCondition(condition){
   if(condition==="new") return "new";
   if(condition==="used") return "pre_owned_excellent,used_very_good,used_good,used_acceptable,pre_owned_fair";
   if(condition==="open-box") return "new_opened,like_new";
+  if(condition==="renewed" || condition==="refurbished") return "certified_refurbished,excellent_refurbished,very_good_refurbished,good_refurbished,seller_refurbished";
   return null;
 }
 
@@ -347,7 +370,7 @@ export async function searchSearchApiEbay(input) {
   }
 
   return raw.map((x,index)=>mapSearchApiEbayResult(x,index,{query,category}))
-    .filter(x=>x.itemPrice>0 && (condition==="any" || x.condition===condition || (condition==="open-box"&&x.condition==="open-box")));
+    .filter(x=>x.itemPrice>0 && conditionMatches(x.condition,condition));
 }
 
 export async function searchSearchApiBestBuy(input) {
@@ -423,6 +446,146 @@ export async function searchSearchApiWalmart(input) {
       relevance:relevanceScore(x.title,query,category)
     };
   }).filter(x=>x.itemPrice>0);
+}
+
+
+function marketplaceIdFromResult(seller,url){
+  const s=String(seller||"").toLowerCase();
+  let host="";
+  try{host=new URL(url||"").hostname.toLowerCase();}catch{}
+  const hay=s+" "+host;
+  if(hay.includes("amazon")) return "amazon";
+  if(hay.includes("newegg")) return "newegg";
+  if(hay.includes("ebay")) return "ebay";
+  if(hay.includes("mercari")) return "mercari";
+  return null;
+}
+
+function marketplaceName(id){
+  return id==="amazon"?"Amazon":id==="newegg"?"Newegg":id==="ebay"?"eBay":id==="mercari"?"Mercari":id||"Marketplace";
+}
+
+export async function searchSerperMarketplaces(input){
+  const {query,category,condition,marketplaces=[]}=input;
+  const apiKey=providerKey("SERPER_API_KEY",input);
+  if(!apiKey) return [];
+  const selected=new Set(marketplaces.length?marketplaces:["amazon","newegg","ebay","mercari"]);
+  const conditionTerm=conditionSearchTerm(condition);
+  const q=[conditionTerm,query].filter(Boolean).join(" ");
+  const response=await providerFetch("https://google.serper.dev/shopping",{
+    method:"POST",
+    headers:{"X-API-KEY":apiKey,"Content-Type":"application/json"},
+    body:JSON.stringify({q,gl:"us",hl:"en",num:100})
+  });
+  if(!response.ok) throw new Error("Serper Shopping returned "+response.status);
+  const data=await response.json();
+  return (data.shopping||[]).map((x,index)=>{
+    const itemPrice=parseMoney(x.price);
+    const ship=parseShippingFromSerp({delivery:x.delivery,shipping:x.shipping});
+    const marketplace=marketplaceIdFromResult(x.source,x.link);
+    let normalized=normalizeCondition((x.title||"")+" "+(x.condition||""));
+    let conditionAssumed=false;
+    if(normalized==="unknown" && condition!=="any"){normalized=condition;conditionAssumed=true;}
+    return {
+      id:"serper-market-"+(x.productId||index)+"-"+itemPrice,
+      source:marketplaceName(marketplace),
+      provider:"Serper Shopping",
+      marketplace,
+      sourceType:"marketplace-search",
+      title:x.title||"Untitled shopping result",
+      condition:normalized,
+      conditionAssumed,
+      itemPrice:itemPrice||0,
+      shipping:ship.shipping,
+      shippingKnown:ship.shippingKnown,
+      totalPrice:(itemPrice||0)+ship.shipping,
+      seller:x.source||marketplaceName(marketplace),
+      url:x.link||null,
+      freshness:null,
+      relevance:relevanceScore(x.title,query,category)
+    };
+  }).filter(x=>x.marketplace && selected.has(x.marketplace) && x.itemPrice>0 && conditionMatches(x.condition,condition));
+}
+
+export async function searchSearchApiAmazon(input){
+  const {query,category,condition,providerKeys={}}=input;
+  const q=[conditionSearchTerm(condition),query].filter(Boolean).join(" ");
+  const data=await searchSearchApiEngine("amazon_search",q,{amazon_domain:"amazon.com"},providerKeys);
+  if(!data) return [];
+  return (data.organic_results||[]).map((x,index)=>{
+    const itemPrice=Number(x.extracted_price||parseMoney(x.price)||0);
+    const ship=parseShippingFromSerp({delivery:x.delivery,shipping:x.shipping});
+    let normalized=normalizeCondition((x.title||"")+" "+(x.condition||""));
+    let conditionAssumed=false;
+    if(normalized==="unknown" && condition!=="any"){normalized=condition;conditionAssumed=true;}
+    return {
+      id:"searchapi-amazon-"+(x.asin||index),
+      source:"Amazon",
+      provider:"SearchAPI Amazon",
+      marketplace:"amazon",
+      sourceType:"retailer-marketplace",
+      title:x.title||"Amazon item",
+      condition:normalized,
+      conditionAssumed,
+      itemPrice,
+      shipping:ship.shipping,
+      shippingKnown:ship.shippingKnown,
+      totalPrice:itemPrice+ship.shipping,
+      seller:"Amazon",
+      url:x.link||null,
+      rating:Number(x.rating||0)||null,
+      reviews:Number(x.reviews||0)||null,
+      freshness:null,
+      relevance:relevanceScore(x.title,query,category)
+    };
+  }).filter(x=>x.itemPrice>0 && conditionMatches(x.condition,condition));
+}
+
+function structuredGooglePrice(x){
+  const candidates=[
+    x.extracted_price,
+    x.rich_snippet?.top?.detected_extensions?.price,
+    x.rich_snippet?.bottom?.detected_extensions?.price,
+    x.detected_extensions?.price
+  ];
+  for(const value of candidates){
+    const n=typeof value==="number"?value:parseMoney(value);
+    if(Number.isFinite(n)&&n>0)return n;
+  }
+  return null;
+}
+
+export async function searchSearchApiSiteMarketplace(input,marketplace){
+  const {query,category,condition,providerKeys={}}=input;
+  const domain=marketplace==="newegg"?"newegg.com":marketplace==="mercari"?"mercari.com":null;
+  if(!domain)return [];
+  const q=["site:"+domain,conditionSearchTerm(condition),query].filter(Boolean).join(" ");
+  const data=await searchSearchApiEngine("google",q,{gl:"us",hl:"en",link:"resolved"},providerKeys);
+  if(!data)return [];
+  return (data.organic_results||[]).map((x,index)=>{
+    const itemPrice=structuredGooglePrice(x);
+    let normalized=normalizeCondition((x.title||"")+" "+(x.snippet||""));
+    let conditionAssumed=false;
+    if(normalized==="unknown" && condition!=="any"){normalized=condition;conditionAssumed=true;}
+    return {
+      id:"searchapi-"+marketplace+"-"+index+"-"+itemPrice,
+      source:marketplaceName(marketplace),
+      provider:"SearchAPI Google",
+      marketplace,
+      sourceType:"marketplace-web",
+      title:x.title||marketplaceName(marketplace)+" listing",
+      condition:normalized,
+      conditionAssumed,
+      itemPrice:itemPrice||0,
+      shipping:0,
+      shippingKnown:false,
+      totalPrice:itemPrice||0,
+      seller:marketplaceName(marketplace),
+      url:x.link||null,
+      freshness:x.date||null,
+      relevance:relevanceScore(x.title,query,category)
+    };
+  }).filter(x=>x.itemPrice>0 && conditionMatches(x.condition,condition));
 }
 
 function bestBuySearchTerms(query) {
@@ -851,4 +1014,55 @@ export async function liveSearch(input){
     base=await inFlight.get(key);
   }
   return {...base,cached,ranked:rankDeals(base.items,base.market,input)};
+}
+
+export async function searchPartsSniper(input){
+  const selected=[...new Set((input.marketplaces||["amazon","newegg","ebay","mercari"]).filter(Boolean))];
+  const key="sniper|"+cacheKey({...input,marketplaces:selected});
+  const hit=searchCache.get(key);
+  if(hit && Date.now()-hit.savedAt<hit.ttl)return {...hit.value,cached:true};
+
+  const hasSerper=Boolean(providerKey("SERPER_API_KEY",input));
+  const hasSearchApi=Boolean(providerKey("SEARCHAPI_API_KEY",input));
+  const providers=[];
+
+  if(hasSerper) providers.push(["Retail marketplace search",()=>searchSerperMarketplaces({...input,marketplaces:selected})]);
+
+  if(selected.includes("ebay")&&hasSearchApi){
+    providers.push(["eBay",async()=> (await searchSearchApiEbay(input)).map(x=>({...x,marketplace:"ebay",provider:"SearchAPI eBay"}))]);
+  }
+
+  if(selected.includes("amazon")&&hasSearchApi&&(input.deepScan||!hasSerper)){
+    providers.push(["Amazon",()=>searchSearchApiAmazon(input)]);
+  }
+
+  if(!hasSerper&&hasSearchApi){
+    for(const marketplace of ["newegg","mercari"]){
+      if(selected.includes(marketplace))providers.push([marketplaceName(marketplace),()=>searchSearchApiSiteMarketplace(input,marketplace)]);
+    }
+  }
+
+  const settled=await Promise.all(providers.map(async([name,run])=>{
+    try{return {name,items:await run()};}
+    catch(error){return {name,error:error.name==="TimeoutError"?"Provider timed out":String(error.message||error).replace(/https?:\/\/\S+/g,"[provider]")};}
+  }));
+  const errors=settled.filter(x=>x.error).map(x=>({provider:x.name,message:x.error}));
+  const items=dedupe(settled.flatMap(x=>x.items||[]))
+    .filter(x=>selected.includes(x.marketplace||marketplaceIdFromResult(x.seller,x.url)))
+    .map(x=>{
+      const marketplace=x.marketplace||marketplaceIdFromResult(x.seller,x.url);
+      const extraRisks=[];
+      if(x.conditionAssumed)extraRisks.push("Condition inferred from the requested filter; verify the listing.");
+      return {...x,marketplace,source:marketplaceName(marketplace),url:safeUrl(x.url),sniperRiskFlags:extraRisks};
+    })
+    .filter(x=>x.relevance>=.58 && Number.isFinite(x.totalPrice) && x.totalPrice>0);
+
+  const market=buildMarket(items);
+  const ranked=rankDeals(items,market,input).map(x=>({
+    ...x,
+    riskFlags:[...(x.riskFlags||[]),...(x.sniperRiskFlags||[])]
+  }));
+  const value={items,market,ranked,errors,observedAt:new Date().toISOString(),stale:false,cached:false};
+  searchCache.set(key,{savedAt:Date.now(),ttl:errors.length?30000:CACHE_MS,value});
+  return value;
 }
