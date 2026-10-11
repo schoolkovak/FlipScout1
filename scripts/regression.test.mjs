@@ -62,3 +62,33 @@ test('Parts & Sniper keeps marketplace identity and filters junk results',async(
     assert.ok(result.ranked.every(x=>x.score<=x.scoreCap));
   }finally{globalThis.fetch=original;}
 });
+
+
+test('Deal Hunt isolates cached results by selected store and reports actual coverage',async()=>{
+  const previous=globalThis.fetch;
+  let calls=0;
+  globalThis.fetch=async(url)=>{
+    if(!String(url).includes('google.serper.dev'))throw new Error('Unexpected provider call');
+    calls++;
+    return {ok:true,status:200,json:async()=>({shopping:[
+      {title:'RTX 5070 used graphics card',source:'Newegg',price:'$460',delivery:'Free shipping',link:'https://www.newegg.com/p/part1'},
+      {title:'RTX 5070 used graphics card',source:'Mercari',price:'$470',delivery:'Free shipping',link:'https://www.mercari.com/us/item/part2'}
+    ]})};
+  };
+  try{
+    const common={query:'RTX 5070',category:'GPU',condition:'used',providerKeys:{SERPER_API_KEY:'store-cache-test'}};
+    const a=await searchPartsSniper({...common,marketplaces:['newegg'],distanceRadius:'newegg'});
+    const b=await searchPartsSniper({...common,marketplaces:['mercari'],distanceRadius:'mercari'});
+    assert.deepEqual(a.items.map(x=>x.marketplace),['newegg']);
+    assert.deepEqual(b.items.map(x=>x.marketplace),['mercari']);
+    assert.equal(calls,2);
+    assert.equal(b.sourceCoverage.find(x=>x.id==='mercari').count,1);
+  } finally{globalThis.fetch=previous;}
+});
+
+test('Incomplete GPU assemblies cannot appear as working-card deals',()=>{
+  for(const title of ['RTX 4070 GPU bare PCB only','RTX 4070 missing heatsink and backplate',
+    'RTX 4070 with no fans','RTX 4070 card not working','RTX 4070 GPU untested']){
+    assert.equal(relevanceScore(title,'RTX 4070','GPU'),0,title);
+  }
+});
