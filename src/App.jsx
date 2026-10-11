@@ -711,6 +711,10 @@ function PartsSniper({providerKeys,onWatchChange}){
 
     <section className="panel">
       <div className="sectionHeading"><div><span className="eyebrow">02 / YOUR SEARCH</span><h3>Which parts do you need?</h3><p>Each target can have its own category, condition, and ceiling price.</p></div><span className="targetCounter">{targets.length}/5</span></div>
+      <div className="quickTargets">
+        <span>QUICK TRACKERS</span>
+        {["GPU","CPU","RAM / Memory","NVMe SSD","Motherboard","Power Supply / PSU"].map(name=><button key={name} className={targets[0]?.category===name?"active":""} onClick={()=>changeCategory(targets[0].id,name)}>{name}</button>)}
+      </div>
       <div className="targetList">
         {targets.map((target,index)=><div className="targetCard" key={target.id}>
           <div className="targetNumber">#{index+1}</div>
