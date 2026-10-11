@@ -513,3 +513,84 @@ body{background:#080a0f!important}
 .fsManualResultsControls select{padding:11px}
 .fsManualResultsControls>b{color:#c3e5e1;font-size:12px}
 @media(max-width:760px){.fsScannerSummary{grid-template-columns:repeat(2,1fr)}.fsManualResultsControls{flex-direction:column;align-items:stretch}.fsManualResultsControls label{width:100%}}
+
+/* Reference-inspired compact pricing board — original FlipScout brand.
+   Dark almost-black background, alternating neon green/cyan accents, tight
+   cards, dual-outline controls, and a narrow configurable left column. */
+:root{--fs-mint:#00eab0;--fs-azure:#02bef5;--fs-night:#0a0b13;--fs-card:#161718}
+html,body,.appShell{background:#0b0c14!important}
+.appShell{min-height:100vh}
+.topNav{background:#14141d!important;min-height:53px!important;padding:8px 2vw!important;border-bottom:1px solid #2a2933!important}
+.mainWrap{max-width:none!important;margin:0!important;padding:8px 12px 40px!important}
+.fsDealLayout{grid-template-columns:205px minmax(0,1fr)!important;gap:10px!important;padding:0!important;align-items:start!important}
+.fsSidebar{padding:10px 6px 8px 2px!important;top:0!important;gap:12px!important;max-height:calc(100vh - 70px);scrollbar-color:#00e9ad #0b121c}
+.fsSidePanel{background:linear-gradient(132deg,#1a201f,#111517)!important;padding:12px!important;border:1px solid #00b988!important;border-radius:9px!important;box-shadow:0 0 13px #00c69d24!important;gap:6px!important}
+.fsSidePanel:nth-child(2n){border-color:#0396bd!important;box-shadow:0 0 13px #04c8e127!important}
+.fsSidePanel h3{font-size:12px!important;text-transform:none!important;color:#fff!important;border-bottom:0!important;justify-content:space-between;letter-spacing:0!important;margin:0 0 6px!important;padding:0 0 5px!important}
+.fsPanelChevron{margin-left:auto;font-size:16px;color:#d1dad9}
+.fsSidePick{background:linear-gradient(#262829,#1e2022)!important;color:#cef5df!important;border-color:#393c3e!important;font-size:11px!important;font-weight:750!important;border-radius:5px!important;padding:9px 10px!important;display:flex;gap:8px;align-items:center;justify-content:space-between}
+.fsSidePick span:last-child{color:#06dfa9;font-size:12px}
+.fsSidePick.chosen,.fsSidePick:hover{background:linear-gradient(#253831,#152b27)!important;color:#00efa9!important;border-color:#00a981!important;box-shadow:0 0 16px #00dc9e20!important}
+.fsSidePanel h4{font-size:10px}
+.fsSidePanel input,.fsSidePanel select{background:#24272a!important;border:1px solid #3a4042!important;border-radius:5px!important;padding:8px 7px!important}
+.fsRetailer{padding:6px 1px!important;color:#ecf7f3!important;font-size:11px!important}
+.fsRetailer input{accent-color:#00eba7!important;cursor:pointer}
+.fsRetailer small{color:#94a2ac}
+.fsSegment{background:#080b0d!important}
+.fsSegment button.chosen{color:#00eaa6!important;background:#043528!important}
+.fsDealMain{padding:0 4px 24px!important;min-width:0}
+.fsCategoryStrip{padding:11px 5px 6px!important;gap:12px!important}
+.fsCategoryStrip button{border-radius:20px!important;padding:6px 13px!important;font-weight:800!important;font-size:10px!important;background:#24252b!important;border:1px solid #35363f!important;color:#c6cad3!important}
+.fsCategoryStrip button.chosen{background:#092827!important;color:#08ede1!important;border-color:#00e8ae!important}
+.fsDealTitle{min-height:178px!important;padding:10px 10px 8px!important;text-align:center!important;display:flex;align-items:center;justify-content:center}
+.fsDealTitle>div:first-child{max-width:900px;margin:auto}
+.fsDealTitle h1{font-size:clamp(21px,2.5vw,31px)!important;letter-spacing:-.02em!important;background:linear-gradient(90deg,#00eb93,#00d8b2,#09aef1)!important;background-clip:text!important;-webkit-background-clip:text!important;font-weight:950}
+.fsDealTitle h2{font-size:15px!important;color:#fff8c1!important;font-weight:900!important;margin:10px 0!important}
+.fsDealTitle p{font-size:10px!important;color:#e1e3e8!important}
+.fsDealTitle .fsHeroCaution{font-size:11px!important;color:#b8bac7!important}
+.fsHeroLine{width:38px;height:1px;margin:9px auto!important;background:#c0c6af!important}
+.fsHeaderStat{right:8px;top:12px}
+.fsHeaderStat strong{font-size:21px;color:#02eba3}
+.fsEyebrow{font-size:9px!important;color:#96acae!important}
+.fsSeriesNav{display:none!important}
+.fsBreadcrumb{display:flex;align-items:center;gap:12px;color:#bec8cc;font-size:11px;margin:8px 0 5px;padding:10px 3px}
+.fsBreadcrumb strong,.fsBreadcrumb b{color:#02dba7}
+.fsBreadcrumb span{color:#6aa2a0}
+.fsScanControls{padding:9px 11px!important;margin:7px 0 10px!important;background:#121b20!important;border-color:#22433e!important}
+.fsScanLive b{color:#fff!important;font-size:10px!important}
+.fsScanControls select{width:155px!important;font-size:10px!important;padding:8px!important}
+.fsSmallButton{padding:9px!important}
+.fsScanButton{background:linear-gradient(90deg,#00eda1,#00b9ed)!important;padding:10px 14px!important;font-size:10px!important}
+.fsSubfilters{margin:11px 0 12px!important}
+.fsProducts{grid-template-columns:repeat(auto-fill,minmax(205px,1fr))!important;gap:13px!important}
+.fsProduct{background:linear-gradient(180deg,#16181a,#131517)!important;border:1px solid #153d31!important;border-radius:6px!important;box-shadow:none!important}
+.fsProductHeading{padding:12px 11px 7px!important}
+.fsProductHeading>b{font-size:18px!important;color:#00d9c6!important;text-transform:uppercase}
+.fsSaveBadge{background:#2054d2!important;color:#fff!important;border-radius:3px!important;font-size:8px!important;padding:5px 6px!important}
+.fsProductVisual{height:150px!important;margin:0 11px!important;background:white!important;border-radius:5px!important}
+.fsProductInfo{padding:8px 11px 11px!important}
+.fsStoreLine span{font-size:10px!important;color:#00dec6!important}
+.fsStoreLine b{font-size:8px!important;background:#07b18c!important;color:#051c1a!important}
+.fsProductInfo h3{font-size:11px!important;color:#05c8dd!important;font-weight:900!important;min-height:45px!important;line-height:1.35!important;margin:6px 0 4px!important}
+.fsProductDesc{font-size:9px!important;line-height:1.35!important;color:#7f929f!important;min-height:20px!important}
+.fsHardwareSpecs{font-size:9px!important;color:#9ec4c9;display:flex;gap:7px;margin:6px 0 0}
+.fsHardwareSpecs b{font-size:12px;color:#478aff}
+.fsPrice{margin:8px 0 2px!important}
+.fsPrice strong{font-size:20px!important;color:#fff!important}
+.fsPrice b{font-size:9px!important;white-space:normal}
+.fsPriceExtra{font-size:9px!important;min-height:30px!important;color:#7e8fa6!important}
+.fsIndirectLabel{font-size:9px;color:#ffc68d!important}
+.fsConditionLine{margin:6px 0!important;color:#8299ac!important;font-size:9px!important}
+.fsMoreButton{background:#0c1114!important;border:1px solid #009cba!important;font-size:10px!important;padding:8px!important;font-weight:900!important;color:#e7ebf3!important}
+.fsProductLink{background:linear-gradient(90deg,#00ef91,#02aeed)!important;font-size:10px!important;padding:10px 5px!important;font-weight:900!important;color:#06141a!important}
+.fsProductLink:hover{filter:brightness(1.12)}
+.fsNoDeals{background:#101a1e!important;border:1px solid #28514b!important;min-height:200px}
+.fsMarketWarning{font-size:11px!important}
+.fsOpenScanner{width:100%;display:flex;align-items:center;justify-content:center;margin:16px 0 4px;padding:12px;border:1px solid #05bfb0!important;background:#0a2325!important;color:#15edd1!important;border-radius:6px;font-size:11px;font-weight:950;letter-spacing:.05em;cursor:pointer}
+.fsOpenScanner:hover{background:#123a38!important}
+.fsSourceDetails{border-color:#315e54!important;background:#111a1d!important}
+@media (min-width:1480px){.fsProducts{grid-template-columns:repeat(6,minmax(0,1fr))!important}}
+@media (max-width:1479px) and (min-width:1130px){.fsProducts{grid-template-columns:repeat(5,minmax(0,1fr))!important}}
+@media (max-width:1129px) and (min-width:760px){.fsProducts{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+@media (max-width:759px){.fsDealLayout{display:block!important}.fsSidebar{position:static!important;max-height:none!important;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.fsDealTitle{min-height:145px!important}.fsHeaderStat{display:none}}
+@media (max-width:520px){.fsSidebar{grid-template-columns:1fr!important}.fsProducts{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important}.fsProductVisual{height:120px!important;margin:0 7px!important}.fsProductHeading>b{font-size:12px!important}.fsProductInfo h3{font-size:10px!important}.fsPrice strong{font-size:16px!important}}
