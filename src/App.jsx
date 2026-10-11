@@ -603,13 +603,19 @@ function PartsSniper({providerKeys,onWatchChange}){
     {id:"target-1",category:"GPU",query:"RTX 5070",condition:"used",maxPrice:550,buildBudget:1000,committed:300}
   ]);
   const [marketplaces,setMarketplaces]=useState(["amazon","bestbuy","walmart","newegg","ebay","aliexpress","bhphoto","adorama","microcenter","mercari"]);
-  const [deepScan,setDeepScan]=useState(true);
+  const [deepScan,setDeepScan]=useState(false);
   const [pages,setPages]=useState({});
   const [storeFilters,setStoreFilters]=useState({});
   const [loading,setLoading]=useState(false);
   const [data,setData]=useState(null);
   const [error,setError]=useState("");
   const [watched,setWatched]=useState(()=>getWatchlist());
+  const [autoRefresh,setAutoRefresh]=useState(false);
+  const [refreshMinutes,setRefreshMinutes]=useState(15);
+  const [lastScan,setLastScan]=useState(null);
+  const [newListings,setNewListings]=useState([]);
+  const scanBusy=useRef(false);
+  const previousListings=useRef(null);
 
   function updateTarget(id,key,value){
     setTargets(rows=>rows.map(x=>x.id===id?{...x,[key]:value}:x));
@@ -651,33 +657,48 @@ function PartsSniper({providerKeys,onWatchChange}){
     return watched.some(x=>(x.url||x.id||x.title)===key);
   }
 
-  async function scan(){
-    if(loading)return;
-    if(!marketplaces.length){setError("Choose at least one marketplace.");return;}
+  async function scan(quiet=false){
+    if(scanBusy.current || !marketplaces.length)return;
     const invalid=targets.find(x=>!String(x.query||"").trim());
-    if(invalid){setError("Every target needs a part or model.");return;}
-    setLoading(true);setError("");setData(null);setPages({});setStoreFilters({});
-    track("sniper_scan",{targets:targets.length,marketplaces:marketplaces.length,deepScan});
+    if(invalid){if(!quiet)setError("Every target needs a part or model.");return;}
+    scanBusy.current=true;
+    setLoading(true);
+    if(!quiet){setError("");setData(null);setPages({});setStoreFilters({});}
+    if(!quiet)track("sniper_scan",{targets:targets.length,marketplaces:marketplaces.length,deepScan});
     try{
+      // Lightweight mode during interval scans protects search-provider quotas.
       const r=await fetch("/api/parts/sniper",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({targets,marketplaces,deepScan,providerKeys}),
+        body:JSON.stringify({targets,marketplaces,deepScan:quiet?false:deepScan,providerKeys}),
         signal:AbortSignal.timeout(45000)
       });
       const d=await r.json();
-      if(!r.ok){setError(d.message||"Deal Hunt could not run this scan.");return;}
-      setData(d);
-      if(!d.available)setError(d.message||"No qualifying live listings were found.");
-    }catch{
-      setError("Deal Hunt could not reach the live shopping service. Try again.");
-    }finally{setLoading(false);}
+      if(!r.ok)throw new Error(d.message||"Scan failed.");
+      const observed=(d.results||[]).flatMap(group=>(group.results||[]).map(item=>item.url).filter(Boolean));
+      const previous=previousListings.current;
+      setNewListings(previous===null?[]:observed.filter(url=>!previous.has(url)));
+      previousListings.current=new Set(observed);
+      setData(d);setLastScan(new Date());
+      setError(d.available?"":d.message||"No qualifying live listings were found.");
+    }catch(e){setError("Scan failed: "+String(e?.message||"Provider unavailable"));}
+    finally{scanBusy.current=false;setLoading(false);}
   }
+
+  useEffect(()=>{
+    if(!autoRefresh)return;
+    // Foreground-only scanning: closing the browser does not run a background monitor.
+    const timer=window.setInterval(()=>{
+      if(document.visibilityState==="visible"&&!scanBusy.current)scan(true);
+    },refreshMinutes*60*1000);
+    return ()=>window.clearInterval(timer);
+  },[autoRefresh,refreshMinutes,targets,marketplaces,deepScan,providerKeys]);
+
 
   return <div className="pageStack">
     <section className="sniperHero">
-      <div><span className="eyebrow">THE HARDWARE FINDER</span><h2>Find the right part. At the right price.</h2><p>Search real stores, compare live listings, and skip the junk. We rank deals for value, not just the lowest sticker price.</p></div>
-      <div className="sniperHeroStats"><div><b>01</b><span>Choose your part</span></div><div><b>02</b><span>Select your stores</span></div><div><b>03</b><span>Compare real deals</span></div></div>
+      <div><span className="eyebrow">PC PARTS / LIVE MARKET INTELLIGENCE</span><h2>BETTER PARTS.<br/>BETTER PRICES.</h2><p>Real new, open-box, refurbished and used hardware. Filter out obvious junk. Rank deals by actual value, evidence and total cost.</p></div>
+      <div className="sniperHeroStats"><div><b>38</b><span>part categories</span></div><div><b>10</b><span>retailers & marketplaces</span></div><div><b>5</b><span>targets per manual scan</span></div></div>
     </section>
 
     <section className="panel">
@@ -685,11 +706,15 @@ function PartsSniper({providerKeys,onWatchChange}){
       <div className="marketplacePicker">
         {SNIPER_MARKETPLACES.map(m=><button key={m.id} className={marketplaces.includes(m.id)?"marketplaceChip active":"marketplaceChip"} onClick={()=>toggleMarketplace(m.id)}><span className="marketplaceInitial">{m.name.slice(0,1)}</span><span><b>{m.name}</b><small>{marketplaces.includes(m.id)?"Included":"Tap to include"}</small></span></button>)}
       </div>
-      <label className="toggleLine"><input type="checkbox" checked={deepScan} onChange={e=>setDeepScan(e.target.checked)}/><span><b>Deep scan</b><small>Searches selected retailer domains individually when SearchAPI is available. Uses additional provider credits.</small></span></label>
+      <label className="toggleLine"><input type="checkbox" checked={deepScan} onChange={e=>setDeepScan(e.target.checked)}/><span><b>Deep scan</b><small>Adds separate retailer-domain searches for wider coverage. Uses significantly more provider credits.</small></span></label>
     </section>
 
     <section className="panel">
       <div className="sectionHeading"><div><span className="eyebrow">02 / YOUR SEARCH</span><h3>Which parts do you need?</h3><p>Each target can have its own category, condition, and ceiling price.</p></div><span className="targetCounter">{targets.length}/5</span></div>
+      <div className="quickTargets">
+        <span>QUICK TRACKERS</span>
+        {["GPU","CPU","RAM / Memory","NVMe SSD","Motherboard","Power Supply / PSU"].map(name=><button key={name} className={targets[0]?.category===name?"active":""} onClick={()=>changeCategory(targets[0].id,name)}>{name}</button>)}
+      </div>
       <div className="targetList">
         {targets.map((target,index)=><div className="targetCard" key={target.id}>
           <div className="targetNumber">#{index+1}</div>
@@ -700,12 +725,19 @@ function PartsSniper({providerKeys,onWatchChange}){
           <button className="targetRemove" disabled={targets.length===1} onClick={()=>removeTarget(target.id)} aria-label={"Remove target "+(index+1)}><Trash2 size={16}/></button>
         </div>)}
       </div>
-      <div className="sniperActions"><button className="secondary" onClick={addTarget} disabled={targets.length>=5}><span className="plusText">+</span>Add target</button><button className="primary large" onClick={scan} disabled={loading}>{loading?<><RefreshCw className="spin" size={18}/>Scanning marketplaces...</>:<><Target size={18}/>Find deals</>}</button></div>
+      <div className="sniperActions"><button className="secondary" onClick={addTarget} disabled={targets.length>=5}><span className="plusText">+</span>Add target</button><button className="primary large" onClick={()=>scan(false)} disabled={loading}>{loading?<><RefreshCw className="spin" size={18}/>Scanning marketplaces...</>:<><Target size={18}/>Find deals</>}</button></div>
+      <div className="liveMonitor">
+        <div className="liveMonitorTitle"><span className={autoRefresh?"pulseDot active":"pulseDot"}></span><div><b>Live deal watch</b><small>{autoRefresh?"Monitoring while this tab is open":"Enable periodic refresh when you want to watch for newly listed deals"}</small></div></div>
+        <label className="monitorSwitch"><input type="checkbox" checked={autoRefresh} onChange={e=>setAutoRefresh(e.target.checked)}/> Auto-refresh</label>
+        <label>Interval <select value={refreshMinutes} onChange={e=>setRefreshMinutes(Number(e.target.value))}><option value={5}>5 min</option><option value={15}>15 min</option><option value={30}>30 min</option></select></label>
+        {lastScan&&<span className="monitorTimestamp">Last check {lastScan.toLocaleTimeString()} · {newListings.length} new links</span>}
+      </div>
+      <p className="monitorCaution">Auto scans use a lower-cost shopping search and pause when this tab is hidden. A five-minute interval can consume provider credits quickly. This is not 24/7 server monitoring or a guarantee that every listing is still in stock.</p>
       {error&&<div className="notice"><AlertTriangle size={18}/><div><b>{error}</b>{data?.sources&&<p>Check the source-health footer for provider status.</p>}</div></div>}
     </section>
 
     {data?.available&&<section className="sniperResults">
-      <div className="sniperResultsHead"><div><span className="eyebrow">03 / VERIFIED RESULTS</span><h2>{data.successfulTargets}/{data.targetCount} parts with matching offers</h2><p>Selected stores: {data.marketplaces.map(id=>SNIPER_MARKETPLACES.find(x=>x.id===id)?.name||id).join(", ")}. Only stores with real matching results appear below.</p></div><div className="scanTime">{new Date(data.searchedAt).toLocaleTimeString()}</div></div>
+      <div className="sniperResultsHead"><div><span className="eyebrow">03 / LIVE DEAL BOARD</span><h2>{data.successfulTargets}/{data.targetCount} parts with matching offers</h2><p>Selected stores: {data.marketplaces.map(id=>SNIPER_MARKETPLACES.find(x=>x.id===id)?.name||id).join(", ")}. Only stores with real matching results appear below.</p></div><div className="scanTime">{new Date(data.searchedAt).toLocaleTimeString()}</div></div>
       {(data.results||[]).map(group=><section className="panel sniperTargetResults" key={group.id}>
         <div className="targetResultHeader">
           <div><span className="eyebrow">{group.target.category}</span><h3>{group.target.query}</h3><p>{SNIPER_CONDITIONS.find(x=>x.value===group.target.condition)?.label||group.target.condition}{group.target.maxPrice>0?" · max "+money(group.target.maxPrice):" · no price cap"}</p></div>
@@ -722,7 +754,7 @@ function PartsSniper({providerKeys,onWatchChange}){
         </div>}
 
         {!group.results?.length?<div className="emptyState">No relevant priced listings survived FlipScout's filters for this target.</div>:<div className="sniperDealGrid">{group.results.filter(item=>(storeFilters[group.id]||"all")==="all"||item.marketplace===storeFilters[group.id]).slice((pages[group.id]||0)*12,((pages[group.id]||0)+1)*12).map((item,i)=><article className="sniperDeal" key={item.id||i}>
-          <div className="sniperDealTop"><div><span className="source">{item.source}</span>{item.soldCount>0&&<span className="soldChip">{item.soldCount}+ sold</span>}</div><div className="dealScore"><b>{item.score}</b><small>cap {item.scoreCap||100}</small></div></div>
+          <div className="sniperDealTop"><div><span className="source">{item.source}</span>{newListings.includes(item.url)&&<span className="newDealChip">NEW</span>}{item.soldCount>0&&<span className="soldChip">{item.soldCount}+ sold</span>}</div><div className="dealScore"><b>{item.score}</b><small>cap {item.scoreCap||100}</small></div></div>
           <h4>{item.title}</h4>
           <div className="sniperPrice"><b>{money(item.totalPrice)}</b><span>{item.shippingKnown?"delivered":"shipping not confirmed"}</span></div>
           <div className="dealMeta"><span>{item.condition}</span><span className={item.percentVsMarket>=10?"goodText":item.percentVsMarket<0?"badText":""}>{item.percentVsMarket>=0?item.percentVsMarket+"% under market":Math.abs(item.percentVsMarket)+"% over market"}</span>{item.seller&&<span>{item.seller}</span>}</div>
