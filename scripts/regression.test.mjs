@@ -262,3 +262,17 @@ test('Part Scanner API enforces price range and returns real multi-store results
     assert.ok(result.payload.results.every(x=>x.totalPrice>=195&&x.totalPrice<=300));
   }finally{globalThis.fetch=previous;}
 });
+
+
+test('valid RTX 4060 VRAM suffix survives, while wrong VRAM, Ti and broken cards do not',()=>{
+  assert.ok(relevanceScore('Gigabyte GeForce RTX 4060 8GB Windforce OC desktop GPU','RTX 4060','GPU')>=.72);
+  assert.equal(relevanceScore('GeForce RTX 4060 Ti 16GB desktop graphics card','RTX 4060','GPU'),0);
+  assert.equal(relevanceScore('RTX 4060 12GB desktop graphics card','RTX 4060','GPU'),0);
+  assert.equal(relevanceScore('RTX 4060 8GB bare PCB only','RTX 4060','GPU'),0);
+  assert.equal(relevanceScore('RTX 4060 8GB laptop GPU','RTX 4060','GPU'),0);
+});
+
+test('valid CPU titles with core count keep relevance without allowing a different CPU',()=>{
+  assert.ok(relevanceScore('AMD Ryzen 5 5600 6 Core Desktop CPU Processor','Ryzen 5 5600','CPU')>=.72);
+  assert.equal(relevanceScore('AMD Ryzen 5 5600X Processor','Ryzen 5 5600','CPU'),0);
+});
