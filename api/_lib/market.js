@@ -405,7 +405,7 @@ export async function searchSearchApiBestBuy(input) {
   if(!data) return [];
   const out=[];
   for(const [index,x] of (data.organic_results||[]).entries()){
-    const itemPrice=Number(x.extracted_price||0);
+    const itemPrice=Number(x.extracted_price||parseMoney(x.price)||0);
     if(itemPrice>0 && (condition==="any"||condition==="new")){
       out.push({
         id:"searchapi-bestbuy-new-"+(x.product_id||index),
@@ -419,6 +419,7 @@ export async function searchSearchApiBestBuy(input) {
         totalPrice:itemPrice,
         seller:x.seller?.name||"Best Buy",
         url:x.link||null,
+        imageUrl:safeImage(x.thumbnail||x.image),
         freshness:null,
         relevance:relevanceScore(x.title,query,category)
       });
@@ -439,6 +440,7 @@ export async function searchSearchApiBestBuy(input) {
           totalPrice:openPrice,
           seller:"Best Buy",
           url:offer.link||x.link||null,
+          imageUrl:safeImage(x.thumbnail||x.image),
           freshness:null,
           relevance:relevanceScore(x.title,query,category)
         });
@@ -454,7 +456,7 @@ export async function searchSearchApiWalmart(input) {
   const data=await searchSearchApiEngine("walmart_search",query,{sort_by:"best_match"},providerKeys);
   if(!data) return [];
   return (data.organic_results||[]).map((x,index)=>{
-    const itemPrice=Number(x.extracted_price||0);
+    const itemPrice=Number(x.extracted_price||parseMoney(x.price)||0);
     const shippingKnown=Boolean(x.is_free_shipping);
     return {
       id:"searchapi-walmart-"+(x.id||index),
@@ -468,6 +470,7 @@ export async function searchSearchApiWalmart(input) {
       totalPrice:itemPrice,
       seller:x.seller_name||"Walmart",
       url:x.link||null,
+      imageUrl:safeImage(x.thumbnail||x.image),
       freshness:null,
       relevance:relevanceScore(x.title,query,category)
     };
@@ -562,7 +565,7 @@ export async function searchSerperMarketplaces(input){
       shippingKnown:ship.shippingKnown,
       totalPrice:(itemPrice||0)+ship.shipping,
       seller:x.source||marketplaceName(marketplace),
-      url:merchantLink(marketplace,x.link,x.product_link,x.merchant_link),
+      url:merchantLink(marketplace,x.link,x.product_link,x.merchant_link,x.productUrl,x.offer_link,x.destination),
       imageUrl:safeImage(x.thumbnail||x.image||x.serpapi_thumbnail),
       freshness:null,
       relevance:relevanceScore(x.title,query,category)
@@ -579,7 +582,7 @@ export async function searchSearchApiShopping(input){
   return (data?.shopping_results||[]).map((x,index)=>{
     const merchant=x.seller||x.source||"";
     // Google sometimes provides a product-page URL rather than a store checkout URL.
-    const url=merchantLink(marketplaceIdFromResult(merchant,x.domain||x.link||x.product_link),x.link,x.product_link,x.merchant_link,x.offer_link);
+    const url=merchantLink(marketplaceIdFromResult(merchant,x.domain||x.link||x.product_link),x.link,x.product_link,x.merchant_link,x.offer_link,x.productUrl,x.destination);
     const store=marketplaceIdFromResult(merchant,x.domain||url);
     const itemPrice=Number(x.extracted_price||parseMoney(x.price)||0);
     const ship=parseShippingFromSerp({delivery:x.delivery});
@@ -623,6 +626,7 @@ export async function searchSearchApiAmazon(input){
       totalPrice:itemPrice+ship.shipping,
       seller:"Amazon",
       url:x.link||null,
+      imageUrl:safeImage(x.thumbnail||x.image),
       rating:Number(x.rating||0)||null,
       reviews:Number(x.reviews||0)||null,
       freshness:null,
@@ -636,18 +640,24 @@ function structuredGooglePrice(x){
     x.extracted_price,
     x.rich_snippet?.top?.detected_extensions?.price,
     x.rich_snippet?.bottom?.detected_extensions?.price,
-    x.detected_extensions?.price
+    x.detected_extensions?.price,
+    x.price,
+    x.price_information?.price
   ];
   for(const value of candidates){
     const n=typeof value==="number"?value:parseMoney(value);
     if(Number.isFinite(n)&&n>0)return n;
   }
-  return null;
+  // A dollar-denominated snippet price is useful evidence, but never mistake
+  // a wattage, quantity, or review count for a price.
+  const snippet=String(x.snippet||"");
+  const match=snippet.match(/\$\s*([0-9]{1,5}(?:,[0-9]{3})*(?:\.[0-9]{2})?)/);
+  return match?Number(match[1].replace(/,/g,"")):null;
 }
 
 export async function searchSearchApiSiteMarketplace(input,marketplace){
   const {query,category,condition,providerKeys={}}=input;
-  const domains={newegg:"newegg.com",mercari:"mercari.com",bestbuy:"bestbuy.com",walmart:"walmart.com",aliexpress:"aliexpress.us",bhphoto:"bhphotovideo.com",adorama:"adorama.com",microcenter:"microcenter.com"};
+  const domains={newegg:"newegg.com",mercari:"mercari.com",bestbuy:"bestbuy.com",walmart:"walmart.com",aliexpress:"aliexpress.com",bhphoto:"bhphotovideo.com",adorama:"adorama.com",microcenter:"microcenter.com"};
   const domain=domains[marketplace]||null;
   if(!domain)return [];
   const q=["site:"+domain,conditionSearchTerm(condition),query].filter(Boolean).join(" ");
@@ -673,6 +683,7 @@ export async function searchSearchApiSiteMarketplace(input,marketplace){
       totalPrice:itemPrice||0,
       seller:marketplaceName(marketplace),
       url:x.link||null,
+      imageUrl:safeImage(x.thumbnail||x.image),
       freshness:x.date||null,
       relevance:relevanceScore(x.title,query,category)
     };
@@ -819,6 +830,7 @@ export async function searchEbay({query,category,condition}) {
       totalPrice:itemPrice+shipping,
       seller:x.seller?.username||"eBay seller",
       url:x.itemWebUrl||null,
+      imageUrl:safeImage(x.image?.imageUrl||x.thumbnailImages?.[0]?.imageUrl),
       freshness:x.itemCreationDate||null,
       relevance:relevanceScore(x.title,query,category)
     };
@@ -1116,7 +1128,7 @@ export async function liveSearch(input){
 
 export async function searchPartsSniper(input){
   const selected=[...new Set((input.marketplaces||["amazon","bestbuy","walmart","newegg","ebay","aliexpress","mercari"]).filter(Boolean))];
-  const key="sniper|"+cacheKey({...input,marketplaces:selected});
+  const key="sniper|"+selected.slice().sort().join(",")+"|"+cacheKey(input);
   const hit=searchCache.get(key);
   if(hit && Date.now()-hit.savedAt<hit.ttl)return {...hit.value,cached:true};
 
