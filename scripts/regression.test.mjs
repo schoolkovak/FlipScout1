@@ -26,7 +26,7 @@ test('live API computes and returns evidence after parallel provider calls',asyn
 
 test('Deal Hunt exposes 38 categories, trusted shopping sources, and six conditions',()=>{
   assert.equal(SNIPER_CATEGORIES.length,38);
-  assert.deepEqual(SNIPER_MARKETPLACES.map(x=>x.id),['amazon','bestbuy','walmart','newegg','ebay','aliexpress','bhphoto','adorama','microcenter','mercari']);
+  assert.deepEqual(SNIPER_MARKETPLACES.map(x=>x.id),['amazon','bestbuy','walmart','newegg','ebay','aliexpress','mercari']);
   assert.deepEqual(SNIPER_CONDITIONS.map(x=>x.value),['any','new','open-box','renewed','refurbished','used']);
 });
 
