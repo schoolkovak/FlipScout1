@@ -45,7 +45,7 @@ export default function AutomaticDiscovery({providerKeys}){
   const scanRef=useRef(null);
   const parts=useMemo(()=>SNIPER_CATEGORIES.map(x=>x.name),[]);
   const variations=useMemo(()=>DISCOVERY_TARGETS.filter(x=>category!=="All"&&x.category===category),[category]);
-  useEffect(()=>{return()=>{mountedRef.current=false;}},[]);
+  useEffect(()=>{mountedRef.current=true;return()=>{mountedRef.current=false;}},[]);
   useEffect(()=>{
     try{localStorage.setItem(STORE_KEY,JSON.stringify(catalog));}catch{}
   },[catalog]);
@@ -109,6 +109,7 @@ export default function AutomaticDiscovery({providerKeys}){
     })))
     .filter(item=>(store==="all"||item.marketplace===store)&&(condition==="any"||item.condition===condition));
   const unique=[...new Map(offers.map(item=>[item.url,item])).values()];
+  const storeCounts=Object.fromEntries(SNIPER_MARKETPLACES.map(x=>[x.id,new Set(offers.filter(item=>item.marketplace===x.id).map(item=>item.url)).size]));
   unique.sort(sort==="price"?(a,b)=>a.totalPrice-b.totalPrice:(a,b)=>(b.score||0)-(a.score||0)||a.totalPrice-b.totalPrice);
   const newest=Object.values(catalog).map(x=>x.checkedAt).sort().at(-1);
   const totalPages=Math.ceil(DISCOVERY_TARGETS.length/BATCH);
@@ -152,7 +153,7 @@ export default function AutomaticDiscovery({providerKeys}){
         <option value="all">All variations ({variations.length})</option>{variations.map(item=><option value={item.id} key={item.id}>{item.query}</option>)}
       </select></label>
       <label>Store<select value={store} onChange={e=>{setStore(e.target.value);setLimit(24)}}>
-        <option value="all">All stores</option>{SNIPER_MARKETPLACES.map(x=><option value={x.id} key={x.id}>{x.name}</option>)}
+        <option value="all">All stores</option>{SNIPER_MARKETPLACES.map(x=><option value={x.id} key={x.id}>{x.name} ({storeCounts[x.id]||0})</option>)}
       </select></label>
       <label>Condition<select value={condition} onChange={e=>{setCondition(e.target.value);setLimit(24)}}>
         <option value="any">Any working condition</option><option value="new">New</option><option value="used">Used</option><option value="open-box">Open box</option><option value="refurbished">Refurbished</option><option value="renewed">Renewed</option>
@@ -162,6 +163,7 @@ export default function AutomaticDiscovery({providerKeys}){
       </select></label>
     </div>
     <p className="discoverySortingNote">Sorting, part and variation filters only rearrange offers already loaded; only scan controls contact live providers.</p>
+    <div className="discoveryCoverage">{SNIPER_MARKETPLACES.map(x=><span key={x.id} className={storeCounts[x.id]?"hasOffers":"noOffers"}>{x.name} <b>{storeCounts[x.id]||"—"}</b></span>)}</div>
 
     {!unique.length?<div className="discoveryEmpty">{checked?"No matching listings in the scanned categories yet. Try all stores or another condition.":"Initial discovery is building. The first matching offers will appear after a scan completes."}</div>:
       <div className="discoveryGrid">{unique.slice(0,limit).map(item=><article className="discoveryCard" key={item.url}>
