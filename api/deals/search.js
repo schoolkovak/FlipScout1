@@ -20,7 +20,8 @@ export default async function handler(req,res) {
     condition:req.body?.condition||"any",
     partBudget:maxPrice,sortBy:"best",
     deepScan:Boolean(req.body?.deepScan),
-    marketplaces:SNIPER_MARKETPLACES.map(m=>m.id),providerKeys
+    marketplaces:SNIPER_MARKETPLACES.map(m=>m.id),providerKeys,
+    skipSearchApi:Boolean(req.body?.skipSearchApi)
   };
   const result=await searchPartsSniper(input);
   const filtered=result.ranked.filter(item=>item.totalPrice>=minPrice&&(!maxPrice||item.totalPrice<=maxPrice));

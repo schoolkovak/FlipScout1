@@ -53,7 +53,7 @@ test('Parts & Sniper keeps marketplace identity and filters junk results',async(
       query:'RTX 5070',category:'GPU',condition:'used',
       marketplaces:['amazon','newegg','ebay','mercari'],
       partBudget:550,buildBudget:1100,committed:300,
-      providerKeys:{SERPER_API_KEY:'test-serper',SEARCHAPI_API_KEY:'test-searchapi'}
+      deepScan:true,providerKeys:{SERPER_API_KEY:'test-serper',SEARCHAPI_API_KEY:'test-searchapi'}
     });
     assert.ok(result.market.sampleSize>=4);
     const sources=new Set(result.items.map(x=>x.source));
@@ -216,14 +216,16 @@ test('all seven structured retailer offers survive strict direct-link and pricin
       query:'RTX 4060',category:'GPU',condition:'any',
       marketplaces:SNIPER_MARKETPLACES.map(s=>s.id),
       providerKeys:{SERPER_API_KEY:'all-stores-mock',SEARCHAPI_API_KEY:'all-stores-mock'},
-      deepScan:false
+      deepScan:true
     });
     assert.deepEqual(new Set(search.ranked.map(x=>x.marketplace)),
       new Set(['amazon','bestbuy','walmart','newegg','ebay','aliexpress','mercari']));
     assert.equal(search.sourceCoverage.reduce((n,x)=>n+x.count,0),7);
     assert.ok(search.ranked.every(x=>x.url.startsWith('https://')));
     assert.ok(search.ranked.some(x=>x.marketplace==='bestbuy'&&x.imageUrl));
-    assert.ok(search.providerReports.every(x=>x.status==='results'));
+    assert.ok(search.providerReports.some(x=>x.status==='results'));
+    assert.ok(!search.providerReports.some(x=>x.status==='error'));
+    // Extra domain searches can return no listings without being broken.;
     assert.ok(seen.includes('google_shopping')&&seen.includes('amazon_search'));
   }finally{globalThis.fetch=previous;}
 });
@@ -254,7 +256,7 @@ test('Part Scanner API enforces price range and returns real multi-store results
     const invalid=await reply({query:'RTX 4060',category:'GPU',minPartPrice:350,partBudget:200});
     assert.equal(invalid.status,400);
     const result=await reply({query:'RTX 4060',category:'GPU',minPartPrice:195,partBudget:300,
-      providerKeys:{SEARCHAPI_API_KEY:'part-scanner-mock',SERPER_API_KEY:'part-scanner-mock'}});
+      deepScan:true,providerKeys:{SEARCHAPI_API_KEY:'part-scanner-mock',SERPER_API_KEY:'part-scanner-mock'}});
     assert.equal(result.status,200);
     assert.equal(result.payload.available,true);
     assert.ok(result.payload.results.some(x=>x.marketplace==='ebay'));
@@ -275,4 +277,81 @@ test('valid RTX 4060 VRAM suffix survives, while wrong VRAM, Ti and broken cards
 test('valid CPU titles with core count keep relevance without allowing a different CPU',()=>{
   assert.ok(relevanceScore('AMD Ryzen 5 5600 6 Core Desktop CPU Processor','Ryzen 5 5600','CPU')>=.72);
   assert.equal(relevanceScore('AMD Ryzen 5 5600X Processor','Ryzen 5 5600','CPU'),0);
+});
+
+
+test('Google Shopping product links remain visible as clearly marked comparisons',async()=>{
+  const before=globalThis.fetch;
+  globalThis.fetch=async(url,options)=>{
+    const u=new URL(url);
+    if(u.hostname==='google.serper.dev'){
+      return {ok:true,status:200,json:async()=>({shopping:[
+        {title:'RTX 3070 8GB desktop graphics card',source:'Newegg',
+          price:'$279.99',link:'https://www.google.com/shopping/product/12345678?gl=us',
+          thumbnail:'https://images.example.com/3070.png'}
+      ]})};
+    }
+    return {ok:true,status:200,json:async()=>({shopping_results:[],organic_results:[]})};
+  };
+  try{
+    const result=await searchPartsSniper({query:'RTX 3070',category:'GPU',condition:'any',
+      marketplaces:SNIPER_MARKETPLACES.map(x=>x.id),skipSearchApi:true,
+      providerKeys:{SERPER_API_KEY:'test-serper-key'}});
+    assert.equal(result.ranked.length,1);
+    assert.equal(result.ranked[0].marketplace,'newegg');
+    assert.equal(result.ranked[0].linkType,'shopping');
+    assert.equal(result.ranked[0].msrp,499);
+    assert.ok(result.ranked[0].riskFlags.some(x=>x.includes('Google Shopping')));
+    assert.ok(result.funnel.discarded.link===0);
+  }finally{globalThis.fetch=before;}
+});
+
+test('Deep Scan can recover direct retailer URLs and explicitly labeled snippet prices',async()=>{
+  const before=globalThis.fetch;
+  globalThis.fetch=async(url,options)=>{
+    const u=new URL(url);
+    if(u.pathname.endsWith('/search'))return {ok:true,status:200,json:async()=>({organic:[
+      {title:'RTX 3070 8GB graphics card complete',link:'https://www.newegg.com/p/abc',
+        snippet:'Current price: $268.99. Ships from Newegg.'}
+    ]})};
+    return {ok:true,status:200,json:async()=>({shopping:[]})};
+  };
+  try{
+    const result=await searchPartsSniper({query:'RTX 3070',category:'GPU',condition:'any',
+      marketplaces:['newegg'],skipSearchApi:true,deepScan:true,
+      providerKeys:{SERPER_API_KEY:'test-serper-key'}});
+    assert.equal(result.ranked.length,1);
+    assert.equal(result.ranked[0].marketplace,'newegg');
+    assert.equal(result.ranked[0].listingPriceSource,'search_snippet');
+    assert.equal(result.ranked[0].itemPrice,268.99);
+    assert.ok(result.ranked[0].riskFlags.some(x=>x.includes('snippet')));
+  }finally{globalThis.fetch=before;}
+});
+
+test('SearchAPI 429 breaker stops subsequent paid requests while Serper still returns offers',async()=>{
+  const before=globalThis.fetch;
+  let searchapiCount=0;
+  globalThis.fetch=async(url,options)=>{
+    const u=new URL(url);
+    if(u.hostname==='www.searchapi.io'){
+      searchapiCount++;
+      return {ok:false,status:429,headers:{get:()=>null},json:async()=>({})};
+    }
+    return {ok:true,status:200,json:async()=>({shopping:[
+      {title:'RTX 3070 desktop graphics card 8GB',source:'Walmart',price:'$315',
+        link:'https://www.walmart.com/ip/30700001'}
+    ]})};
+  };
+  try{
+    const args={category:'GPU',condition:'any',
+      marketplaces:['walmart','ebay'],
+      providerKeys:{SERPER_API_KEY:'429-test-serper',SEARCHAPI_API_KEY:'429-test-searchapi'}};
+    const first=await searchPartsSniper({...args,query:'RTX 3070'});
+    const afterFirst=searchapiCount;
+    assert.ok(afterFirst>=1);
+    assert.ok(first.ranked.some(x=>x.marketplace==='walmart'));
+    const second=await searchPartsSniper({...args,query:'RTX 3070 8GB'});
+    assert.equal(searchapiCount,afterFirst);
+    assert.ok(second.ranked.some(x=>x.marketplace==='walmart'));
+  }finally{globalThis.fetch=before;}
 });

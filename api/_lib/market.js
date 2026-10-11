@@ -7,6 +7,10 @@ const EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope";
 const searchCache=new Map();
 const CACHE_MS=10*60*1000;
 const inFlight=new Map();
+const providerCooldown={searchapiUntil:0,serperUntil:0};
+const SIX_HOURS=6*60*60*1000;
+function searchApiAllowed(input={}){return !input.skipSearchApi&&Date.now()>=providerCooldown.searchapiUntil}
+function serperAllowed(input={}){return !input.skipSerper&&Date.now()>=providerCooldown.serperUntil}
 async function providerFetch(url,options={}){
   for(let attempt=0;attempt<2;attempt++){
     const response=await fetch(url,{...options,signal:AbortSignal.timeout(12000)});
@@ -28,6 +32,8 @@ function env(name) {
 }
 
 function providerKey(name,input={}) {
+  if(name==="SEARCHAPI_API_KEY"&&!searchApiAllowed(input))return "";
+  if(name==="SERPER_API_KEY"&&!serperAllowed(input))return "";
   return input?.providerKeys?.[name] || env(name);
 }
 
@@ -318,6 +324,10 @@ export async function searchSerperShopping(input) {
     },
     body:JSON.stringify({q,gl:"us",hl:"en",num:100})
   });
+  if(response.status===429){
+    providerCooldown.serperUntil=Date.now()+SIX_HOURS;
+    throw new Error("Serper Shopping rate-limited (429): requests paused for six hours.");
+  }
   if(!response.ok) throw new Error("Serper Shopping returned "+response.status);
   const data=await response.json();
   return (data.shopping||[]).map((x,index)=>{
@@ -358,7 +368,12 @@ async function searchSearchApiEngine(engine,query,extra={},providerKeys={}){
   if(!apiKey) return null;
   const params=new URLSearchParams({engine,q:query,api_key:apiKey,...extra});
   const response=await providerFetch("https://www.searchapi.io/api/v1/search?"+params.toString());
-  if(!response.ok) throw new Error("SearchAPI "+engine+" returned "+response.status);
+  if(response.status===429){
+    const seconds=Number(response.headers?.get?.("retry-after")||0);
+    providerCooldown.searchapiUntil=Date.now()+Math.max(SIX_HOURS,Number.isFinite(seconds)?seconds*1000:0);
+    throw new Error("SearchAPI quota/rate limit (429): requests paused to save credits.");
+  }
+  if(!response.ok)throw new Error("SearchAPI "+engine+" returned "+response.status);
   return response.json();
 }
 
@@ -502,6 +517,21 @@ function merchantLink(marketplace,...candidates){
   }
   return null;
 }
+function realShoppingLink(...candidates){
+  for(const value of candidates){
+    try{
+      const url=new URL(value);
+      if(url.protocol==="https:" && (
+        url.hostname==="www.google.com"||url.hostname==="google.com"
+      ) && /^\/shopping\/(?:product|.*item)/.test(url.pathname))return url.href;
+    }catch{}
+  }
+  return null;
+}
+function resolveOfferLink(marketplace,...candidates){
+  const direct=merchantLink(marketplace,...candidates);
+  return {url:direct||realShoppingLink(...candidates),linkType:direct?"direct":"shopping"};
+}
 function safeImage(value){
   try{const u=new URL(String(value||""));return u.protocol==="https:"?u.href:null;}catch{return null;}
 }
@@ -561,6 +591,7 @@ export async function searchSerperMarketplaces(input){
     let normalized=normalizeCondition((x.title||"")+" "+(x.condition||""));
     let conditionAssumed=false;
     if(normalized==="unknown" && condition!=="any"){normalized=condition;conditionAssumed=true;}
+    const offer=resolveOfferLink(marketplace,x.link,x.product_link,x.merchant_link,x.productUrl,x.offer_link,x.destination);
     return {
       id:"serper-market-"+(x.productId||index)+"-"+itemPrice,
       source:marketplaceName(marketplace),
@@ -575,7 +606,7 @@ export async function searchSerperMarketplaces(input){
       shippingKnown:ship.shippingKnown,
       totalPrice:(itemPrice||0)+ship.shipping,
       seller:x.source||marketplaceName(marketplace),
-      url:merchantLink(marketplace,x.link,x.product_link,x.merchant_link,x.productUrl,x.offer_link,x.destination),
+      url:offer.url,linkType:offer.linkType,
       imageUrl:safeImage(x.thumbnail||x.image||x.serpapi_thumbnail),
       freshness:null,
       relevance:relevanceScore(x.title,query,category)
@@ -583,6 +614,64 @@ export async function searchSerperMarketplaces(input){
   }).filter(x=>x.marketplace && selected.has(x.marketplace) && x.itemPrice>0 && conditionMatches(x.condition,condition));
 }
 
+
+
+function snippetUsdPrice(x){
+  const price=structuredGooglePrice(x);
+  if(price)return price;
+  const text=String(x.snippet||"");
+  // Require explicit pricing context. A generic $ amount in a search snippet
+  // could be an MSRP, coupon, shipping fee or unrelated accessory.
+  const m=text.match(/(?:current(?:\s+price)?|sale(?:\s+price)?|our\s+price|price|now|buy\s+for)\s*:?\s*\$\s*([\d,]+(?:\.\d{2})?)/i);
+  const n=m?Number(m[1].replace(/,/g,"")):null;
+  return Number.isFinite(n)&&n>=10&&n<=100000?n:null;
+}
+// Serper's regular search can provide real direct retailer URLs when Shopping
+// only supplies opaque Google product redirects. Results without an explicit
+// observed price are omitted rather than assigned an invented one.
+export async function searchSerperRetailerPages(input){
+  const key=providerKey("SERPER_API_KEY",input);
+  if(!key)return [];
+  const selected=new Set(input.marketplaces||[]);
+  const domains={
+    amazon:"amazon.com",bestbuy:"bestbuy.com",walmart:"walmart.com",
+    newegg:"newegg.com",ebay:"ebay.com",aliexpress:"aliexpress.com",mercari:"mercari.com"
+  };
+  const scoped=Object.entries(domains).filter(([id])=>selected.has(id));
+  if(!scoped.length)return [];
+  const query=[input.query,conditionSearchTerm(input.condition||"any"),
+    "("+scoped.map(([,domain])=>"site:"+domain).join(" OR ")+")"].filter(Boolean).join(" ");
+  const response=await providerFetch("https://google.serper.dev/search",{
+    method:"POST",headers:{"X-API-KEY":key,"Content-Type":"application/json"},
+    body:JSON.stringify({q:query,gl:"us",hl:"en",num:20})
+  });
+  if(response.status===429){
+    providerCooldown.serperUntil=Date.now()+SIX_HOURS;
+    throw Error("Serper search quota/rate limit (429)");
+  }
+  if(!response.ok)throw Error("Serper retailer pages returned "+response.status);
+  const data=await response.json();
+  return (data.organic||[]).flatMap((x,index)=>{
+    const marketplace=marketplaceIdFromResult(x.source,x.link);
+    const url=merchantLink(marketplace,x.link);
+    const itemPrice=snippetUsdPrice(x);
+    if(!marketplace||!selected.has(marketplace)||!url||!itemPrice)return [];
+    const condition=normalizeCondition((x.title||"")+" "+(x.snippet||""));
+    if(!conditionMatches(condition,input.condition||"any"))return [];
+    return [{
+      id:"serper-organic-"+index+"-"+marketplace+"-"+itemPrice,
+      source:marketplaceName(marketplace),marketplace,
+      provider:"Serper retailer pages",sourceType:"retailer-web",
+      title:x.title||"Hardware offer",condition,
+      itemPrice,shipping:0,shippingKnown:false,totalPrice:itemPrice,
+      seller:marketplaceName(marketplace),url,
+      imageUrl:safeImage(x.thumbnail||x.image),
+      listingPriceSource:"search_snippet",
+      freshness:null,relevance:relevanceScore(x.title,input.query,input.category),
+      sniperRiskFlags:["Price extracted from a search-result snippet; verify current product price, availability, delivery and condition."]
+    }];
+  });
+}
 
 export async function searchSearchApiShopping(input){
   const {query,category,condition,marketplaces=[],providerKeys={}}=input;
@@ -592,7 +681,9 @@ export async function searchSearchApiShopping(input){
   return (data?.shopping_results||[]).map((x,index)=>{
     const merchant=x.seller||x.source||"";
     // Google sometimes provides a product-page URL rather than a store checkout URL.
-    const url=merchantLink(marketplaceIdFromResult(merchant,x.domain||x.link||x.product_link),x.link,x.product_link,x.merchant_link,x.offer_link,x.productUrl,x.destination);
+    const marketplace=marketplaceIdFromResult(merchant,x.domain||x.link||x.product_link);
+    const offer=resolveOfferLink(marketplace,x.link,x.product_link,x.merchant_link,x.offer_link,x.productUrl,x.destination);
+    const url=offer.url;
     const store=marketplaceIdFromResult(merchant,x.domain||url);
     const itemPrice=Number(x.extracted_price||parseMoney(x.price)||0);
     const ship=parseShippingFromSerp({delivery:x.delivery});
@@ -605,7 +696,7 @@ export async function searchSearchApiShopping(input){
       condition:conditionAssumed?condition:normalized,conditionAssumed,
       itemPrice,shipping:ship.shipping,shippingKnown:ship.shippingKnown,
       totalPrice:itemPrice+ship.shipping,seller:merchant||marketplaceName(store),
-      url,imageUrl:safeImage(x.thumbnail||x.image),freshness:null,relevance:relevanceScore(x.title,query,category)
+      url,linkType:offer.linkType,imageUrl:safeImage(x.thumbnail||x.image),freshness:null,relevance:relevanceScore(x.title,query,category)
     };
   }).filter(x=>x.marketplace&&selected.has(x.marketplace)&&x.itemPrice>0&&conditionMatches(x.condition,condition));
 }
@@ -1147,12 +1238,13 @@ export async function searchPartsSniper(input){
   const providers=[];
 
   if(hasSerper) providers.push(["Retail marketplace search",()=>searchSerperMarketplaces({...input,marketplaces:selected})]);
+  if(hasSerper&&input.deepScan)providers.push(["Direct retailer pages",()=>searchSerperRetailerPages({...input,marketplaces:selected})]);
 
   if(hasSearchApi) {
     providers.push(["Shopping merchants",()=>searchSearchApiShopping({...input,marketplaces:selected})]);
   }
 
-  if(selected.includes("ebay")&&hasSearchApi){
+  if(selected.includes("ebay")&&hasSearchApi&&(input.deepScan||!hasSerper)){
     providers.push(["eBay price + shipping",async()=> (await searchSearchApiEbay({...input,ebaySort:"price_shipping_low_to_high"})).map(x=>({...x,marketplace:"ebay",provider:"SearchAPI eBay cheapest delivered"}))]);
     // Deep scans also inspect eBay's Best Match and newest listings, which do not
     // necessarily overlap with the cheapest-delivered results.
@@ -1161,12 +1253,12 @@ export async function searchPartsSniper(input){
     }
   }
 
-  if(selected.includes("amazon")&&hasSearchApi){
+  if(selected.includes("amazon")&&hasSearchApi&&input.deepScan){
     providers.push(["Amazon",()=>searchSearchApiAmazon(input)]);
   }
 
-  if(hasSearchApi&&selected.includes("bestbuy"))providers.push(["Best Buy",()=>searchSearchApiBestBuy(input)]);
-  if(hasSearchApi&&selected.includes("walmart"))providers.push(["Walmart",()=>searchSearchApiWalmart(input)]);
+  if(hasSearchApi&&input.deepScan&&selected.includes("bestbuy"))providers.push(["Best Buy",()=>searchSearchApiBestBuy(input)]);
+  if(hasSearchApi&&input.deepScan&&selected.includes("walmart"))providers.push(["Walmart",()=>searchSearchApiWalmart(input)]);
 
   // Dedicated retailer-domain discovery only for deliberate deep scans.
   // Use SearchAPI when configured; otherwise reuse Serper shopping with a
@@ -1184,24 +1276,37 @@ export async function searchPartsSniper(input){
     }
   }
 
-  const settled=await Promise.all(providers.map(async([name,run])=>{
-    try{return {name,items:await run()};}
-    catch(error){return {name,error:error.name==="TimeoutError"?"Provider timed out":String(error.message||error).replace(/https?:\/\/\S+/g,"[provider]")};}
-  }));
+  // Bound provider calls to 2 per model. A 429 disables later SearchAPI calls.
+  const settled=[];
+  for(let i=0;i<providers.length;i+=2){
+    const chunk=await Promise.all(providers.slice(i,i+2).map(async([name,run])=>{
+      try{return {name,items:await run()};}
+      catch(error){return {name,error:error.name==="TimeoutError"?"Provider timed out":String(error.message||error).replace(/https?:\/\/\S+/g,"[provider]")};}
+    }));
+    settled.push(...chunk);
+  }
   const errors=settled.filter(x=>x.error).map(x=>({provider:x.name,message:x.error}));
   const providerReports=settled.map(x=>({provider:x.name,returned:x.items?.length||0,
     status:x.error?"error":x.items?.length?"results":"empty",message:x.error||null}));
   const rawCount=settled.reduce((sum,x)=>sum+(x.items?.length||0),0);
-  const items=dedupe(settled.flatMap(x=>x.items||[]))
-    .filter(x=>selected.includes(x.marketplace||marketplaceIdFromResult(x.seller,x.url)))
-    .map(x=>{
-      const marketplace=x.marketplace||marketplaceIdFromResult(x.seller,x.url);
-      const extraRisks=[];
-      if(x.conditionAssumed)extraRisks.push("Condition inferred from the requested filter; verify the listing.");
-      return {...x,marketplace,category:input.category,source:marketplaceName(marketplace),url:safeUrl(x.url),sniperRiskFlags:extraRisks};
-    })
-    .filter(x=>x.relevance>=.72 && Number.isFinite(x.totalPrice) && x.totalPrice>0 && correctMarketplaceUrl(x.marketplace,x.url) && !unsafeHardwareListing(x.title,input.category));
-
+  const discarded={store:0,price:0,model:0,condition:0,link:0,unsafe:0};
+  const items=dedupe(settled.flatMap(x=>x.items||[])).flatMap(x=>{
+    const marketplace=x.marketplace||marketplaceIdFromResult(x.seller,x.url);
+    if(!selected.includes(marketplace)){discarded.store++;return []}
+    if(!Number.isFinite(x.totalPrice)||x.totalPrice<=0){discarded.price++;return []}
+    if(unsafeHardwareListing(x.title,input.category)){discarded.unsafe++;return []}
+    if(x.relevance<.72){discarded.model++;return []}
+    const url=safeUrl(x.url);
+    if(!correctMarketplaceUrl(marketplace,url)&&!(
+       x.linkType==="shopping"&&Boolean(realShoppingLink(url))
+    )){discarded.link++;return []}
+    const risks=[...(x.sniperRiskFlags||[])];
+    if(x.linkType==="shopping")risks.push("Google Shopping comparison link only; verify the final seller, price and item condition.");
+    if(x.listingPriceSource==="search_snippet")risks.push("Search snippet price is unverified; confirm the live checkout price.");
+    if(x.conditionAssumed)risks.push("Condition inferred from the requested filter; verify the listing.");
+    return [{...x,marketplace,category:input.category,
+      source:marketplaceName(marketplace),url,sniperRiskFlags:risks}];
+  });
   const market=buildMarket(items);
   const ranked=rankDeals(items,market,input).map(x=>{
     const msrp=referenceMsrp(input.category,input.query,x.title);
@@ -1224,7 +1329,7 @@ export async function searchPartsSniper(input){
     errors:errors.filter(x=>x.provider.toLowerCase().includes(id)||x.provider.startsWith(marketplaceName(id)))
   }));
   const value={items,market,ranked,sourceCoverage,errors,providerReports,
-    funnel:{raw:rawCount,eligible:items.length,ranked:ranked.length},
+    funnel:{raw:rawCount,eligible:items.length,ranked:ranked.length,discarded},
     observedAt:new Date().toISOString(),stale:false,cached:false};
   searchCache.set(key,{savedAt:Date.now(),ttl:errors.length?30000:CACHE_MS,value});
   return value;
