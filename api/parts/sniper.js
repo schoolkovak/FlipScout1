@@ -59,7 +59,8 @@ export default async function handler(req,res){
       deepScan,
       marketplaces,
       distanceRadius:marketplaces.slice().sort().join(','),
-      providerKeys
+      providerKeys,
+      skipSearchApi:Boolean(req.body?.skipSearchApi)
     };
     try{
       const data=await searchPartsSniper(searchInput);
