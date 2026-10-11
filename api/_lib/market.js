@@ -1147,7 +1147,6 @@ export async function searchPartsSniper(input){
     // Deep scans also inspect eBay's Best Match and newest listings, which do not
     // necessarily overlap with the cheapest-delivered results.
     if(input.deepScan){
-      providers.push(["eBay best match",async()=> (await searchSearchApiEbay({...input,ebaySort:"best_match"})).map(x=>({...x,marketplace:"ebay",provider:"SearchAPI eBay relevance"}))]);
       providers.push(["eBay newly listed",async()=> (await searchSearchApiEbay({...input,ebaySort:"time_newly_listed"})).map(x=>({...x,marketplace:"ebay",provider:"SearchAPI eBay newest"}))]);
     }
   }
@@ -1174,6 +1173,9 @@ export async function searchPartsSniper(input){
     catch(error){return {name,error:error.name==="TimeoutError"?"Provider timed out":String(error.message||error).replace(/https?:\/\/\S+/g,"[provider]")};}
   }));
   const errors=settled.filter(x=>x.error).map(x=>({provider:x.name,message:x.error}));
+  const providerReports=settled.map(x=>({provider:x.name,returned:x.items?.length||0,
+    status:x.error?"error":x.items?.length?"results":"empty",message:x.error||null}));
+  const rawCount=settled.reduce((sum,x)=>sum+(x.items?.length||0),0);
   const items=dedupe(settled.flatMap(x=>x.items||[]))
     .filter(x=>selected.includes(x.marketplace||marketplaceIdFromResult(x.seller,x.url)))
     .map(x=>{
@@ -1202,7 +1204,9 @@ export async function searchPartsSniper(input){
     searched:providers.some(([name])=>name==="Retail marketplace search"||name==="Shopping merchants"||name===marketplaceName(id)||name===id||(name==="eBay"&&id==="ebay")),
     errors:errors.filter(x=>x.provider===marketplaceName(id))
   }));
-  const value={items,market,ranked,sourceCoverage,errors,observedAt:new Date().toISOString(),stale:false,cached:false};
+  const value={items,market,ranked,sourceCoverage,errors,providerReports,
+    funnel:{raw:rawCount,eligible:items.length,ranked:ranked.length},
+    observedAt:new Date().toISOString(),stale:false,cached:false};
   searchCache.set(key,{savedAt:Date.now(),ttl:errors.length?30000:CACHE_MS,value});
   return value;
 }
