@@ -746,9 +746,9 @@ function PartsSniper({providerKeys,onWatchChange}){
         </div>
 
         {!!group.sourceCoverage?.length&&<div className="storeCoverage">{group.sourceCoverage.map(store=><span key={store.id} className={store.count?"hasResults":"noResults"} title={store.status}>{store.name} <b>{store.count?store.count:"—"}</b></span>)}</div>}
-        <div className="storeSortBar"><label>Show store <select value={storeFilters[group.id]||"all"} onChange={e=>{setStoreFilters(v=>({...v,[group.id]:e.target.value}));setPages(v=>({...v,[group.id]:0}));}}><option value="all">All stores ({group.results?.length||0})</option>{SNIPER_MARKETPLACES.filter(m=>marketplaces.includes(m.id)).map(m=><option value={m.id} key={m.id}>{m.name} ({group.sourceCoverage?.find(x=>x.id===m.id)?.count||0})</option>)}</select></label><span>Best value first · only real matching offers</span></div>
+        <div className="storeSortBar"><label>Show store <select value={storeFilters[group.id]||"all"} onChange={e=>{setStoreFilters(v=>({...v,[group.id]:e.target.value}));setPages(v=>({...v,[group.id]:0}));}}><option value="all">All stores ({group.results?.length||0})</option>{SNIPER_MARKETPLACES.filter(m=>marketplaces.includes(m.id)).map(m=><option value={m.id} key={m.id}>{m.name} ({group.sourceCoverage?.find(x=>x.id===m.id)?.count||0})</option>)}</select></label><span>Ranks only the listings found by this search · manual deep scan includes additional eBay search orders</span></div>
         {group.bestDeal&&<div className="sniperWinner">
-          <div className="sniperWinnerBadge"><Zap size={15}/>BEST MATCH</div>
+          <div className="sniperWinnerBadge"><Zap size={15}/>BEST FOUND IN THIS SCAN</div>
           <div><b>{group.bestDeal.title}</b><span>{group.bestDeal.source} · {group.bestDeal.condition} · score {group.bestDeal.score}/{group.bestDeal.scoreCap||100}</span></div>
           <strong>{money(group.bestDeal.totalPrice)}</strong>
           {group.bestDeal.url&&<a href={group.bestDeal.url} target="_blank" rel="noreferrer">Open <ExternalLink size={14}/></a>}
@@ -759,6 +759,15 @@ function PartsSniper({providerKeys,onWatchChange}){
           <h4>{item.title}</h4>
           <div className="sniperPrice"><b>{money(item.totalPrice)}</b><span>{item.shippingKnown?"delivered":"shipping not confirmed"}</span></div>
           <div className="dealMeta"><span>{item.condition}</span><span className={item.percentVsMarket>=10?"goodText":item.percentVsMarket<0?"badText":""}>{item.percentVsMarket>=0?item.percentVsMarket+"% under market":Math.abs(item.percentVsMarket)+"% over market"}</span>{item.seller&&<span>{item.seller}</span>}</div>
+          <div className="listingInsight">
+            <span>Comparable median: {money(item.comparedMarketMedian)}</span>
+            <span>Evidence: {item.evidenceSampleSize||0} priced listings</span>
+            {item.sellerFeedback!=null&&<span>Seller feedback: {item.sellerFeedback}%</span>}
+          </div>
+          {item.scoreFactors&&<details className="listingScoreDetails"><summary>Score explanation</summary>
+            <p>Price {item.scoreFactors.priceValue}/44 · Match {item.scoreFactors.modelMatch}/18 · Condition {item.scoreFactors.condition}/14 · Shipping {item.scoreFactors.shipping}/12 · Appeal {item.scoreFactors.buyerAppeal}/12.</p>
+            <p>Scores may be reduced or capped for weak evidence, low seller feedback, or unknown delivery cost. Rankings cover returned listings, not all eBay inventory.</p>
+          </details>}
           {item.riskFlags?.length>0&&<div className="dealRisks">{item.riskFlags.slice(0,2).map((risk,j)=><span key={j}><AlertTriangle size={12}/>{risk}</span>)}</div>}
           <div className="dealActions">{item.url&&<a className="listingLink" href={item.url} target="_blank" rel="noreferrer">Open listing <ExternalLink size={14}/></a>}<button className="watchButton" onClick={()=>toggleWatch(item,group.target)}>{isWatched(item)?<BookmarkCheck size={15}/>:<Bookmark size={15}/>} {isWatched(item)?"Watching":"Watch"}</button></div>
         </article>)}</div>}
