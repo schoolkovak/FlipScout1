@@ -4,6 +4,10 @@ import {SNIPER_MARKETPLACES as STORES} from "../shared/sniper.js";
 import {dedupeOffers,filterOffers,offerReference,offerTotal,savingsPercent,sortOffers} from "./dealSort.js";
 
 const CACHE_NAME="flipscout-deals-catalog-v2";
+const PROVIDER_COOLDOWN="flipscout-searchapi-cooldown-v1";
+function readProviderCooldown(){
+  try{return Number(localStorage.getItem(PROVIDER_COOLDOWN)||0)}catch{return 0}
+}
 const CACHE_AGE=6*60*60*1000;
 const CATALOG_BATCH=2;
 const FOCUSED_BATCH=3;
@@ -96,6 +100,11 @@ export default function AutomaticDiscovery({providerKeys}){
   const [limit,setLimit]=useState(24);
   const [auto,setAuto]=useState(true);
   const [speed,setSpeed]=useState(10);
+  const [searchApiUntil,setSearchApiUntil]=useState(readProviderCooldown);
+  const [brand,setBrand]=useState("all");
+  const [minVram,setMinVram]=useState("");
+  const [overclocked,setOverclocked]=useState(false);
+  const [cooling,setCooling]=useState("all");
   const [busy,setBusy]=useState(false);
   const [queued,setQueued]=useState("");
   const [message,setMessage]=useState("");
@@ -114,19 +123,22 @@ export default function AutomaticDiscovery({providerKeys}){
   useEffect(()=>{try{localStorage.setItem(CACHE_NAME,JSON.stringify(catalog))}catch{}},[catalog]);
 
   function targetAge(t){return Date.parse(catalogRef.current[t.id]?.checkedAt||"")||0}
-  function chooseBatch(category){
-    const options=TARGETS.filter(t=>!category||t.category===category);
+  function chooseBatch(category,group=null){
+    const options=TARGETS.filter(t=>(!category||t.category===category)&&(!group||group==="All"||(
+      group==="Arc"?/\barc\b/i.test(t.query):
+      t.query.toLowerCase().includes(group.toLowerCase().replace("rx ","rx ").replace("rtx ","rtx "))
+    )));
     // Always scan missing models first; then the oldest model in the selected part.
     return [...options].sort((a,b)=>targetAge(a)-targetAge(b)).slice(0,category?FOCUSED_BATCH:CATALOG_BATCH);
   }
-  async function runScan(category=null,deep=false){
+  async function runScan(category=null,deep=false,group=null){
     if(busyRef.current){
-      pendingRef.current={category,deep};
+      pendingRef.current={category,deep,group};
       if(mountedRef.current)setQueued(category||"next component batch");
       return;
     }
     if(!deep&&typeof document!=="undefined"&&document.visibilityState==="hidden")return;
-    const targets=chooseBatch(category);
+    const targets=chooseBatch(category,group);
     if(!targets.length)return;
     busyRef.current=true;
     setBusy(true);setMessage("");setQueued("");
@@ -134,7 +146,8 @@ export default function AutomaticDiscovery({providerKeys}){
       const response=await fetch("/api/parts/sniper",{
         method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
-          targets,marketplaces:STORES.map(s=>s.id),deepScan:deep,providerKeys
+          targets,marketplaces:STORES.map(s=>s.id),deepScan:deep,providerKeys,
+          skipSearchApi:searchApiUntil>Date.now()
         }),signal:AbortSignal.timeout(55000)
       });
       const data=await response.json();
@@ -151,16 +164,43 @@ export default function AutomaticDiscovery({providerKeys}){
         };
       }
       if(!mountedRef.current)return;
-      setCatalog(prev=>({...prev,...updates}));
+      setCatalog(prev=>{
+        const merged={...prev};
+        for(const [id,row] of Object.entries(updates)){
+          // A failed refresh must not erase an earlier usable offer set.
+          if(!row.results.length&&row.errors.length&&prev[id]?.results?.length){
+            merged[id]={...prev[id],lastError:row.errors[0]?.message};
+          }else merged[id]=row;
+        }
+        return merged;
+      });
       const reports=data.results.flatMap(group=>group.providerReports||[]);
-      setRecentProviders(reports);
+      const byProvider=new Map();
+      for(const p of reports){
+        const prior=byProvider.get(p.provider)||{provider:p.provider,returned:0,failures:0,status:"empty",message:null};
+        prior.returned+=p.returned||0;
+        if(p.status==="error"){prior.failures++;prior.status="error";prior.message=p.message}
+        else if(prior.status!=="error"&&p.status==="results")prior.status="results";
+        byProvider.set(p.provider,prior);
+      }
+      setRecentProviders([...byProvider.values()]);
+      const rejected={};
+      for(const group of data.results)for(const [reason,count] of Object.entries(group.funnel?.discarded||{}))
+        rejected[reason]=(rejected[reason]||0)+count;
       setDiagnostics({targets:targets.length,received:reports.reduce((n,x)=>n+x.returned,0),
-        eligible:Object.values(updates).reduce((n,x)=>n+x.results.length,0)});
+        eligible:Object.values(updates).reduce((n,x)=>n+x.results.length,0),rejected});
       const providerErrors=data.results.flatMap(group=>group.errors||[]);
       if(providerErrors.length){
         const first=providerErrors[0];
         setMessage("Some sources failed: "+first.provider+" — "+first.message+". Open Source Details below.");
-        if(providerErrors.some(e=>/429|quota|credits|limit exceeded/i.test(e.message||"")))setAuto(false);
+        if(providerErrors.some(e=>/searchapi/i.test(e.provider||"")&&/429|quota|credits|rate.limit/i.test(e.message||""))||
+           providerErrors.some(e=>/searchapi/i.test(e.message||"")&&/429/i.test(e.message||""))){
+          const until=Date.now()+6*60*60*1000;
+          setSearchApiUntil(until);
+          try{localStorage.setItem(PROVIDER_COOLDOWN,String(until))}catch{}
+          setMessage("SearchAPI has hit its 429 limit and is paused for six hours. Available Serper searches will continue; no repeated SearchAPI charges.");
+        }
+        if(providerErrors.some(e=>/serper/i.test(e.message||"")&&/429|quota/i.test(e.message||"")))setAuto(false);
       }else if(!Object.values(updates).some(x=>x.results.length)){
         setMessage("No qualifying direct listings were returned for this batch. Try another model or check Source Details.");
       }
@@ -174,7 +214,7 @@ export default function AutomaticDiscovery({providerKeys}){
       if(mountedRef.current){setBusy(false);setQueued("");}
       const pending=pendingRef.current;
       pendingRef.current=null;
-      if(pending&&mountedRef.current)Promise.resolve().then(()=>scanRef.current?.(pending.category,pending.deep));
+      if(pending&&mountedRef.current)Promise.resolve().then(()=>scanRef.current?.(pending.category,pending.deep,pending.group));
     }
   }
   scanRef.current=runScan;
@@ -188,14 +228,13 @@ export default function AutomaticDiscovery({providerKeys}){
   },[auto,speed]);
 
   function choosePart(next){
-    setPart(next);setSeries("All");setModel("all");setLimit(24);
+    setPart(next);setSeries("All");setModel("all");setBrand("all");setLimit(24);
     if(next!=="All")scanRef.current?.(next,false);
   }
   function chooseSeries(value){
     setSeries(value);setModel("all");setLimit(24);
-    if(value!=="All"){
-      // A series selection needs no API call to filter; the category scan
-      // remains explicit and uses existing cached offers where possible.
+    if(value!=="All"&&!TARGETS.some(t=>t.category==="GPU"&&catalogRef.current[t.id]&&t.query.toLowerCase().includes(value.toLowerCase()))){
+      scanRef.current?.("GPU",false,value);
     }
   }
   const all=useMemo(()=>TARGETS.flatMap(t=>(catalog[t.id]?.results||[]).map(item=>({
@@ -217,9 +256,15 @@ export default function AutomaticDiscovery({providerKeys}){
   const modelChoices=currentTargets.filter(seriesMatch);
   const filtered=filterOffers(all,{
     category:part,model,condition,minimum,maximum
-  }).filter(item=>stores.includes(item.marketplace)&&(
-    series==="All"||part!=="GPU"||seriesMatch({query:item.subtype||""})
-  ));
+  }).filter(item=>stores.includes(item.marketplace)&&
+    (series==="All"||part!=="GPU"||seriesMatch({query:item.subtype||""}))&&
+    (brand==="all"||new RegExp("\\b"+brand+"\\b","i").test(item.title||""))&&
+    (!minVram||part!=="GPU"||Number((item.title||"").match(/(\d+)\s?GB/i)?.[1]||0)>=Number(minVram))&&
+    (!overclocked||/\\boc\\b|overclock/i.test(item.title||""))&&
+    (cooling==="all"||!(part==="GPU")||
+      (cooling==="liquid"?/water.block|liquid.cool/i.test(item.title||""):
+         !/water.block|liquid.cool/i.test(item.title||"")))
+  );
   const offers=sortOffers(dedupeOffers(filtered),sort);
   const shown=offers.slice(0,limit);
   const coverage=STORES.map(s=>({...s,count:new Set(
@@ -329,7 +374,9 @@ export default function AutomaticDiscovery({providerKeys}){
       {limit<offers.length&&<button className="fsShowMore" onClick={()=>setLimit(v=>v+24)}>SHOW MORE ({offers.length-limit} REMAINING) ↓</button>}
       <details className="fsSourceDetails">
         <summary>SOURCE DETAILS & DIAGNOSTICS</summary>
-        <p>Last scan: {diagnostics?diagnostics.targets+" model(s), "+diagnostics.received+" raw candidates and "+diagnostics.eligible+" saved offers":"No scan completed yet"}. Results may be rejected for missing direct retailer URLs, incomplete price data, wrong model, or broken condition.</p>
+        <p>Last scan: {diagnostics?diagnostics.targets+" model(s), "+diagnostics.received+" raw candidates and "+diagnostics.eligible+" saved offers":"No scan completed yet"}. Only priced, model-matched complete hardware is retained.</p>
+        {diagnostics?.rejected&&<p>Filtered out: {Object.entries(diagnostics.rejected).filter(([,n])=>n>0).map(([name,n])=>name+" "+n).join(" · ")||"none"}.</p>}
+        {searchApiUntil>Date.now()&&<p>SearchAPI cooldown active. Checks continue on other connected sources.</p>}
         {recentProviders.length?recentProviders.map((p,i)=><div key={i} className="fsProviderRow">
           <b>{p.provider}</b><span>{p.status} · {p.returned} candidates</span>
           {p.message&&<small>{p.message}</small>}</div>):<p>Run a scan for provider-specific results.</p>}
