@@ -1096,11 +1096,11 @@ export async function searchPartsSniper(input){
     providers.push(["Amazon",()=>searchSearchApiAmazon(input)]);
   }
 
-  // A broad shopping search covers many merchants with one call. Deep Scan may add
-  // a small number of targeted domain searches, never ten blind quota-consuming calls.
+  // Deep Scan checks each selected retailer independently when SearchAPI is configured.
+  // Default browsing uses the broad shopping feed without extra calls.
   if(input.deepScan && hasSearchApi){
     const priority=["mercari","newegg","walmart","bestbuy","aliexpress","microcenter","bhphoto","adorama"];
-    const selectedTargets=priority.filter(id=>selected.includes(id)).slice(0,3);
+    const selectedTargets=priority.filter(id=>selected.includes(id));
     for(const marketplace of selectedTargets){
       providers.push([marketplaceName(marketplace),()=>searchSearchApiSiteMarketplace(input,marketplace)]);
     }
@@ -1129,8 +1129,8 @@ export async function searchPartsSniper(input){
   const counts=Object.fromEntries(selected.map(id=>[id,0]));
   for(const item of ranked)if(item.marketplace in counts)counts[item.marketplace]++;
   const sourceCoverage=selected.map(id=>({
-    id,name:marketplaceName(id),count:counts[id],status:counts[id]?"Results found":errors.length?"No results / provider errors":"No matching listings",
-    searched:providers.some(([name])=>name==="Retail marketplace search"||name==="Shopping merchants"||name===marketplaceName(id)||name===id||name==="eBay"&&id==="ebay"),
+    id,name:marketplaceName(id),count:counts[id],status:counts[id]?"Results found":errors.some(x=>x.provider===marketplaceName(id))?"Store search failed":providers.length?"No matching listings returned":"No search provider configured",
+    searched:providers.some(([name])=>name==="Retail marketplace search"||name==="Shopping merchants"||name===marketplaceName(id)||name===id||(name==="eBay"&&id==="ebay")),
     errors:errors.filter(x=>x.provider===marketplaceName(id))
   }));
   const value={items,market,ranked,sourceCoverage,errors,observedAt:new Date().toISOString(),stale:false,cached:false};
