@@ -208,13 +208,15 @@ for(const [category,models] of Object.entries(EXTRA_VARIATIONS)){
   DISCOVERY_SUBTYPES[category]=[...new Set([...(DISCOVERY_SUBTYPES[category]||[]),...models])];
 }
 
-export const DISCOVERY_TARGETS=SNIPER_CATEGORIES.flatMap(category=>
-  (DISCOVERY_SUBTYPES[category.name]||[category.example]).map((query,index)=>({
-    id:category.name.toLowerCase().replace(/[^a-z0-9]+/g,"-")+"-"+index,
-    category:category.name,
-    group:category.group,
-    query,
-    condition:"any",
-    maxPrice:0
-  }))
-);
+// Interleave part families: the first few batches touch CPU, GPU, memory,
+// motherboard and other categories rather than scanning every GPU first.
+const maxVariations=Math.max(...SNIPER_CATEGORIES.map(c=>(DISCOVERY_SUBTYPES[c.name]||[c.example]).length));
+export const DISCOVERY_TARGETS=Array.from({length:maxVariations},(_,index)=>
+  SNIPER_CATEGORIES.flatMap(category=>{
+    const query=(DISCOVERY_SUBTYPES[category.name]||[category.example])[index];
+    return query?[{
+      id:category.name.toLowerCase().replace(/[^a-z0-9]+/g,"-")+"-"+index,
+      category:category.name,group:category.group,query,condition:"any",maxPrice:0
+    }]:[];
+  })
+).flat();
