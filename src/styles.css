@@ -488,3 +488,28 @@ body{background:#080a0f!important}
 @media(max-width:1090px){.fsDealLayout{grid-template-columns:185px minmax(0,1fr);gap:11px}.fsProducts{grid-template-columns:repeat(auto-fill,minmax(182px,1fr))}.fsSidePanel{padding:10px}.fsHeaderStat{display:none}}
 @media(max-width:760px){.fsDealLayout{display:block}.fsSidebar{position:static;max-height:none;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:18px;overflow:visible}.fsDealTitle h1{font-size:25px}.fsCategoryStrip{justify-content:flex-start}.fsSubfilters{grid-template-columns:1fr 1fr}.fsLoadedCount{grid-column:1/-1}}
 @media(max-width:500px){.mainWrap{padding:12px}.fsSidebar{grid-template-columns:1fr}.fsProducts{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.fsProductVisual{height:120px;margin:0 7px}.fsProductInfo{padding:8px}.fsProductHeading{padding:10px 8px 6px}.fsProductHeading>b{font-size:12px}.fsSaveBadge{font-size:8px}.fsPrice strong{font-size:18px}.fsStoreLine{flex-direction:column;align-items:flex-start}.fsPrice b{font-size:8px}.fsProductInfo h3{font-size:11px}.fsScanControls{padding:9px}.fsScanLive{width:100%}.fsSubfilters{grid-template-columns:1fr}.fsLoadedCount{display:none}}
+
+/* Manual Part Scanner: same visual system and consistent controls */
+.fsManualTop{border:1px solid #245d58!important;background:#10181b!important}
+.fsManualQuick{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0 18px}
+.fsManualQuick button{border-radius:4px;background:#18282c;color:#aec8c6;border:1px solid #2b5254;padding:10px 13px;font-size:11px;font-weight:900}
+.fsManualQuick button:hover,.fsManualQuick button.chosen{background:#00dcb7;border-color:#00dcb7;color:#042323}
+.fsManualForm{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:14px}
+.fsManualForm label{display:flex;flex-direction:column;gap:8px;font-size:11px!important}
+.fsManualForm input,.fsManualForm select{width:100%;padding:11px!important}
+.fsManualActions{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:20px 0 15px}
+.fsDeepOption{margin-right:auto;display:flex!important;align-items:center!important;gap:8px;flex-direction:row!important;max-width:440px;font-size:12px!important;color:#b2d3d0!important}
+.fsDeepOption input,.fsManualWatch input{width:15px;height:15px;accent-color:#00e5b7}
+.fsManualWatch{display:flex;gap:15px;flex-wrap:wrap;align-items:center;border:1px solid #294d4d;background:#0c2122;padding:11px}
+.fsManualWatch label{display:flex;align-items:center;gap:8px;flex-direction:row!important}
+.fsManualWatch select{padding:8px;min-width:210px}
+.fsManualWatch small{font-size:10px;color:#9aafad}
+.fsScannerSummary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0}
+.fsScannerSummary>div{background:#151f22;border:1px solid #2a4646;padding:17px;color:#c7e4e0}
+.fsScannerSummary span{font-size:11px;display:block;margin-bottom:9px}
+.fsScannerSummary b{font-size:23px;color:#00eabb}
+.fsManualResultsControls{display:flex;gap:14px;align-items:end;justify-content:space-between;margin:16px 0}
+.fsManualResultsControls label{display:flex;flex-direction:column;gap:6px;min-width:220px}
+.fsManualResultsControls select{padding:11px}
+.fsManualResultsControls>b{color:#c3e5e1;font-size:12px}
+@media(max-width:760px){.fsScannerSummary{grid-template-columns:repeat(2,1fr)}.fsManualResultsControls{flex-direction:column;align-items:stretch}.fsManualResultsControls label{width:100%}}
