@@ -92,3 +92,13 @@ test('Incomplete GPU assemblies cannot appear as working-card deals',()=>{
     assert.equal(relevanceScore(title,'RTX 4070','GPU'),0,title);
   }
 });
+
+test('automatic discovery lists every part category and several important subtype searches',async()=>{
+  const {DISCOVERY_TARGETS,DISCOVERY_SUBTYPES}=await import('../shared/discovery.js');
+  assert.equal(new Set(DISCOVERY_TARGETS.map(x=>x.category)).size,SNIPER_CATEGORIES.length);
+  assert.ok(DISCOVERY_TARGETS.length>=100);
+  for(const part of ['GPU','CPU','RAM / Memory','NVMe SSD','Motherboard','Power Supply / PSU']){
+    assert.ok(DISCOVERY_SUBTYPES[part]?.length>=3,part);
+  }
+  assert.equal(new Set(DISCOVERY_TARGETS.map(x=>x.id)).size,DISCOVERY_TARGETS.length);
+});
