@@ -130,3 +130,29 @@ test('discovery has hundreds of subtype searches and each category has variation
   assert.equal(new Set(DISCOVERY_TARGETS.map(x=>x.category)).size,SNIPER_CATEGORIES.length);
   assert.equal(new Set(DISCOVERY_TARGETS.map(x=>x.id)).size,DISCOVERY_TARGETS.length);
 });
+
+
+test('core automatic discovery excludes peripherals and scans CPU before all GPUs',async()=>{
+  const {CORE_PC_CATEGORIES,CORE_DISCOVERY_TARGETS}=await import('../shared/discovery.js');
+  assert.ok(CORE_PC_CATEGORIES.includes('CPU')&&CORE_PC_CATEGORIES.includes('GPU'));
+  for(const name of ['Wi-Fi Card','Thermal Paste','Keyboard','Mouse','Monitor','Webcam']){
+    assert.ok(!CORE_PC_CATEGORIES.includes(name),name);
+  }
+  assert.equal(new Set(CORE_DISCOVERY_TARGETS.map(x=>x.category)).size,CORE_PC_CATEGORIES.length);
+  assert.ok(CORE_DISCOVERY_TARGETS.slice(0,10).some(x=>x.category==='CPU'));
+});
+
+test('reference GPU MSRP requires a grounded model and does not fabricate unknown prices',async()=>{
+  const {referenceMsrp}=await import('../shared/msrp.js');
+  const price=referenceMsrp('GPU','RTX 4060','Nvidia RTX 4060 graphics card 8GB');
+  assert.equal(price?.amount,299);
+  assert.ok(price?.source.startsWith('https://'));
+  assert.equal(referenceMsrp('CPU','Ryzen 5 5600'),null);
+  assert.equal(referenceMsrp('GPU','RTX 5090'),null);
+  assert.equal(referenceMsrp('GPU','RTX 4060 Ti 16GB','RTX 4060 Ti 16GB')?.amount,499);
+});
+
+test('only seven desired retailers remain selectable',()=>{
+  const ids=SNIPER_MARKETPLACES.map(m=>m.id);
+  assert.deepEqual(ids,['amazon','bestbuy','walmart','newegg','ebay','aliexpress','mercari']);
+});
