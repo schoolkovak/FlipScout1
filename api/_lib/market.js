@@ -1230,20 +1230,23 @@ export async function searchPartsSniper(input){
   const providerReports=settled.map(x=>({provider:x.name,returned:x.items?.length||0,
     status:x.error?"error":x.items?.length?"results":"empty",message:x.error||null}));
   const rawCount=settled.reduce((sum,x)=>sum+(x.items?.length||0),0);
-  const items=dedupe(settled.flatMap(x=>x.items||[]))
-    .filter(x=>selected.includes(x.marketplace||marketplaceIdFromResult(x.seller,x.url)))
-    .map(x=>{
-      const marketplace=x.marketplace||marketplaceIdFromResult(x.seller,x.url);
-      const extraRisks=[];
-      if(x.linkType==="shopping")extraRisks.push("Opens a Google Shopping product page, not a verified direct checkout. Check the seller and current price.");
-      if(x.conditionAssumed)extraRisks.push("Condition inferred from the requested filter; verify the listing.");
-      return {...x,marketplace,category:input.category,source:marketplaceName(marketplace),url:safeUrl(x.url),sniperRiskFlags:extraRisks};
-    })
-    .filter(x=>x.relevance>=.72 && Number.isFinite(x.totalPrice) && x.totalPrice>0 &&
-      (correctMarketplaceUrl(x.marketplace,x.url) ||
-       (x.linkType==="shopping"&&Boolean(realShoppingLink(x.url)))) &&
-      !unsafeHardwareListing(x.title,input.category));
-
+  const discarded={store:0,price:0,model:0,condition:0,link:0,unsafe:0};
+  const items=dedupe(settled.flatMap(x=>x.items||[])).flatMap(x=>{
+    const marketplace=x.marketplace||marketplaceIdFromResult(x.seller,x.url);
+    if(!selected.includes(marketplace)){discarded.store++;return []}
+    if(!Number.isFinite(x.totalPrice)||x.totalPrice<=0){discarded.price++;return []}
+    if(unsafeHardwareListing(x.title,input.category)){discarded.unsafe++;return []}
+    if(x.relevance<.72){discarded.model++;return []}
+    const url=safeUrl(x.url);
+    if(!correctMarketplaceUrl(marketplace,url)&&!(
+       x.linkType==="shopping"&&Boolean(realShoppingLink(url))
+    )){discarded.link++;return []}
+    const risks=[...(x.sniperRiskFlags||[])];
+    if(x.linkType==="shopping")risks.push("Google Shopping comparison link only; verify the final seller, price and item condition.");
+    if(x.conditionAssumed)risks.push("Condition inferred from the requested filter; verify the listing.");
+    return [{...x,marketplace,category:input.category,
+      source:marketplaceName(marketplace),url,sniperRiskFlags:risks}];
+  });
   const market=buildMarket(items);
   const ranked=rankDeals(items,market,input).map(x=>{
     const msrp=referenceMsrp(input.category,input.query,x.title);
@@ -1266,7 +1269,7 @@ export async function searchPartsSniper(input){
     errors:errors.filter(x=>x.provider.toLowerCase().includes(id)||x.provider.startsWith(marketplaceName(id)))
   }));
   const value={items,market,ranked,sourceCoverage,errors,providerReports,
-    funnel:{raw:rawCount,eligible:items.length,ranked:ranked.length},
+    funnel:{raw:rawCount,eligible:items.length,ranked:ranked.length,discarded},
     observedAt:new Date().toISOString(),stale:false,cached:false};
   searchCache.set(key,{savedAt:Date.now(),ttl:errors.length?30000:CACHE_MS,value});
   return value;
