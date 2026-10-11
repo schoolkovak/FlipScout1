@@ -79,7 +79,8 @@ export default async function handler(req,res){
           confidence:data.market.confidence
         },
         bestDeal:best,
-        results:data.ranked.slice(0,40),
+        results:data.ranked.slice(0,100),
+        sourceCoverage:data.sourceCoverage||[],
         errors:data.errors
       };
     }catch(error){
