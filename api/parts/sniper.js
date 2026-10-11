@@ -55,6 +55,7 @@ export default async function handler(req,res){
       sortBy:"best",
       deepScan,
       marketplaces,
+      distanceRadius:marketplaces.slice().sort().join(','),
       providerKeys
     };
     try{
