@@ -223,7 +223,9 @@ test('all seven structured retailer offers survive strict direct-link and pricin
     assert.equal(search.sourceCoverage.reduce((n,x)=>n+x.count,0),7);
     assert.ok(search.ranked.every(x=>x.url.startsWith('https://')));
     assert.ok(search.ranked.some(x=>x.marketplace==='bestbuy'&&x.imageUrl));
-    assert.ok(search.providerReports.every(x=>x.status==='results'));
+    assert.ok(search.providerReports.some(x=>x.status==='results'));
+    assert.ok(!search.providerReports.some(x=>x.status==='error'));
+    // Extra domain searches can return no listings without being broken.;
     assert.ok(seen.includes('google_shopping')&&seen.includes('amazon_search'));
   }finally{globalThis.fetch=previous;}
 });
