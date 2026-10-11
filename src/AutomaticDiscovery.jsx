@@ -123,7 +123,14 @@ export default function AutomaticDiscovery({providerKeys}){
     .filter(item=>(store==="all"||item.marketplace===store)&&(condition==="any"||item.condition===condition));
   const unique=[...new Map(offers.map(item=>[item.url,item])).values()];
   const storeCounts=Object.fromEntries(SNIPER_MARKETPLACES.map(x=>[x.id,new Set(offers.filter(item=>item.marketplace===x.id).map(item=>item.url)).size]));
-  unique.sort(sort==="price"?(a,b)=>a.totalPrice-b.totalPrice:(a,b)=>(b.score||0)-(a.score||0)||a.totalPrice-b.totalPrice);
+  function savingsPct(item){
+    if(item.msrp && Number(item.msrp)>0)return (item.msrp-item.totalPrice)/item.msrp*100;
+    if(item.comparedMarketMedian && Number(item.comparedMarketMedian)>0)return (item.comparedMarketMedian-item.totalPrice)/item.comparedMarketMedian*100;
+    return -999;
+  }
+  // Client-only sorting: never issues another retailer/provider call.
+  unique.sort(sort==="price"?(a,b)=>a.totalPrice-b.totalPrice:
+    (a,b)=>savingsPct(b)-savingsPct(a)||a.totalPrice-b.totalPrice);
   const newest=Object.values(catalog).map(x=>x.checkedAt).sort().at(-1);
   const categoryTargets=DISCOVERY_TARGETS.filter(t=>category==="All"||t.category===category);
   const categoryChecked=categoryTargets.filter(t=>catalog[t.id]).length;
@@ -185,7 +192,7 @@ export default function AutomaticDiscovery({providerKeys}){
         <option value="any">Any working condition</option><option value="new">New</option><option value="used">Used</option><option value="open-box">Open box</option><option value="refurbished">Refurbished</option><option value="renewed">Renewed</option>
       </select></label>
       <label>Sort loaded deals<select value={sort} onChange={e=>setSort(e.target.value)}>
-        <option value="score">Best deal first</option><option value="price">Lowest total price</option>
+        <option value="score">Best savings first</option><option value="price">Lowest total price</option>
       </select></label>
     </div>
     <p className="discoverySortingNote">Sorting, part and variation filters only rearrange offers already loaded; only scan controls contact live providers.</p>
@@ -193,22 +200,27 @@ export default function AutomaticDiscovery({providerKeys}){
 
     {!unique.length?<div className="discoveryEmpty">{requestedCategory===category?"Searching "+category+" offers now…":categoryChecked===0?"This component has not finished a scan. Select the component to search it now, or let the rolling catalog reach it.":"No qualifying listings have been returned for the selected part and filters. This does not mean no offers exist."}</div>:
       <div className="discoveryGrid">{unique.slice(0,limit).map(item=><article className="discoveryCard" key={item.url}>
-        <div className="discoveryCardTop"><span>{storeNames.get(item.marketplace)||item.source}</span><b>{Number(item.score)||0}<small>/100</small></b></div>
+        <div className="discoveryCardTop">
+          <span>{storeNames.get(item.marketplace)||item.source}</span>
+          <span className="discoveryCondition">{item.condition||"Condition unknown"}</span>
+        </div>
+        <div className="discoveryCardImage">
+          {item.imageUrl?<img src={item.imageUrl} alt={item.title||"PC component"} loading="lazy" referrerPolicy="no-referrer"/>:<span className="discoveryImagePlaceholder">PC PART</span>}
+        </div>
         <h3>{item.title}</h3>
         <p className="discoverySubtype">{item.category} / {item.subtype}</p>
-        <div className="discoveryPrice">{dollars(item.totalPrice)} <small>{item.shippingKnown?"delivered total (known shipping)":"listed price · shipping unknown"}</small></div>
-        <div className="discoveryInsights">
-          <span>{item.comparedMarketMedian?dollars(item.comparedMarketMedian)+" median": "No reliable median"}</span>
-          <span>{item.comparedMarketMedian?(item.percentVsMarket>=0?item.percentVsMarket+"% below market":Math.abs(item.percentVsMarket)+"% above market"):"Insufficient comparable pricing"}</span>
-          <span>{item.evidenceSampleSize||0} comparables · {item.sampleCoverage||"limited"} evidence</span>
+        <div className="discoveryPrice">{dollars(item.totalPrice)}
+          <small>{item.shippingKnown?"Total including known shipping":"Shipping unconfirmed — final total may be higher"}</small>
         </div>
-        {item.scoreFactors&&<details className="discoveryBreakdown"><summary>Why this deal scored {item.score}/100</summary>
-          <p>Relative price {item.scoreFactors.priceValue}/44 · Model match {item.scoreFactors.modelMatch}/18 · Condition {item.scoreFactors.condition}/14 · Shipping {item.scoreFactors.shipping}/12 · Buyer appeal {item.scoreFactors.buyerAppeal}/12.</p>
-          <p>Low evidence, missing shipping costs and unusually cheap listings can reduce or cap the score. This ranking only compares offers returned by the scan.</p>
-        </details>}
-        <div className="discoveryDetails"><span>{item.condition||"Condition unspecified"}</span><span>{new Date(item.checkedAt).toLocaleTimeString()}</span></div>
+        <div className="discoverySavings">
+          {item.msrp?<><strong className={item.percentVsMsrp>=0?"discountPositive":"discountNegative"}>{Math.abs(item.percentVsMsrp)}% {item.percentVsMsrp>=0?"below":"above"} launch MSRP</strong><span>Reference MSRP: {dollars(item.msrp)}</span></>:
+            <><strong>MSRP not verified</strong><span>Reference price unavailable for this exact model</span></>}
+          {item.comparedMarketMedian>0&&<span>{item.percentVsMarket>=0?item.percentVsMarket+"% below":Math.abs(item.percentVsMarket)+"% above"} current sampled market · median {dollars(item.comparedMarketMedian)}</span>}
+        </div>
+        <div className="discoveryDetails"><span>{item.evidenceSampleSize||0} price comparisons</span><span>Checked {new Date(item.checkedAt).toLocaleTimeString()}</span></div>
         {item.riskFlags?.length>0&&<div className="discoveryRisk">{item.riskFlags[0]}</div>}
-        <a href={item.url} target="_blank" rel="noopener noreferrer">VIEW LISTING ↗</a>
+        {item.msrpSource&&<a className="discoveryMsrpSource" href={item.msrpSource} target="_blank" rel="noopener noreferrer">Reference MSRP source ↗</a>}
+        <a className="discoveryBuyLink" href={item.url} target="_blank" rel="noopener noreferrer">VIEW AT {String(storeNames.get(item.marketplace)||item.source||"STORE").toUpperCase()} ↗</a>
       </article>)}</div>}
     {limit<unique.length&&<button className="secondary discoveryMore" onClick={()=>setLimit(l=>l+24)}>Show more deals ({unique.length-limit} remaining)</button>}
   </section>;
