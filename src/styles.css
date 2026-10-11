@@ -373,3 +373,10 @@ input:focus,select:focus,textarea:focus{outline:1px solid #1ee6ed;outline-offset
 .discoveryCard a.discoveryBuyLink:hover{background:#75f5f6}
 @media(max-width:920px){.discoveryGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:620px){.discoveryGrid{grid-template-columns:1fr}.discoveryCardImage{height:215px}.componentTabs{max-height:145px;overflow-y:auto}}
+
+.scannerProductPhoto{height:160px;background:#f9fafa;display:flex;align-items:center;justify-content:center;border-radius:3px;margin:12px 0;overflow:hidden}
+.scannerProductPhoto img{max-width:100%;max-height:100%;object-fit:contain}
+.scannerSavings{display:flex;flex-direction:column;gap:4px;background:#0d2a2c;border:1px solid #245458;padding:12px;margin:8px 0;color:#acd9d8;font-size:12px}
+.scannerSavings strong{font-size:15px;font-weight:900}
+.scannerSavings small{font-size:10px;color:#a3bbbc}
+.scannerSavings>span{font-size:11px}
