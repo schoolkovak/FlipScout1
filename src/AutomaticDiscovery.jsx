@@ -45,6 +45,7 @@ function blockedOffer(item){
 }
 export function ItemCard({item}){
   const [details,setDetails]=useState(false);
+  const [imageFailed,setImageFailed]=useState(false);
   const reference=offerReference(item);
   const saved=savingsPercent(item);
   const isBelow=saved!==null&&saved>=0;
@@ -54,21 +55,23 @@ export function ItemCard({item}){
       {reference&&isBelow&&<span className="fsSaveBadge">BELOW {item.msrp?"MSRP":"MARKET"}</span>}
     </div>
     <div className="fsProductVisual">
-      {item.imageUrl?
+      {item.imageUrl&&!imageFailed?
         <img src={item.imageUrl} alt={item.title||"PC part"} loading="lazy" referrerPolicy="no-referrer"
-          onError={e=>{e.currentTarget.style.visibility="hidden"}}/>:
+          onError={()=>setImageFailed(true)}/>:
         <div className="fsImageFallback"><span>NO IMAGE</span><small>Check retailer photos</small></div>}
     </div>
     <div className="fsProductInfo">
-      <div className="fsStoreLine"><span>{item.source||item.marketplace}</span><b>{item.condition||"Condition not specified"}</b></div>
+      <div className="fsStoreLine"><span>{item.source||item.marketplace}</span><b>{item.condition||"VERIFY CONDITION"}</b></div>
       <h3 title={item.title}>{item.title}</h3>
       <div className="fsProductDesc">{item.category} · {item.subtype}</div>
+      {item.category==="GPU"&&<div className="fsHardwareSpecs">{(item.title||"").match(/\b(\d{1,2})\s?GB\b/i)&&<span>VRAM <b>{(item.title||"").match(/\b(\d{1,2})\s?GB\b/i)[1]} GB</b></span>}</div>}
       <div className="fsPrice"><strong>{money(offerTotal(item))}</strong>
         {saved!==null&&<b className={isBelow?"fsPositive":"fsNegative"}>{Math.abs(saved).toFixed(1)}% {isBelow?"below":"above"} {item.msrp?"MSRP":"market"}</b>}
       </div>
       <div className="fsPriceExtra">
         <span>{reference?reference.type+": "+money(reference.price):"No verified MSRP or comparable price"}</span>
         <span>{item.shippingKnown?"Delivered total":"Shipping not confirmed"}</span>
+        {item.linkType==="shopping"&&<span className="fsIndirectLabel">Google Shopping link — final retailer price must be verified</span>}
       </div>
       <div className="fsConditionLine"><small>Checked {timestamp(item.checkedAt)}</small>
         <small>{item.evidenceSampleSize||0} comparisons</small></div>
@@ -82,7 +85,7 @@ export function ItemCard({item}){
         {item.msrpSource&&<a href={item.msrpSource} target="_blank" rel="noreferrer">Manufacturer starting-price source ↗</a>}
       </div>}
       <a className="fsProductLink" href={item.url} target="_blank" rel="noopener noreferrer">
-        VIEW AT {String(item.source||item.marketplace||"RETAILER").toUpperCase()} <span>↗</span>
+        {item.linkType==="shopping"?"COMPARE VIA GOOGLE SHOPPING":"VIEW AT "+String(item.source||item.marketplace||"RETAILER").toUpperCase()} <span>↗</span>
       </a>
     </div>
   </article>;
@@ -277,11 +280,17 @@ export default function AutomaticDiscovery({providerKeys}){
   return <div className="fsDealLayout">
     <aside className="fsSidebar" aria-label="PC parts and deal filters">
       <div className="fsSidePanel">
-        <h3>⚙ PC PART GROUPS</h3>
-        <button className={"fsSidePick "+(part==="All"?"chosen":"")} onClick={()=>choosePart("All")}>All PC components</button>
-        {MODELS.map(x=><button key={x.category} className={"fsSidePick "+(part===x.category?"chosen":"")} onClick={()=>choosePart(x.category)}>
-          {x.category}<small>{x.targets.length}</small>
-        </button>)}
+        <h3>⚙ PART GROUP <span className="fsPanelChevron">⌄</span></h3>
+        {part==="GPU"?<>
+          {GPU_SERIES.map(([value,name])=><button key={value}
+            className={"fsSidePick "+(series===value?"chosen":"")}
+            onClick={()=>chooseSeries(value)}><span>{name}</span><span>{value==="All"?"☰":value.startsWith("RTX")?"⚡":value.startsWith("RX")?"♨":"★"}</span></button>)}
+        </>:<>
+          <button className="fsSidePick" onClick={()=>choosePart("GPU")}>← All GPUs</button>
+          <button className={"fsSidePick "+(model==="all"?"chosen":"")} onClick={()=>setModel("all")}>Show all {part}</button>
+          {modelChoices.slice(0,15).map(t=><button key={t.id} className={"fsSidePick "+(model===t.id?"chosen":"")}
+            onClick={()=>setModel(t.id)}>{t.query}</button>)}
+        </>}
       </div>
       <div className="fsSidePanel">
         <h3>PRICE RANGE</h3>
@@ -297,7 +306,20 @@ export default function AutomaticDiscovery({providerKeys}){
         </div>
       </div>
       <div className="fsSidePanel">
-        <h3>CONDITION</h3>
+        <h3>⚑ FILTERS <span className="fsPanelChevron">⌄</span></h3>
+        {part==="GPU"&&<>
+          <label className="fsInputLabel">Minimum VRAM (GB)
+            <input min="0" type="number" placeholder="e.g. 12" value={minVram} onChange={e=>setMinVram(e.target.value)}/>
+          </label>
+          <label className="fsInputLabel">Cooling type
+            <select value={cooling} onChange={e=>setCooling(e.target.value)}>
+              <option value="all">Any cooler</option><option value="air">Air cooled</option>
+              <option value="liquid">Liquid cooled</option>
+            </select>
+          </label>
+          <label className="fsRetailer"><input type="checkbox" checked={overclocked} onChange={e=>setOverclocked(e.target.checked)}/>Overclocked (OC)</label>
+        </>}
+        <label className="fsInputLabel">Condition
         <label className="fsInputLabel">Listing condition
           <select value={condition} onChange={e=>setCondition(e.target.value)}>
             <option value="any">Any working condition</option>
@@ -308,13 +330,19 @@ export default function AutomaticDiscovery({providerKeys}){
         </label>
       </div>
       <div className="fsSidePanel">
-        <h3>RETAILERS</h3>
+        <h3>◈ RETAILERS <span className="fsPanelChevron">⌄</span></h3>
         {coverage.map(s=><label className="fsRetailer" key={s.id}>
           <input type="checkbox" checked={stores.includes(s.id)} onChange={e=>
             setStores(prev=>e.target.checked?[...prev,s.id]:prev.filter(id=>id!==s.id))}/>
           <span>{s.name}</span><small>{s.count||"—"}</small>
         </label>)}
       </div>
+      {part==="GPU"&&<div className="fsSidePanel">
+        <h3>▣ MANUFACTURERS <span className="fsPanelChevron">⌄</span></h3>
+        {["all","ASUS","MSI","Gigabyte","Zotac","EVGA","PNY","Sapphire","PowerColor","XFX","NVIDIA","Intel"].map(name=>
+          <label className="fsRetailer" key={name}><input type="radio" name="gpu-brand" value={name}
+            checked={brand===name} onChange={()=>setBrand(name)}/>{name==="all"?"All manufacturers":name}</label>)}
+      </div>}
     </aside>
 
     <section className="fsDealMain">
@@ -322,15 +350,23 @@ export default function AutomaticDiscovery({providerKeys}){
         {QUICK.map(([cat,title])=><button key={cat} className={part===cat?"chosen":""} onClick={()=>choosePart(cat)}>{title}</button>)}
       </div>
       <header className="fsDealTitle">
-        <div><span className="fsEyebrow">FLIPSCOUT / LIVE PC COMPONENTS</span>
-          <h1>{part==="All"?"FIND YOUR NEXT BUILD DEAL":part==="GPU"?"GPU PRICE TRACKER":part.toUpperCase()+" DEAL TRACKER"}</h1>
-          <p>Real retailer offers · New, used and refurbished · Sorted from loaded results, not a new search</p>
+        <div><span className="fsEyebrow">FLIPSCOUT / LIVE PRICE INTELLIGENCE</span>
+          <h1>{part==="All"?"TRACK THE BEST PC HARDWARE DEALS":part==="GPU"&&series!=="All"?"TRACK "+series+" SERIES GPU PRICES":part==="GPU"?"TRACK GRAPHICS CARD PRICES":"TRACK "+part.toUpperCase()+" PRICES"}</h1>
+          <div className="fsHeroLine" aria-hidden="true"></div>
+          <h2>The best hardware deal is the one you can actually buy.</h2>
+          <p>Compare real seller offers, their condition and current prices. Our scanner excludes incomplete hardware and shows where every result came from.</p>
+          <div className="fsHeroLine" aria-hidden="true"></div>
+          <p className="fsHeroCaution">Always verify the seller, images, working condition and final delivered price before purchasing.</p>
         </div>
         <div className="fsHeaderStat"><strong>{offers.length}</strong><small>DISPLAYED DEALS</small></div>
       </header>
       {part==="GPU"&&<nav className="fsSeriesNav" aria-label="GPU series">{GPU_SERIES.map(([id,name])=>
         <button key={id} onClick={()=>chooseSeries(id)} className={series===id?"chosen":""}>{name}</button>
       )}</nav>}
+      <div className="fsBreadcrumb"><strong>{part==="GPU"?"GPU":part}</strong>
+        <span>›</span> <span>{series==="All"?"All models":series}</span>
+        {model!=="all"&&<><span>›</span><b>{TARGETS.find(t=>t.id===model)?.query}</b></>}
+      </div>
       <div className="fsScanControls">
         <div className="fsScanLive"><span className={"fsPulse "+(auto?"enabled":"")}></span>
           <div><b>{pageStatus}</b><small>{scannedAll}/{TARGETS.length} model searches checked · Last {timestamp(latest)}</small></div></div>
@@ -361,7 +397,7 @@ export default function AutomaticDiscovery({providerKeys}){
       </div>
       {message&&<div className="fsMarketWarning" role="status">{message}</div>}
       {queued&&<div className="fsMarketWarning">Queued: {queued}. The current scan must finish first.</div>}
-      <p className="fsMarketNote">Auto-watch checks a small rotating batch while this browser tab is open. Five-minute mode consumes more provider credits. Filtering and sorting do not make a search request. Store counts show usable direct offers, not guaranteed inventory.</p>
+      <p className="fsMarketNote">Auto-watch refreshes a small rotating batch while this tab is visible; it cannot refresh hundreds of models every five minutes within free API limits. Store availability depends on provider access. Sorting, retailer filters, manufacturer and price controls rearrange existing offers without new searches.</p>
       {shown.length?
         <div className="fsProducts">{shown.map(item=><ItemCard key={item.url} item={item}/>)}</div>:
         <div className="fsNoDeals">
