@@ -522,6 +522,10 @@ function DealScanner({providerKeys,onSearchSaved}){
   const [page,setPage]=useState(0);
   const [loading,setLoading]=useState(false);
   const [autoRefresh,setAutoRefresh]=useState(false);
+  const [searchApiUntil,setSearchApiUntil]=useState(()=>{
+    try{return Number(localStorage.getItem("flipscout-searchapi-cooldown-v1")||0)}
+    catch{return 0}
+  });
   const [refreshMinutes,setRefreshMinutes]=useState(10);
   const [error,setError]=useState("");
   const [data,setData]=useState(null);
@@ -555,19 +559,28 @@ function DealScanner({providerKeys,onSearchSaved}){
       const response=await fetch("/api/deals/search",{
         method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({category,query:query.trim(),condition,minPartPrice:min,partBudget:max,
-          deepScan:quiet?false:deepScan,providerKeys}),
+          deepScan:quiet?false:deepScan,providerKeys,
+          skipSearchApi:searchApiUntil>Date.now()}),
         signal:AbortSignal.timeout(55000)
       });
       const result=await response.json();
       if(!response.ok)throw Error(result.message||"Part Scanner returned an error");
-      setData(result);setPage(0);
+      setData(prev=>result.available?result:(prev?.results?.length?{...prev,errors:result.errors||[]}:
+        result));
+      setPage(0);
       if(result.available&&result.market?.sampleSize>0){
         setTrend(saveMarketSnapshot({category,query,condition},result.market));
       }else{
         const providerErrors=(result.errors||[]).filter(x=>x.message);
         setError(result.message||providerErrors[0]?.message||"No priced, usable listings returned. Check Source Details.");
       }
-      if(result.errors?.some(x=>/quota|429|credits|401|403/i.test(x.message||"")))setAutoRefresh(false);
+      if(result.errors?.some(x=>/searchapi/i.test(x.provider||"")&&/429|quota|rate.limit/i.test(x.message||""))){
+        const until=Date.now()+6*60*60*1000;
+        setSearchApiUntil(until);
+        try{localStorage.setItem("flipscout-searchapi-cooldown-v1",String(until))}catch{}
+        setError("SearchAPI is rate-limited (429). It is paused for six hours; any configured Serper results remain available.");
+      }
+      if(result.errors?.some(x=>/serper/i.test(x.message||"")&&/429|quota/i.test(x.message||"")))setAutoRefresh(false);
     }catch(e){setError("Part Scanner failed: "+(e.message||"Search request unavailable"));}
     finally{busyRef.current=false;setLoading(false);}
   }
@@ -943,7 +956,7 @@ export default function App(){
     <main className="mainWrap">
       
       {tab==="scan"&&<><ProviderSetup providerKeys={providerKeys} setProviderKeys={setProviderKeys}/><DealScanner providerKeys={providerKeys} onWatchChange={bump} onSearchSaved={bump}/></>}
-      {tab==="sniper"&&<><ProviderSetup providerKeys={providerKeys} setProviderKeys={setProviderKeys}/><AutomaticDiscovery providerKeys={providerKeys}/><details className="manualSearchDisclosure"><summary>Custom searches and deep retailer scanning</summary><PartsSniper providerKeys={providerKeys} onWatchChange={bump}/></details></>}
+      {tab==="sniper"&&<><ProviderSetup providerKeys={providerKeys} setProviderKeys={setProviderKeys}/><AutomaticDiscovery providerKeys={providerKeys} onOpenScanner={()=>setTab("scan")}/></>}
       {tab==="pro"&&<ProPage setTab={setTab}/>}
       <Sources providerKeys={providerKeys}/>
     </main>
