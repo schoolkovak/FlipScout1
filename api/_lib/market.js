@@ -7,6 +7,10 @@ const EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope";
 const searchCache=new Map();
 const CACHE_MS=10*60*1000;
 const inFlight=new Map();
+const providerCooldown={searchapiUntil:0,serperUntil:0};
+const SIX_HOURS=6*60*60*1000;
+function searchApiAllowed(input={}){return !input.skipSearchApi&&Date.now()>=providerCooldown.searchapiUntil}
+function serperAllowed(input={}){return !input.skipSerper&&Date.now()>=providerCooldown.serperUntil}
 async function providerFetch(url,options={}){
   for(let attempt=0;attempt<2;attempt++){
     const response=await fetch(url,{...options,signal:AbortSignal.timeout(12000)});
@@ -28,6 +32,8 @@ function env(name) {
 }
 
 function providerKey(name,input={}) {
+  if(name==="SEARCHAPI_API_KEY"&&!searchApiAllowed(input))return "";
+  if(name==="SERPER_API_KEY"&&!serperAllowed(input))return "";
   return input?.providerKeys?.[name] || env(name);
 }
 
@@ -318,6 +324,10 @@ export async function searchSerperShopping(input) {
     },
     body:JSON.stringify({q,gl:"us",hl:"en",num:100})
   });
+  if(response.status===429){
+    providerCooldown.serperUntil=Date.now()+SIX_HOURS;
+    throw new Error("Serper Shopping rate-limited (429): requests paused for six hours.");
+  }
   if(!response.ok) throw new Error("Serper Shopping returned "+response.status);
   const data=await response.json();
   return (data.shopping||[]).map((x,index)=>{
@@ -358,7 +368,12 @@ async function searchSearchApiEngine(engine,query,extra={},providerKeys={}){
   if(!apiKey) return null;
   const params=new URLSearchParams({engine,q:query,api_key:apiKey,...extra});
   const response=await providerFetch("https://www.searchapi.io/api/v1/search?"+params.toString());
-  if(!response.ok) throw new Error("SearchAPI "+engine+" returned "+response.status);
+  if(response.status===429){
+    const seconds=Number(response.headers?.get?.("retry-after")||0);
+    providerCooldown.searchapiUntil=Date.now()+Math.max(SIX_HOURS,Number.isFinite(seconds)?seconds*1000:0);
+    throw new Error("SearchAPI quota/rate limit (429): requests paused to save credits.");
+  }
+  if(!response.ok)throw new Error("SearchAPI "+engine+" returned "+response.status);
   return response.json();
 }
 
@@ -1152,7 +1167,7 @@ export async function searchPartsSniper(input){
     providers.push(["Shopping merchants",()=>searchSearchApiShopping({...input,marketplaces:selected})]);
   }
 
-  if(selected.includes("ebay")&&hasSearchApi){
+  if(selected.includes("ebay")&&hasSearchApi&&(input.deepScan||!hasSerper)){
     providers.push(["eBay price + shipping",async()=> (await searchSearchApiEbay({...input,ebaySort:"price_shipping_low_to_high"})).map(x=>({...x,marketplace:"ebay",provider:"SearchAPI eBay cheapest delivered"}))]);
     // Deep scans also inspect eBay's Best Match and newest listings, which do not
     // necessarily overlap with the cheapest-delivered results.
@@ -1161,12 +1176,12 @@ export async function searchPartsSniper(input){
     }
   }
 
-  if(selected.includes("amazon")&&hasSearchApi){
+  if(selected.includes("amazon")&&hasSearchApi&&input.deepScan){
     providers.push(["Amazon",()=>searchSearchApiAmazon(input)]);
   }
 
-  if(hasSearchApi&&selected.includes("bestbuy"))providers.push(["Best Buy",()=>searchSearchApiBestBuy(input)]);
-  if(hasSearchApi&&selected.includes("walmart"))providers.push(["Walmart",()=>searchSearchApiWalmart(input)]);
+  if(hasSearchApi&&input.deepScan&&selected.includes("bestbuy"))providers.push(["Best Buy",()=>searchSearchApiBestBuy(input)]);
+  if(hasSearchApi&&input.deepScan&&selected.includes("walmart"))providers.push(["Walmart",()=>searchSearchApiWalmart(input)]);
 
   // Dedicated retailer-domain discovery only for deliberate deep scans.
   // Use SearchAPI when configured; otherwise reuse Serper shopping with a
@@ -1184,10 +1199,15 @@ export async function searchPartsSniper(input){
     }
   }
 
-  const settled=await Promise.all(providers.map(async([name,run])=>{
-    try{return {name,items:await run()};}
-    catch(error){return {name,error:error.name==="TimeoutError"?"Provider timed out":String(error.message||error).replace(/https?:\/\/\S+/g,"[provider]")};}
-  }));
+  // Bound provider calls to 2 per model. A 429 disables later SearchAPI calls.
+  const settled=[];
+  for(let i=0;i<providers.length;i+=2){
+    const chunk=await Promise.all(providers.slice(i,i+2).map(async([name,run])=>{
+      try{return {name,items:await run()};}
+      catch(error){return {name,error:error.name==="TimeoutError"?"Provider timed out":String(error.message||error).replace(/https?:\/\/\S+/g,"[provider]")};}
+    }));
+    settled.push(...chunk);
+  }
   const errors=settled.filter(x=>x.error).map(x=>({provider:x.name,message:x.error}));
   const providerReports=settled.map(x=>({provider:x.name,returned:x.items?.length||0,
     status:x.error?"error":x.items?.length?"results":"empty",message:x.error||null}));
