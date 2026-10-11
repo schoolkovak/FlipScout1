@@ -220,3 +220,14 @@ export const DISCOVERY_TARGETS=Array.from({length:maxVariations},(_,index)=>
     }]:[];
   })
 ).flat();
+
+export const CORE_PC_CATEGORIES=[
+  "GPU","CPU","Motherboard","RAM / Memory","NVMe SSD","SATA SSD",
+  "Hard Drive / HDD","Power Supply / PSU","PC Case",
+  "CPU Air Cooler","AIO Liquid Cooler","Case Fans"
+];
+// Other categories remain in the data catalog for optional future modules,
+// but the automatic shopping board only scans PC build components.
+export const CORE_DISCOVERY_TARGETS=DISCOVERY_TARGETS.filter(target=>
+  CORE_PC_CATEGORIES.includes(target.category)
+);
