@@ -794,7 +794,7 @@ function ProPage({setTab}){
       <h2>Better decisions. Fewer expensive mistakes.</h2>
       <p>Pro is a toolkit for enthusiasts, PC builders and people who buy and sell hardware. Every feature is open during the founders beta — no payment required.</p>
       <div className="proBadge"><CheckCircle2 size={17}/>All current tools available in beta</div>
-      <div className="heroActions"><button className="primary large" onClick={()=>setTab("sniper")}>Explore live deals <ArrowRight size={16}/></button><button className="secondary large" onClick={()=>setTab("sniper")}>Check a PC's value</button></div>
+      <div className="heroActions"><button className="primary large" onClick={()=>setTab("sniper")}>Explore live deals <ArrowRight size={16}/></button><button className="secondary large" onClick={()=>setTab("scan")}>Compare part prices</button></div>
     </section>
     <div className="proFeatureGrid">
       <div className="proFeature"><Search size={22}/><span>01 / DISCOVER</span><h3>Better deal discovery</h3><p>Rank listings by value, relevance, condition and shipping confidence. See real stores and listings, not fictional price targets.</p></div>
