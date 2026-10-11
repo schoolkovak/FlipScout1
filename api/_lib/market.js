@@ -377,7 +377,7 @@ function mapSearchApiEbayResult(x,index,{query,category}) {
 
 export async function searchSearchApiEbay(input) {
   const {query,category,condition,postalCode,localOnly=false,distanceRadius=50,providerKeys={}}=input;
-  const extra={num:"240",sort_by:localOnly?"distance_nearest":"best_match",buying_format:"buy_it_now"};
+  const extra={num:"240",sort_by:localOnly?"distance_nearest":input.ebaySort||"price_shipping_low_to_high",buying_format:"buy_it_now"};
   const cond=searchApiCondition(condition);
   if(cond) extra.condition=cond;
   if(postalCode){
@@ -966,7 +966,16 @@ export function rankDeals(items,market,{query="",partBudget=0,sortBy="best",cate
     const itemCap=Math.min(evidenceCap,item.shippingKnown?100:69,under>.45?49:100,
       item.condition==="unknown"?65:100,item.conditionAssumed?65:100);
     const score=Math.max(0,Math.min(itemCap,Math.round(raw)));
-    return {...item,score,scoreCap:itemCap,riskFlags,evidenceSampleSize:sample,
+    const scoreFactors={
+      priceValue:Math.round(44*underScore),
+      modelMatch:Math.round(18*relevance),
+      condition:Math.round(14*conditionScore),
+      shipping:Math.round(12*shippingScore),
+      buyerAppeal:Math.round(12*appeal)
+    };
+    return {...item,score,scoreCap:itemCap,scoreFactors,riskFlags,evidenceSampleSize:sample,
+      comparedMarketMedian:medianValue||null,
+      sampleCoverage:sample<8?"thin":sample<15?"limited":"broader",
       percentVsMarket:medianValue?Math.round(under*100):0,
       budgetLeft:null,withinPartBudget:!maxPart||item.totalPrice<=maxPart};
   });
@@ -1102,7 +1111,13 @@ export async function searchPartsSniper(input){
   }
 
   if(selected.includes("ebay")&&hasSearchApi){
-    providers.push(["eBay",async()=> (await searchSearchApiEbay(input)).map(x=>({...x,marketplace:"ebay",provider:"SearchAPI eBay"}))]);
+    providers.push(["eBay price + shipping",async()=> (await searchSearchApiEbay({...input,ebaySort:"price_shipping_low_to_high"})).map(x=>({...x,marketplace:"ebay",provider:"SearchAPI eBay cheapest delivered"}))]);
+    // Deep scans also inspect eBay's Best Match and newest listings, which do not
+    // necessarily overlap with the cheapest-delivered results.
+    if(input.deepScan){
+      providers.push(["eBay best match",async()=> (await searchSearchApiEbay({...input,ebaySort:"best_match"})).map(x=>({...x,marketplace:"ebay",provider:"SearchAPI eBay relevance"}))]);
+      providers.push(["eBay newly listed",async()=> (await searchSearchApiEbay({...input,ebaySort:"time_newly_listed"})).map(x=>({...x,marketplace:"ebay",provider:"SearchAPI eBay newest"}))]);
+    }
   }
 
   if(selected.includes("amazon")&&hasSearchApi&&(input.deepScan||!hasSerper)){
