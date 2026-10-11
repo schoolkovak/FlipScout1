@@ -191,6 +191,23 @@ export const DISCOVERY_SUBTYPES={
   ]
 };
 
+
+const EXTRA_VARIATIONS={
+"GPU":["RTX 3060 12GB","RTX 3060 Ti 8GB","RTX 3070 8GB","RTX 3080 10GB","RTX 3090 24GB","RTX 4060 Ti 8GB","RTX 4060 Ti 16GB","RTX 4070 Super 12GB","RTX 4070 Ti Super 16GB","RTX 5070 Ti 16GB","RTX 5080 16GB","RX 6600 8GB","RX 6650 XT 8GB","RX 6700 XT 12GB","RX 6800 XT 16GB","RX 7700 XT 12GB","RX 9060 XT 16GB"],
+"CPU":["Ryzen 5 3500X","Ryzen 5 3600","Ryzen 5 5600X","Ryzen 5 7500F","Ryzen 5 9600X","Ryzen 7 5700X","Ryzen 7 5700X3D","Ryzen 7 7700X","Ryzen 7 9700X","Intel i5 10400F","Intel i5 12600K","Intel i5 13400F","Intel i7 12700K","Intel i7 13700K","Intel i7 14700K"],
+"Motherboard":["A520 AM4 mATX motherboard","B450 AM4 ATX motherboard","B550 AM4 mATX motherboard","B650M AM5 motherboard","B650E AM5 motherboard","A620 AM5 motherboard","B860 LGA1851 motherboard","Z890 LGA1851 motherboard"],
+"RAM / Memory":["8GB DDR4 3200 RAM","16GB DDR4 3200 2x8","16GB DDR5 5600 2x8","32GB DDR4 3200 2x16","32GB DDR5 5600 2x16","32GB DDR5 6400 CL32","64GB DDR4 3200 2x32","64GB DDR5 6000 CL30","128GB DDR5 memory kit"],
+"NVMe SSD":["250GB NVMe SSD","500GB NVMe PCIe 4.0","1TB NVMe PCIe 4.0","2TB NVMe PCIe 4.0","2TB NVMe PCIe 5.0","4TB NVMe PCIe 5.0"],
+"Power Supply / PSU":["450W Bronze PSU","500W Bronze PSU","600W Gold PSU","650W Bronze PSU","750W Bronze PSU","850W Platinum PSU","1200W Gold PSU"],
+"PC Case":["ATX mid tower case","white ATX RGB case","compact micro ATX case","mini ITX mesh case"],
+"CPU Air Cooler":["120mm tower air cooler","dual tower 120mm CPU air cooler","low profile AM5 cooler"],
+"AIO Liquid Cooler":["120mm AIO","240mm ARGB AIO","360mm ARGB AIO"],
+"Monitor":["24 inch 1080p 240Hz gaming monitor","27 inch 1440p IPS 180Hz","34 inch ultrawide 1440p monitor","32 inch 4K OLED monitor"]
+};
+for(const [category,models] of Object.entries(EXTRA_VARIATIONS)){
+  DISCOVERY_SUBTYPES[category]=[...new Set([...(DISCOVERY_SUBTYPES[category]||[]),...models])];
+}
+
 export const DISCOVERY_TARGETS=SNIPER_CATEGORIES.flatMap(category=>
   (DISCOVERY_SUBTYPES[category.name]||[category.example]).map((query,index)=>({
     id:category.name.toLowerCase().replace(/[^a-z0-9]+/g,"-")+"-"+index,

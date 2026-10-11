@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import handler from '../api/market/pc.js';
 import {parseListingText} from '../src/listingParser.js';
 import {GPUS,CPUS,resolveCatalogPart} from '../shared/catalog.js';
-import {buildMarket,liveSearch,relevanceScore,rankDeals,searchPartsSniper} from '../api/_lib/market.js';
+import {buildMarket,liveSearch,relevanceScore,rankDeals,searchPartsSniper,searchSearchApiEbay} from '../api/_lib/market.js';
 import {buildOpportunitySummary,channelEconomics,marginBuyTargets,sensitivityAnalysis,scoreBreakdown,verdict} from '../src/intelligence.js';
 import {fallbackPcEstimate} from '../src/valuation.js';
 import {SNIPER_CATEGORIES,SNIPER_CONDITIONS,SNIPER_MARKETPLACES} from '../shared/sniper.js';
@@ -100,5 +100,33 @@ test('automatic discovery lists every part category and several important subtyp
   for(const part of ['GPU','CPU','RAM / Memory','NVMe SSD','Motherboard','Power Supply / PSU']){
     assert.ok(DISCOVERY_SUBTYPES[part]?.length>=3,part);
   }
+  assert.equal(new Set(DISCOVERY_TARGETS.map(x=>x.id)).size,DISCOVERY_TARGETS.length);
+});
+
+
+test('eBay deal search prioritizes lowest delivered price and remains possible with used condition',async()=>{
+  const previous=globalThis.fetch;
+  const seen=[];
+  globalThis.fetch=async url=>{
+    const parsed=new URL(url);
+    seen.push({sort:parsed.searchParams.get('sort_by'),condition:parsed.searchParams.get('condition')});
+    return {ok:true,status:200,json:async()=>({organic_results:[
+      {title:'RTX 4060 used graphics card complete',extracted_price:190,extracted_shipping:10,condition:'Used',item_id:'cheaper',link:'https://www.ebay.com/itm/111111111111'},
+      {title:'RTX 4060 used graphics card complete',extracted_price:230,extracted_shipping:0,condition:'Used',item_id:'other',link:'https://www.ebay.com/itm/222222222222'}
+    ]})};
+  };
+  try{
+    const items=await searchSearchApiEbay({query:'RTX 4060',category:'GPU',condition:'used',providerKeys:{SEARCHAPI_API_KEY:'test-only-price-sort'}});
+    assert.equal(seen[0].sort,'price_shipping_low_to_high');
+    assert.ok((seen[0].condition||'').includes('used'));
+    assert.equal(items.length,2);
+    assert.equal(Math.min(...items.map(x=>x.totalPrice)),200);
+  }finally{globalThis.fetch=previous;}
+});
+
+test('discovery has hundreds of subtype searches and each category has variations',async()=>{
+  const {DISCOVERY_TARGETS}=await import('../shared/discovery.js');
+  assert.ok(DISCOVERY_TARGETS.length>=180);
+  assert.equal(new Set(DISCOVERY_TARGETS.map(x=>x.category)).size,SNIPER_CATEGORIES.length);
   assert.equal(new Set(DISCOVERY_TARGETS.map(x=>x.id)).size,DISCOVERY_TARGETS.length);
 });
