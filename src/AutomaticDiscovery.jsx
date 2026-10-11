@@ -1,8 +1,8 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
-import {DISCOVERY_TARGETS} from "../shared/discovery.js";
+import {CORE_DISCOVERY_TARGETS as DISCOVERY_TARGETS,CORE_PC_CATEGORIES} from "../shared/discovery.js";
 import {SNIPER_CATEGORIES,SNIPER_MARKETPLACES} from "../shared/sniper.js";
 
-const STORE_KEY="flipscout-automatic-discovery-v1";
+const STORE_KEY="flipscout-automatic-discovery-core-v1";
 const BATCH=5;
 const INTERVAL_MS=15*60*1000;
 const HOURLY_INTERVAL_MS=Math.max(20000,Math.floor(3600000/Math.ceil(DISCOVERY_TARGETS.length/BATCH)));
@@ -34,6 +34,7 @@ export default function AutomaticDiscovery({providerKeys}){
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   const [category,setCategory]=useState("All");
+  const [requestedCategory,setRequestedCategory]=useState(null);
   const [variation,setVariation]=useState("all");
   const [store,setStore]=useState("all");
   const [condition,setCondition]=useState("any");
@@ -46,20 +47,24 @@ export default function AutomaticDiscovery({providerKeys}){
   })());
   const mountedRef=useRef(true);
   const scanRef=useRef(null);
-  const parts=useMemo(()=>SNIPER_CATEGORIES.map(x=>x.name),[]);
+  const parts=CORE_PC_CATEGORIES;
   const variations=useMemo(()=>DISCOVERY_TARGETS.filter(x=>category!=="All"&&x.category===category),[category]);
   useEffect(()=>{mountedRef.current=true;return()=>{mountedRef.current=false;}},[]);
   useEffect(()=>{
     try{localStorage.setItem(STORE_KEY,JSON.stringify(catalog));}catch{}
   },[catalog]);
 
-  async function scanBatch(){
+  async function scanBatch(priorityCategory=null){
     if(busyRef.current||document.visibilityState==="hidden")return;
     busyRef.current=true;
     setBusy(true);
     setError("");
     const start=positionRef.current;
-    const targets=Array.from({length:BATCH},(_,offset)=>DISCOVERY_TARGETS[(start+offset)%DISCOVERY_TARGETS.length]);
+    const unsampled=priorityCategory?DISCOVERY_TARGETS.filter(x=>x.category===priorityCategory):[];
+    const targets=priorityCategory?
+      unsampled.filter(x=>!catalog[x.id]||Date.now()-Date.parse(catalog[x.id].checkedAt)>60*60*1000).slice(0,BATCH):
+      Array.from({length:BATCH},(_,offset)=>DISCOVERY_TARGETS[(start+offset)%DISCOVERY_TARGETS.length]);
+    if(!targets.length){busyRef.current=false;setBusy(false);setRequestedCategory(null);return;}
     try{
       const response=await fetch("/api/parts/sniper",{
         method:"POST",
@@ -84,12 +89,14 @@ export default function AutomaticDiscovery({providerKeys}){
       }
       if(!mountedRef.current)return;
       setCatalog(prev=>({...prev,...updates}));
-      positionRef.current=(start+BATCH)%DISCOVERY_TARGETS.length;
+      if(!priorityCategory)positionRef.current=(start+BATCH)%DISCOVERY_TARGETS.length;
       try{localStorage.setItem("flipscout-catalog-position",String(positionRef.current));}catch{}
       setPosition(positionRef.current);
+      setRequestedCategory(null);
     }catch(e){
       if(mountedRef.current){
         setError(String(e?.message||"Unable to scan parts"));
+        setRequestedCategory(null);
         setAuto(false);
       }
     }finally{
@@ -118,6 +125,18 @@ export default function AutomaticDiscovery({providerKeys}){
   const storeCounts=Object.fromEntries(SNIPER_MARKETPLACES.map(x=>[x.id,new Set(offers.filter(item=>item.marketplace===x.id).map(item=>item.url)).size]));
   unique.sort(sort==="price"?(a,b)=>a.totalPrice-b.totalPrice:(a,b)=>(b.score||0)-(a.score||0)||a.totalPrice-b.totalPrice);
   const newest=Object.values(catalog).map(x=>x.checkedAt).sort().at(-1);
+  const categoryTargets=DISCOVERY_TARGETS.filter(t=>category==="All"||t.category===category);
+  const categoryChecked=categoryTargets.filter(t=>catalog[t.id]).length;
+  function selectPart(part){
+    setCategory(part);setVariation("all");setLimit(24);
+    if(part!=="All"){
+      const unchecked=DISCOVERY_TARGETS.some(t=>t.category===part&&!catalog[t.id]);
+      if(unchecked && !busyRef.current){
+        setRequestedCategory(part);
+        scanRef.current?.(part);
+      }
+    }
+  }
   const totalPages=Math.ceil(DISCOVERY_TARGETS.length/BATCH);
   const scanInterval=hourly?HOURLY_INTERVAL_MS:INTERVAL_MS;
 
@@ -129,7 +148,7 @@ export default function AutomaticDiscovery({providerKeys}){
         <p>Browse currently discovered listings without typing a query. Price rankings only compare loaded results; no scanner can guarantee the absolute lowest offer without complete marketplace coverage.</p>
       </div>
       <div className="discoveryStats">
-        <div><strong>{DISCOVERY_TARGETS.length}</strong><small>Model / variation searches</small></div>
+        <div><strong>{DISCOVERY_TARGETS.length}</strong><small>Build part variations</small></div>
         <div><strong>{checked}</strong><small>Subtypes checked</small></div>
         <div><strong>{unique.length}</strong><small>Matching offers</small></div>
       </div>
@@ -151,8 +170,9 @@ export default function AutomaticDiscovery({providerKeys}){
     {error&&<div className="discoveryError">{error}</div>}
 
 
+    <div className="componentTabs"><button className={category==="All"?"active":""} onClick={()=>selectPart("All")}>All PC parts</button>{parts.map(part=><button key={part} className={category===part?"active":""} onClick={()=>selectPart(part)}>{part}</button>)}</div>
     <div className="discoveryFilters">
-      <label>PC parts<select value={category} onChange={e=>{setCategory(e.target.value);setVariation("all");setLimit(24)}}>
+      <label>PC components<select value={category} onChange={e=>selectPart(e.target.value)}>
         <option value="All">All PC parts ({parts.length})</option>{parts.map(part=><option key={part} value={part}>{part}</option>)}
       </select></label>
       <label>Model / variation<select value={variation} disabled={category==="All"} onChange={e=>{setVariation(e.target.value);setLimit(24)}}>
@@ -171,7 +191,7 @@ export default function AutomaticDiscovery({providerKeys}){
     <p className="discoverySortingNote">Sorting, part and variation filters only rearrange offers already loaded; only scan controls contact live providers.</p>
     <div className="discoveryCoverage">{SNIPER_MARKETPLACES.map(x=><span key={x.id} className={storeCounts[x.id]?"hasOffers":"noOffers"}>{x.name} <b>{storeCounts[x.id]||"—"}</b></span>)}</div>
 
-    {!unique.length?<div className="discoveryEmpty">{checked?"No matching listings in the scanned categories yet. Try all stores or another condition.":"Initial discovery is building. The first matching offers will appear after a scan completes."}</div>:
+    {!unique.length?<div className="discoveryEmpty">{requestedCategory===category?"Searching "+category+" offers now…":categoryChecked===0?"This component has not finished a scan. Select the component to search it now, or let the rolling catalog reach it.":"No qualifying listings have been returned for the selected part and filters. This does not mean no offers exist."}</div>:
       <div className="discoveryGrid">{unique.slice(0,limit).map(item=><article className="discoveryCard" key={item.url}>
         <div className="discoveryCardTop"><span>{storeNames.get(item.marketplace)||item.source}</span><b>{Number(item.score)||0}<small>/100</small></b></div>
         <h3>{item.title}</h3>
