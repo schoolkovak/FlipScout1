@@ -40,7 +40,10 @@ export default function AutomaticDiscovery({providerKeys}){
   const [sort,setSort]=useState("score");
   const [limit,setLimit]=useState(24);
   const busyRef=useRef(false);
-  const positionRef=useRef(0);
+  const positionRef=useRef((()=>{
+    try{return Math.max(0,Number(localStorage.getItem("flipscout-catalog-position")||0))%DISCOVERY_TARGETS.length;}
+    catch{return 0;}
+  })());
   const mountedRef=useRef(true);
   const scanRef=useRef(null);
   const parts=useMemo(()=>SNIPER_CATEGORIES.map(x=>x.name),[]);
@@ -82,6 +85,7 @@ export default function AutomaticDiscovery({providerKeys}){
       if(!mountedRef.current)return;
       setCatalog(prev=>({...prev,...updates}));
       positionRef.current=(start+BATCH)%DISCOVERY_TARGETS.length;
+      try{localStorage.setItem("flipscout-catalog-position",String(positionRef.current));}catch{}
       setPosition(positionRef.current);
     }catch(e){
       if(mountedRef.current){
@@ -97,7 +101,9 @@ export default function AutomaticDiscovery({providerKeys}){
   useEffect(()=>{scanRef.current?.()},[]);
   useEffect(()=>{
     if(!auto)return;
-    const interval=window.setInterval(()=>scanRef.current?.(),hourly?HOURLY_INTERVAL_MS:INTERVAL_MS);
+    const interval=window.setInterval(()=>{
+      if(document.visibilityState==="visible")scanRef.current?.();
+    },hourly?HOURLY_INTERVAL_MS:INTERVAL_MS);
     return ()=>window.clearInterval(interval);
   },[auto,hourly]);
 
