@@ -603,7 +603,7 @@ function PartsSniper({providerKeys,onWatchChange}){
   const [targets,setTargets]=useState(()=>[
     {id:"target-1",category:"GPU",query:"RTX 5070",condition:"used",maxPrice:550,buildBudget:1000,committed:300}
   ]);
-  const [marketplaces,setMarketplaces]=useState(["amazon","bestbuy","walmart","newegg","ebay","aliexpress","bhphoto","adorama","microcenter","mercari"]);
+  const [marketplaces,setMarketplaces]=useState(["amazon","bestbuy","walmart","newegg","ebay","aliexpress","mercari"]);
   const [deepScan,setDeepScan]=useState(false);
   const [pages,setPages]=useState({});
   const [storeFilters,setStoreFilters]=useState({});
@@ -699,7 +699,7 @@ function PartsSniper({providerKeys,onWatchChange}){
   return <div className="pageStack">
     <section className="sniperHero">
       <div><span className="eyebrow">PC PARTS / LIVE MARKET INTELLIGENCE</span><h2>BETTER PARTS.<br/>BETTER PRICES.</h2><p>Real new, open-box, refurbished and used hardware. Filter out obvious junk. Rank deals by actual value, evidence and total cost.</p></div>
-      <div className="sniperHeroStats"><div><b>38</b><span>part categories</span></div><div><b>10</b><span>retailers & marketplaces</span></div><div><b>5</b><span>targets per manual scan</span></div></div>
+      <div className="sniperHeroStats"><div><b>38</b><span>part categories</span></div><div><b>7</b><span>retailers & marketplaces</span></div><div><b>5</b><span>targets per manual scan</span></div></div>
     </section>
 
     <section className="panel">
