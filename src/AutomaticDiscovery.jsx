@@ -70,7 +70,7 @@ export default function AutomaticDiscovery({providerKeys}){
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
-          targets,marketplaces:SNIPER_MARKETPLACES.map(x=>x.id),deepScan:false,providerKeys
+          targets,marketplaces:SNIPER_MARKETPLACES.map(x=>x.id),deepScan:Boolean(priorityCategory)||hourly,providerKeys
         }),
         signal:AbortSignal.timeout(55000)
       });
@@ -173,7 +173,7 @@ export default function AutomaticDiscovery({providerKeys}){
       <label className="discoveryHourlyToggle"><input type="checkbox" checked={hourly} onChange={e=>{setHourly(e.target.checked);setAuto(true)}}/> Hourly full-catalog mode</label>
     </div>
     <div className="discoveryProgress"><div style={{width:(100*checked/DISCOVERY_TARGETS.length)+"%"}}/></div>
-    <p className="discoveryDisclaimer">{hourly?"High-usage mode: "+DISCOVERY_TARGETS.length+" model searches per hourly cycle (potentially several provider calls per model). Next 5-model batch approximately every "+Math.ceil(scanInterval/1000)+" seconds.":"Economy mode: 5 models every 15 minutes. Enable hourly mode for a complete one-hour sweep."} Scans only while this browser tab is open and visible. Sorting and filtering do not search again. Stored results expire after 72 hours and may no longer be available.</p>
+    <p className="discoveryDisclaimer">{hourly?"High-usage mode: "+DISCOVERY_TARGETS.length+" model searches per hourly cycle (potentially several provider calls per model). Next 5-model batch approximately every "+Math.ceil(scanInterval/1000)+" seconds.":"Economy mode: 5 models every 15 minutes. Enable hourly mode for a complete one-hour sweep."} Selecting a component runs a deeper retailer scan; hourly mode also searches individual retailer domains and uses substantially more paid provider credits. Scans only while this browser tab is open and visible. Sorting and filtering do not search again. Stored results expire after 72 hours and may no longer be available.</p>
     {error&&<div className="discoveryError">{error}</div>}
 
 
