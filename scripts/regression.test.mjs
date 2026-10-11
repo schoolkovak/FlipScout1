@@ -53,7 +53,7 @@ test('Parts & Sniper keeps marketplace identity and filters junk results',async(
       query:'RTX 5070',category:'GPU',condition:'used',
       marketplaces:['amazon','newegg','ebay','mercari'],
       partBudget:550,buildBudget:1100,committed:300,
-      providerKeys:{SERPER_API_KEY:'test-serper',SEARCHAPI_API_KEY:'test-searchapi'}
+      deepScan:true,providerKeys:{SERPER_API_KEY:'test-serper',SEARCHAPI_API_KEY:'test-searchapi'}
     });
     assert.ok(result.market.sampleSize>=4);
     const sources=new Set(result.items.map(x=>x.source));
@@ -216,7 +216,7 @@ test('all seven structured retailer offers survive strict direct-link and pricin
       query:'RTX 4060',category:'GPU',condition:'any',
       marketplaces:SNIPER_MARKETPLACES.map(s=>s.id),
       providerKeys:{SERPER_API_KEY:'all-stores-mock',SEARCHAPI_API_KEY:'all-stores-mock'},
-      deepScan:false
+      deepScan:true
     });
     assert.deepEqual(new Set(search.ranked.map(x=>x.marketplace)),
       new Set(['amazon','bestbuy','walmart','newegg','ebay','aliexpress','mercari']));
@@ -254,7 +254,7 @@ test('Part Scanner API enforces price range and returns real multi-store results
     const invalid=await reply({query:'RTX 4060',category:'GPU',minPartPrice:350,partBudget:200});
     assert.equal(invalid.status,400);
     const result=await reply({query:'RTX 4060',category:'GPU',minPartPrice:195,partBudget:300,
-      providerKeys:{SEARCHAPI_API_KEY:'part-scanner-mock',SERPER_API_KEY:'part-scanner-mock'}});
+      deepScan:true,providerKeys:{SEARCHAPI_API_KEY:'part-scanner-mock',SERPER_API_KEY:'part-scanner-mock'}});
     assert.equal(result.status,200);
     assert.equal(result.payload.available,true);
     assert.ok(result.payload.results.some(x=>x.marketplace==='ebay'));
