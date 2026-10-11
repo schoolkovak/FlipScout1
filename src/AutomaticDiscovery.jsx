@@ -107,6 +107,9 @@ export default function AutomaticDiscovery({providerKeys}){
   scanRef.current=scanBatch;
   useEffect(()=>{scanRef.current?.()},[]);
   useEffect(()=>{
+    if(requestedCategory&&!busy)scanRef.current?.(requestedCategory);
+  },[requestedCategory,busy]);
+  useEffect(()=>{
     if(!auto)return;
     const interval=window.setInterval(()=>{
       if(document.visibilityState==="visible")scanRef.current?.();
@@ -138,9 +141,9 @@ export default function AutomaticDiscovery({providerKeys}){
     setCategory(part);setVariation("all");setLimit(24);
     if(part!=="All"){
       const unchecked=DISCOVERY_TARGETS.some(t=>t.category===part&&!catalog[t.id]);
-      if(unchecked && !busyRef.current){
+      if(unchecked){
         setRequestedCategory(part);
-        scanRef.current?.(part);
+        if(!busyRef.current)scanRef.current?.(part);
       }
     }
   }
