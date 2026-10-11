@@ -263,7 +263,7 @@ export default function AutomaticDiscovery({providerKeys}){
     (series==="All"||part!=="GPU"||seriesMatch({query:item.subtype||""}))&&
     (brand==="all"||new RegExp("\\b"+brand+"\\b","i").test(item.title||""))&&
     (!minVram||part!=="GPU"||Number((item.title||"").match(/(\d+)\s?GB/i)?.[1]||0)>=Number(minVram))&&
-    (!overclocked||/\\boc\\b|overclock/i.test(item.title||""))&&
+    (!overclocked||/\boc\b|overclock/i.test(item.title||""))&&
     (cooling==="all"||!(part==="GPU")||
       (cooling==="liquid"?/water.block|liquid.cool/i.test(item.title||""):
          !/water.block|liquid.cool/i.test(item.title||"")))
@@ -319,7 +319,6 @@ export default function AutomaticDiscovery({providerKeys}){
           </label>
           <label className="fsRetailer"><input type="checkbox" checked={overclocked} onChange={e=>setOverclocked(e.target.checked)}/>Overclocked (OC)</label>
         </>}
-        <label className="fsInputLabel">Condition
         <label className="fsInputLabel">Listing condition
           <select value={condition} onChange={e=>setCondition(e.target.value)}>
             <option value="any">Any working condition</option>
