@@ -615,6 +615,64 @@ export async function searchSerperMarketplaces(input){
 }
 
 
+
+function snippetUsdPrice(x){
+  const price=structuredGooglePrice(x);
+  if(price)return price;
+  const text=String(x.snippet||"");
+  // Require explicit pricing context. A generic $ amount in a search snippet
+  // could be an MSRP, coupon, shipping fee or unrelated accessory.
+  const m=text.match(/(?:current(?:\s+price)?|sale(?:\s+price)?|our\s+price|price|now|buy\s+for)\s*:?\s*\$\s*([\d,]+(?:\.\d{2})?)/i);
+  const n=m?Number(m[1].replace(/,/g,"")):null;
+  return Number.isFinite(n)&&n>=10&&n<=100000?n:null;
+}
+// Serper's regular search can provide real direct retailer URLs when Shopping
+// only supplies opaque Google product redirects. Results without an explicit
+// observed price are omitted rather than assigned an invented one.
+export async function searchSerperRetailerPages(input){
+  const key=providerKey("SERPER_API_KEY",input);
+  if(!key)return [];
+  const selected=new Set(input.marketplaces||[]);
+  const domains={
+    amazon:"amazon.com",bestbuy:"bestbuy.com",walmart:"walmart.com",
+    newegg:"newegg.com",ebay:"ebay.com",aliexpress:"aliexpress.com",mercari:"mercari.com"
+  };
+  const scoped=Object.entries(domains).filter(([id])=>selected.has(id));
+  if(!scoped.length)return [];
+  const query=[input.query,conditionSearchTerm(input.condition||"any"),
+    "("+scoped.map(([,domain])=>"site:"+domain).join(" OR ")+")"].filter(Boolean).join(" ");
+  const response=await providerFetch("https://google.serper.dev/search",{
+    method:"POST",headers:{"X-API-KEY":key,"Content-Type":"application/json"},
+    body:JSON.stringify({q:query,gl:"us",hl:"en",num:20})
+  });
+  if(response.status===429){
+    providerCooldown.serperUntil=Date.now()+SIX_HOURS;
+    throw Error("Serper search quota/rate limit (429)");
+  }
+  if(!response.ok)throw Error("Serper retailer pages returned "+response.status);
+  const data=await response.json();
+  return (data.organic||[]).flatMap((x,index)=>{
+    const marketplace=marketplaceIdFromResult(x.source,x.link);
+    const url=merchantLink(marketplace,x.link);
+    const itemPrice=snippetUsdPrice(x);
+    if(!marketplace||!selected.has(marketplace)||!url||!itemPrice)return [];
+    const condition=normalizeCondition((x.title||"")+" "+(x.snippet||""));
+    if(!conditionMatches(condition,input.condition||"any"))return [];
+    return [{
+      id:"serper-organic-"+index+"-"+marketplace+"-"+itemPrice,
+      source:marketplaceName(marketplace),marketplace,
+      provider:"Serper retailer pages",sourceType:"retailer-web",
+      title:x.title||"Hardware offer",condition,
+      itemPrice,shipping:0,shippingKnown:false,totalPrice:itemPrice,
+      seller:marketplaceName(marketplace),url,
+      imageUrl:safeImage(x.thumbnail||x.image),
+      listingPriceSource:"search_snippet",
+      freshness:null,relevance:relevanceScore(x.title,input.query,input.category),
+      sniperRiskFlags:["Price extracted from a search-result snippet; verify current product price, availability, delivery and condition."]
+    }];
+  });
+}
+
 export async function searchSearchApiShopping(input){
   const {query,category,condition,marketplaces=[],providerKeys={}}=input;
   const q=[conditionSearchTerm(condition),query].filter(Boolean).join(" ");
@@ -1180,6 +1238,7 @@ export async function searchPartsSniper(input){
   const providers=[];
 
   if(hasSerper) providers.push(["Retail marketplace search",()=>searchSerperMarketplaces({...input,marketplaces:selected})]);
+  if(hasSerper&&input.deepScan)providers.push(["Direct retailer pages",()=>searchSerperRetailerPages({...input,marketplaces:selected})]);
 
   if(hasSearchApi) {
     providers.push(["Shopping merchants",()=>searchSearchApiShopping({...input,marketplaces:selected})]);
@@ -1243,6 +1302,7 @@ export async function searchPartsSniper(input){
     )){discarded.link++;return []}
     const risks=[...(x.sniperRiskFlags||[])];
     if(x.linkType==="shopping")risks.push("Google Shopping comparison link only; verify the final seller, price and item condition.");
+    if(x.listingPriceSource==="search_snippet")risks.push("Search snippet price is unverified; confirm the live checkout price.");
     if(x.conditionAssumed)risks.push("Condition inferred from the requested filter; verify the listing.");
     return [{...x,marketplace,category:input.category,
       source:marketplaceName(marketplace),url,sniperRiskFlags:risks}];
