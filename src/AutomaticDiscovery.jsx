@@ -120,7 +120,7 @@ export default function AutomaticDiscovery({providerKeys}){
       <div>
         <span className="eyebrow">AUTOMATIC PART DISCOVERY</span>
         <h2>THE LIVE DEAL BOARD<span>.</span></h2>
-        <p>Browse real listings without typing a search. FlipScout rotates through GPU, CPU, memory, storage, cooling, peripherals and every other catalog category.</p>
+        <p>Browse currently discovered listings without typing a query. Price rankings only compare loaded results; no scanner can guarantee the absolute lowest offer without complete marketplace coverage.</p>
       </div>
       <div className="discoveryStats">
         <div><strong>{DISCOVERY_TARGETS.length}</strong><small>Model / variation searches</small></div>
@@ -170,7 +170,16 @@ export default function AutomaticDiscovery({providerKeys}){
         <div className="discoveryCardTop"><span>{storeNames.get(item.marketplace)||item.source}</span><b>{Number(item.score)||0}<small>/100</small></b></div>
         <h3>{item.title}</h3>
         <p className="discoverySubtype">{item.category} / {item.subtype}</p>
-        <div className="discoveryPrice">{dollars(item.totalPrice)} <small>{item.shippingKnown?"including shipping":"shipping not verified"}</small></div>
+        <div className="discoveryPrice">{dollars(item.totalPrice)} <small>{item.shippingKnown?"delivered total (known shipping)":"listed price · shipping unknown"}</small></div>
+        <div className="discoveryInsights">
+          <span>{item.comparedMarketMedian?dollars(item.comparedMarketMedian)+" median": "No reliable median"}</span>
+          <span>{item.comparedMarketMedian?(item.percentVsMarket>=0?item.percentVsMarket+"% below market":Math.abs(item.percentVsMarket)+"% above market"):"Insufficient comparable pricing"}</span>
+          <span>{item.evidenceSampleSize||0} comparables · {item.sampleCoverage||"limited"} evidence</span>
+        </div>
+        {item.scoreFactors&&<details className="discoveryBreakdown"><summary>Why this deal scored {item.score}/100</summary>
+          <p>Relative price {item.scoreFactors.priceValue}/44 · Model match {item.scoreFactors.modelMatch}/18 · Condition {item.scoreFactors.condition}/14 · Shipping {item.scoreFactors.shipping}/12 · Buyer appeal {item.scoreFactors.buyerAppeal}/12.</p>
+          <p>Low evidence, missing shipping costs and unusually cheap listings can reduce or cap the score. This ranking only compares offers returned by the scan.</p>
+        </details>}
         <div className="discoveryDetails"><span>{item.condition||"Condition unspecified"}</span><span>{new Date(item.checkedAt).toLocaleTimeString()}</span></div>
         {item.riskFlags?.length>0&&<div className="discoveryRisk">{item.riskFlags[0]}</div>}
         <a href={item.url} target="_blank" rel="noopener noreferrer">VIEW LISTING ↗</a>
