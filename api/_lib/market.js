@@ -1097,7 +1097,7 @@ export async function searchPartsSniper(input){
 
   if(hasSerper) providers.push(["Retail marketplace search",()=>searchSerperMarketplaces({...input,marketplaces:selected})]);
 
-  if(hasSearchApi && (input.deepScan || !hasSerper)) {
+  if(hasSearchApi) {
     providers.push(["Shopping merchants",()=>searchSearchApiShopping({...input,marketplaces:selected})]);
   }
 
