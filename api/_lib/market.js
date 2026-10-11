@@ -53,7 +53,7 @@ export function providerStatus(providerKeys={}) {
     {
       id:"serpapi",
       name:"SerpApi Google Shopping",
-      status: env("SERPAPI_API_KEY") ? "Connected" : "Missing credentials",
+      status: env("SERPAPI_API_KEY") ? "Configured" : "Optional · not configured",
       coverage:"Optional Google Shopping provider; 250 free searches/month",
       signupUrl:"https://serpapi.com/",
       freeAllowance:"250 searches/month"
@@ -61,7 +61,7 @@ export function providerStatus(providerKeys={}) {
     {
       id:"bestbuy",
       name:"Best Buy",
-      status: env("BESTBUY_API_KEY") ? "Connected" : "Missing credentials",
+      status: env("BESTBUY_API_KEY") ? "Configured" : "Optional · not configured",
       coverage:"Near-real-time new pricing plus official Open Box offers",
       signupUrl:"https://developer.bestbuy.com/",
       freeAllowance:"50,000 calls/day if approved"
@@ -69,7 +69,7 @@ export function providerStatus(providerKeys={}) {
     {
       id:"ebay",
       name:"eBay",
-      status: env("EBAY_CLIENT_ID") && env("EBAY_CLIENT_SECRET") ? "Connected" : "Missing credentials / production approval",
+      status: env("EBAY_CLIENT_ID") && env("EBAY_CLIENT_SECRET") ? "Configured (approval not verified)" : "Optional · not configured",
       coverage:"Live new and used asking prices",
       signupUrl:"https://developer.ebay.com/",
       freeAllowance:"Developer registration is free; production Buy API approval required"
@@ -143,7 +143,22 @@ function variantPenalty(q,t) {
   return Math.min(.55,penalty);
 }
 
+export function unsafeHardwareListing(title,category) {
+  const t=normalizeText(title);
+  if(!t) return true;
+  // A listing title is not proof that hardware works; exclude explicit defect/completeness warnings.
+  if(/\b(for parts|parts only|not working|non working|non functional|broken|defective|untested|not tested|for repair|repair needed|as is|salvage|scrap|no power|dead card)\b/.test(t))return true;
+  if(String(category||"").toLowerCase()==="gpu"){
+    if(/\b(no|missing|without|removed|lacks?)\s+(?:the\s+)?(?:gpu\s+)?(heatsink|heat sink|cooler|cooling|fan|fans|shroud|backplate|back plate)\b/.test(t))return true;
+    if(/\b(bare\s+(?:gpu\s+)?pcb|pcb\s+only|board\s+only|gpu\s+core\s+only|graphics\s+chip\s+only|gpu\s+die\s+only|just\s+(?:the\s+)?pcb)\b/.test(t))return true;
+    if(/\b(heatsink|heat sink|backplate|back plate|waterblock|water block|fan|fans|shroud|cooler)\s+(only|replacement|for)\b/.test(t))return true;
+    if(/\b(replacement\s+(?:gpu\s+)?(fan|fans|cooler|shroud|heatsink)|gpu\s+pcb|graphics\s+pcb)\b/.test(t))return true;
+  }
+  return false;
+}
+
 export function relevanceScore(title, query, category) {
+  if(unsafeHardwareListing(title,category))return 0;
   const t=normalizeText(title);
   const q=normalizeText(query);
   if (!t || !q) return 0;
@@ -171,7 +186,7 @@ export function relevanceScore(title, query, category) {
 
   if (cat==="gpu") {
     if (/\b(laptop|notebook|gaming pc|desktop pc|prebuilt|complete pc|computer system)\b/.test(t)) score-=.55;
-    if (/\b(water ?block|heatsink|backplate|replacement fan|cooler only|empty box|box only|riser|vertical mount)\b/.test(t)) score-=.7;
+    if (/\b(water ?block|replacement fan|cooler only|empty box|box only|riser|vertical mount)\b/.test(t)) score-=.7;
     if (/\b(graphics card|gpu|geforce|radeon|rtx|rx|arc)\b/.test(t)) score+=.15;
     score-=variantPenalty(q,t);
   }
@@ -871,60 +886,56 @@ function resaleAppeal(query,title) {
   return Math.min(1,score);
 }
 
-export function rankDeals(items,market,{query,partBudget,buildBudget,committed,sortBy="best"}) {
-  const medianValue=market.median||0;
-  const remainingBefore=Math.max(0,Number(buildBudget||0)-Number(committed||0));
+export function rankDeals(items,market,{query="",partBudget=0,sortBy="best",category=""}={}) {
+  const medianValue=Number(market.median||0);
   const maxPart=Number(partBudget||0);
   const sample=Number(market.sampleSize||0);
   const evidenceCap=sample>=35?95:sample>=15?88:sample>=8?78:sample>=4?65:50;
-
-  const scored=market.comps.map(item=>{
-    const under=medianValue ? (medianValue-item.totalPrice)/medianValue : 0;
-    const underScore=Math.max(0,Math.min(1,(under+.10)/.35));
-    const budgetScore=maxPart ? Math.max(0,Math.min(1,1-(item.totalPrice/maxPart-0.70))) : .55;
-    const buildFit=remainingBefore ? Math.max(0,Math.min(1,(remainingBefore-item.totalPrice)/Math.max(remainingBefore,.01)+.35)) : .5;
+  // Rank all relevant actual listings, rather than throwing away discounted outliers
+  // during the separate robust-median calculation.
+  const scored=dedupe(items).filter(item=>
+    Number(item.relevance)>=.72 && Number.isFinite(item.totalPrice) &&
+    item.totalPrice>0 && !unsafeHardwareListing(item.title,category||item.category)
+  ).map(item=>{
+    const under=medianValue?(medianValue-item.totalPrice)/medianValue:0;
+    const underScore=medianValue?Math.max(0,Math.min(1,(under+.10)/.40)):.15;
     const conditionScore=conditionQuality(item.condition);
     const appeal=resaleAppeal(query,item.title);
-    const shippingScore=item.shippingKnown?1:.45;
+    const shippingScore=item.shippingKnown?1:.30;
     const relevance=Math.max(0,Math.min(1,Number(item.relevance||0)));
-
-    let raw=100*(.36*underScore+.15*budgetScore+.12*buildFit+.09*conditionScore+.10*appeal+.08*shippingScore+.10*relevance);
+    let raw=100*(.44*underScore+.18*relevance+.14*conditionScore+.12*shippingScore+.12*appeal);
     const riskFlags=[];
-
     if(under>.45){
-      raw-=18;
-      riskFlags.push("Price is >45% below the filtered market median — verify condition, completeness, and seller.");
+      raw-=22;
+      riskFlags.push("Unusually low price — verify the item is complete and genuine.");
     }
     if(!item.shippingKnown){
-      raw-=5;
-      riskFlags.push("Shipping cost is unknown.");
+      raw-=6;
+      riskFlags.push("Shipping cost is unknown; delivered price may be higher.");
     }
-    if(relevance<.72){
+    if(sample<8)riskFlags.push("Few comparable listings; score capped.");
+    if(item.condition==="unknown"||item.conditionAssumed)riskFlags.push("Condition not verified.");
+    if(item.sellerFeedback!=null&&item.sellerFeedback<95){
       raw-=8;
-      riskFlags.push("Listing-title match is weaker than ideal.");
+      riskFlags.push("Seller feedback is below 95%.");
     }
-    if(sample<8) riskFlags.push("Market sample is small; score is capped.");
-    if(item.condition==="unknown") riskFlags.push("Condition is not clearly identified.");
-
-    const itemCap=Math.min(evidenceCap,item.shippingKnown?100:69,under>.45?59:100,relevance<.72?59:100,item.condition==="unknown"?69:100);
+    if(String(category||item.category||"").toLowerCase()==="gpu" &&
+        ["used","unknown","refurbished"].includes(item.condition)){
+      riskFlags.push("Check photos, cooler/fans, display output, return policy and proof of working condition.");
+    }
+    const itemCap=Math.min(evidenceCap,item.shippingKnown?100:69,under>.45?49:100,
+      item.condition==="unknown"?65:100,item.conditionAssumed?65:100);
     const score=Math.max(0,Math.min(itemCap,Math.round(raw)));
-    return {
-      ...item,
-      score,
-      scoreCap:itemCap,
-      riskFlags,
-      evidenceSampleSize:sample,
-      percentVsMarket:medianValue?Math.round((medianValue-item.totalPrice)/medianValue*100):0,
-      budgetLeft:remainingBefore-item.totalPrice,
-      withinPartBudget:!maxPart || item.totalPrice<=maxPart
-    };
+    return {...item,score,scoreCap:itemCap,riskFlags,evidenceSampleSize:sample,
+      percentVsMarket:medianValue?Math.round(under*100):0,
+      budgetLeft:null,withinPartBudget:!maxPart||item.totalPrice<=maxPart};
   });
+  const tie=(a,b)=>(Number(b.shippingKnown)-Number(a.shippingKnown))||b.relevance-a.relevance||a.totalPrice-b.totalPrice;
   const sorts={
-    best:(a,b)=>b.score-a.score,
-    lowest:(a,b)=>a.totalPrice-b.totalPrice,
-    under:(a,b)=>b.percentVsMarket-a.percentVsMarket,
-    flip:(a,b)=>(b.percentVsMarket+b.score/10)-(a.percentVsMarket+a.score/10),
-    budget:(a,b)=>(Number(b.withinPartBudget)-Number(a.withinPartBudget)) || Math.abs(b.budgetLeft)-Math.abs(a.budgetLeft)
+    best:(a,b)=>b.score-a.score||tie(a,b),
+    lowest:(a,b)=>a.totalPrice-b.totalPrice||b.score-a.score,
+    under:(a,b)=>b.percentVsMarket-a.percentVsMarket||b.score-a.score,
+    flip:(a,b)=>(b.score+b.percentVsMarket*.15)-(a.score+a.percentVsMarket*.15)||tie(a,b)
   };
   return scored.sort(sorts[sortBy]||sorts.best);
 }
@@ -1013,7 +1024,7 @@ async function fetchMarket(input,key,hit){
   }));
   const errors=settled.filter(x=>x.error).map(x=>({provider:x.name,message:x.error}));
   if(providers.length && errors.length===providers.length && hit && Date.now()-hit.savedAt<60*60*1000)return {...hit.value,errors,stale:true};
-  const items=dedupe(settled.flatMap(x=>x.items||[])).filter(x=>x.relevance>=.72 && Number.isFinite(x.totalPrice) && x.totalPrice>0).map(x=>({...x,url:safeUrl(x.url)}));
+  const items=dedupe(settled.flatMap(x=>x.items||[])).filter(x=>x.relevance>=.72 && Number.isFinite(x.totalPrice) && x.totalPrice>0 && !unsafeHardwareListing(x.title,input.category)).map(x=>({...x,category:input.category,url:safeUrl(x.url)}));
   const value={items,market:buildMarket(items),errors,observedAt:new Date().toISOString(),stale:false};
   // Short negative cache avoids hammering failed/quota-limited providers.
   searchCache.set(key,{savedAt:Date.now(),ttl:errors.length?30000:CACHE_MS,value});
@@ -1071,9 +1082,9 @@ export async function searchPartsSniper(input){
       const marketplace=x.marketplace||marketplaceIdFromResult(x.seller,x.url);
       const extraRisks=[];
       if(x.conditionAssumed)extraRisks.push("Condition inferred from the requested filter; verify the listing.");
-      return {...x,marketplace,source:marketplaceName(marketplace),url:safeUrl(x.url),sniperRiskFlags:extraRisks};
+      return {...x,marketplace,category:input.category,source:marketplaceName(marketplace),url:safeUrl(x.url),sniperRiskFlags:extraRisks};
     })
-    .filter(x=>x.relevance>=.58 && Number.isFinite(x.totalPrice) && x.totalPrice>0);
+    .filter(x=>x.relevance>=.72 && Number.isFinite(x.totalPrice) && x.totalPrice>0 && x.url && !unsafeHardwareListing(x.title,input.category));
 
   const market=buildMarket(items);
   const ranked=rankDeals(items,market,input).map(x=>({
