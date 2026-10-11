@@ -11,6 +11,7 @@ import {
   CASE_OPTIONS,COOLER_OPTIONS,SCANNER_CATEGORIES,MARKET_SNAPSHOT,groupedCatalog
 } from "../shared/catalog.js";
 import { SNIPER_CATEGORIES, SNIPER_MARKETPLACES, SNIPER_CONDITIONS, groupedSniperCategories } from "../shared/sniper.js";
+import AutomaticDiscovery from "./AutomaticDiscovery.jsx";
 import {buildOpportunitySummary} from "./intelligence";
 import {parseListingText} from "./listingParser";
 import { track } from "@vercel/analytics";
@@ -862,7 +863,7 @@ export default function App(){
     <main className="mainWrap">
       
       {tab==="scan"&&<><ProviderSetup providerKeys={providerKeys} setProviderKeys={setProviderKeys}/><DealScanner providerKeys={providerKeys} onWatchChange={bump} onSearchSaved={bump}/></>}
-      {tab==="sniper"&&<><ProviderSetup providerKeys={providerKeys} setProviderKeys={setProviderKeys}/><PartsSniper providerKeys={providerKeys} onWatchChange={bump}/></>}
+      {tab==="sniper"&&<><ProviderSetup providerKeys={providerKeys} setProviderKeys={setProviderKeys}/><AutomaticDiscovery providerKeys={providerKeys}/><details className="manualSearchDisclosure"><summary>Custom searches and deep retailer scanning</summary><PartsSniper providerKeys={providerKeys} onWatchChange={bump}/></details></>}
       {tab==="pro"&&<ProPage setTab={setTab}/>}
       <Sources providerKeys={providerKeys}/>
     </main>
