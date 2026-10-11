@@ -537,6 +537,33 @@ export async function searchSerperMarketplaces(input){
   }).filter(x=>x.marketplace && selected.has(x.marketplace) && x.itemPrice>0 && conditionMatches(x.condition,condition));
 }
 
+
+export async function searchSearchApiShopping(input){
+  const {query,category,condition,marketplaces=[],providerKeys={}}=input;
+  const q=[conditionSearchTerm(condition),query].filter(Boolean).join(" ");
+  const data=await searchSearchApiEngine("google_shopping",q,{gl:"us",hl:"en",link:"resolved"},providerKeys);
+  const selected=new Set(marketplaces);
+  return (data?.shopping_results||[]).map((x,index)=>{
+    const merchant=x.seller||x.source||"";
+    // Google sometimes provides a product-page URL rather than a store checkout URL.
+    const url=x.link||x.product_link||null;
+    const store=marketplaceIdFromResult(merchant,x.domain||url);
+    const itemPrice=Number(x.extracted_price||parseMoney(x.price)||0);
+    const ship=parseShippingFromSerp({delivery:x.delivery});
+    const normalized=normalizeCondition((x.title||"")+" "+(x.condition||x.durability||""));
+    const conditionAssumed=normalized==="unknown" && condition!=="any";
+    return {
+      id:"searchapi-shopping-"+(x.product_id||index)+"-"+itemPrice,
+      source:marketplaceName(store),provider:"SearchAPI Shopping",
+      marketplace:store,sourceType:"marketplace-search",title:x.title||"Untitled product",
+      condition:conditionAssumed?condition:normalized,conditionAssumed,
+      itemPrice,shipping:ship.shipping,shippingKnown:ship.shippingKnown,
+      totalPrice:itemPrice+ship.shipping,seller:merchant||marketplaceName(store),
+      url,freshness:null,relevance:relevanceScore(x.title,query,category)
+    };
+  }).filter(x=>x.marketplace&&selected.has(x.marketplace)&&x.itemPrice>0&&conditionMatches(x.condition,condition));
+}
+
 export async function searchSearchApiAmazon(input){
   const {query,category,condition,providerKeys={}}=input;
   const q=[conditionSearchTerm(condition),query].filter(Boolean).join(" ");
@@ -1057,6 +1084,10 @@ export async function searchPartsSniper(input){
 
   if(hasSerper) providers.push(["Retail marketplace search",()=>searchSerperMarketplaces({...input,marketplaces:selected})]);
 
+  if(hasSearchApi && (input.deepScan || !hasSerper)) {
+    providers.push(["Shopping merchants",()=>searchSearchApiShopping({...input,marketplaces:selected})]);
+  }
+
   if(selected.includes("ebay")&&hasSearchApi){
     providers.push(["eBay",async()=> (await searchSearchApiEbay(input)).map(x=>({...x,marketplace:"ebay",provider:"SearchAPI eBay"}))]);
   }
@@ -1065,9 +1096,13 @@ export async function searchPartsSniper(input){
     providers.push(["Amazon",()=>searchSearchApiAmazon(input)]);
   }
 
-  if(!hasSerper&&hasSearchApi){
-    for(const marketplace of ["bestbuy","walmart","newegg","aliexpress","bhphoto","adorama","microcenter","mercari"]){
-      if(selected.includes(marketplace))providers.push([marketplaceName(marketplace),()=>searchSearchApiSiteMarketplace(input,marketplace)]);
+  // A broad shopping search covers many merchants with one call. Deep Scan may add
+  // a small number of targeted domain searches, never ten blind quota-consuming calls.
+  if(input.deepScan && hasSearchApi){
+    const priority=["mercari","newegg","walmart","bestbuy","aliexpress","microcenter","bhphoto","adorama"];
+    const selectedTargets=priority.filter(id=>selected.includes(id)).slice(0,3);
+    for(const marketplace of selectedTargets){
+      providers.push([marketplaceName(marketplace),()=>searchSearchApiSiteMarketplace(input,marketplace)]);
     }
   }
 
@@ -1091,7 +1126,14 @@ export async function searchPartsSniper(input){
     ...x,
     riskFlags:[...(x.riskFlags||[]),...(x.sniperRiskFlags||[])]
   }));
-  const value={items,market,ranked,errors,observedAt:new Date().toISOString(),stale:false,cached:false};
+  const counts=Object.fromEntries(selected.map(id=>[id,0]));
+  for(const item of ranked)if(item.marketplace in counts)counts[item.marketplace]++;
+  const sourceCoverage=selected.map(id=>({
+    id,name:marketplaceName(id),count:counts[id],status:counts[id]?"Results found":errors.length?"No results / provider errors":"No matching listings",
+    searched:providers.some(([name])=>name==="Retail marketplace search"||name==="Shopping merchants"||name===marketplaceName(id)||name===id||name==="eBay"&&id==="ebay"),
+    errors:errors.filter(x=>x.provider===marketplaceName(id))
+  }));
+  const value={items,market,ranked,sourceCoverage,errors,observedAt:new Date().toISOString(),stale:false,cached:false};
   searchCache.set(key,{savedAt:Date.now(),ttl:errors.length?30000:CACHE_MS,value});
   return value;
 }
