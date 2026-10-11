@@ -90,7 +90,7 @@ export function ItemCard({item}){
     </div>
   </article>;
 }
-export default function AutomaticDiscovery({providerKeys}){
+export default function AutomaticDiscovery({providerKeys,onOpenScanner}){
   const [catalog,setCatalog]=useState(load);
   const [part,setPart]=useState("GPU");
   const [series,setSeries]=useState("All");
@@ -407,6 +407,7 @@ export default function AutomaticDiscovery({providerKeys}){
           <button className="fsScanButton" disabled={busy} onClick={()=>scanRef.current?.(part==="All"?null:part,true)}>SEARCH {part==="All"?"MORE COMPONENTS":part+" NOW"}</button>
         </div>}
       {limit<offers.length&&<button className="fsShowMore" onClick={()=>setLimit(v=>v+24)}>SHOW MORE ({offers.length-limit} REMAINING) ↓</button>}
+      <button type="button" className="fsOpenScanner" onClick={onOpenScanner}>OPEN MANUAL PART SCANNER →</button>
       <details className="fsSourceDetails">
         <summary>SOURCE DETAILS & DIAGNOSTICS</summary>
         <p>Last scan: {diagnostics?diagnostics.targets+" model(s), "+diagnostics.received+" raw candidates and "+diagnostics.eligible+" saved offers":"No scan completed yet"}. Only priced, model-matched complete hardware is retained.</p>
