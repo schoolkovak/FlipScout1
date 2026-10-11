@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import handler from '../api/market/pc.js';
 import {parseListingText} from '../src/listingParser.js';
 import {GPUS,CPUS,resolveCatalogPart} from '../shared/catalog.js';
-import {buildMarket,liveSearch,relevanceScore,rankDeals,searchPartsSniper} from '../api/_lib/market.js';
+import {buildMarket,liveSearch,relevanceScore,rankDeals,searchPartsSniper,searchSearchApiEbay} from '../api/_lib/market.js';
 import {buildOpportunitySummary,channelEconomics,marginBuyTargets,sensitivityAnalysis,scoreBreakdown,verdict} from '../src/intelligence.js';
 import {fallbackPcEstimate} from '../src/valuation.js';
 import {SNIPER_CATEGORIES,SNIPER_CONDITIONS,SNIPER_MARKETPLACES} from '../shared/sniper.js';
