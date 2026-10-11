@@ -54,35 +54,34 @@ function statusTone(status){return status==="Connected"?"goodText":"mutedText";}
 
 function TopNav({tab,setTab}){
   const items=[
-    ["analyze","Analyze",Gauge],
+    ["home","Overview",Gauge],
     ["scan","Deal Scanner",Search],
     ["sniper","Deal Hunt",Target],
-    ["workspace","Workspace",Layers],
     ["pro","FlipScout Pro",Trophy]
   ];
   return <nav className="topNav">
-    <div className="navBrand" onClick={()=>setTab("analyze")}><div className="logo">FS</div><div><b>FlipScout</b><span>PC market intelligence</span></div></div>
+    <div className="navBrand" onClick={()=>setTab("home")}><div className="logo">FS</div><div><b>FlipScout</b><span>Make smarter hardware decisions</span></div></div>
     <div className="navTabs">{items.map(([id,label,Icon])=><button key={id} className={tab===id?"active":""} onClick={()=>setTab(id)}><Icon size={16}/>{label}</button>)}</div>
-    <div className="betaPill">BETA · PRO UNLOCKED</div>
+    <div className="betaPill">LIVE MARKET TOOLS</div>
   </nav>;
 }
 
 function Hero({tab,setTab}){
   return <section className="heroNew">
     <div className="heroCopy">
-      <span className="eyebrow">PC MARKET INTELLIGENCE</span>
-      <h1>Know what PC hardware is <em>actually worth.</em></h1>
-      <p>Validate parts, compare live prices across trusted stores and marketplaces, plan smarter builds, estimate resale, and know when a listing is genuinely worth buying.</p>
+      <span className="eyebrow">THE HARDWARE MARKET, MADE CLEAR</span>
+      <h1>Buy better. <em>Build smarter.</em></h1>
+      <p>Real listings, honest prices, and the details that matter. Compare hardware across stores, spot risky listings, and plan your next PC with confidence.</p>
       <div className="heroActions">
-        <button className="primary large" onClick={()=>setTab("analyze")}><Gauge size={18}/>Analyze a PC</button>
+        <button className="primary large" onClick={()=>setTab("home")}><Gauge size={18}/>Check PC value</button>
         <button className="secondary large" onClick={()=>setTab("scan")}><Search size={18}/>Find part deals</button>
       </div>
     </div>
     <div className="heroProof">
-      <div><b>Live price evidence</b><span>Trusted retailers + marketplaces</span></div>
-      <div><b>Buy smarter</b><span>Fair value, deal quality, risk flags</span></div>
-      <div><b>Build + resale</b><span>Budget fit and exit-value intelligence</span></div>
-      <div><b>300+ CPU/GPU SKUs</b><span>Grouped desktop catalog through current 2026 generations</span></div>
+      <div><b>Real listings</b><span>Clear links to the actual seller</span></div>
+      <div><b>Useful rankings</b><span>Value and condition over sticker price</span></div>
+      <div><b>Know the risks</b><span>Incomplete and suspicious hardware flagged</span></div>
+      <div><b>Beyond GPUs</b><span>CPUs, memory, storage and complete builds</span></div>
     </div>
   </section>;
 }
@@ -514,14 +513,17 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
   const [query,setQuery]=useState("RTX 5070");
   const [condition,setCondition]=useState("any");
   const [partBudget,setPartBudget]=useState(600);
-  const [buildBudget,setBuildBudget]=useState(1100);
-  const [committed,setCommitted]=useState(350);
-  const [sortBy,setSortBy]=useState("best");
+    const [sortBy,setSortBy]=useState("best");
   const [deepScan,setDeepScan]=useState(false);
+  const [page,setPage]=useState(0);
+  const [merchantFilter,setMerchantFilter]=useState("all");
   const [loading,setLoading]=useState(false);
   const [data,setData]=useState(null);
   const [trend,setTrend]=useState(null);
   const [watched,setWatched]=useState(()=>getWatchlist());
+  const merchants=[...new Set((data?.results||[]).map(x=>x.source).filter(Boolean))].sort();
+  const visible=(data?.results||[]).filter(x=>merchantFilter==="all"||x.source===merchantFilter);
+  const pageCount=Math.max(1,Math.ceil(visible.length/12));
 
   function changeCategory(value){
     setCategory(value);
@@ -529,9 +531,9 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
   }
   async function scan(){
     track("scan_parts",{category,condition,deepScan});
-    setLoading(true);setData(null);
+    setLoading(true);setData(null);setPage(0);setMerchantFilter("all");
     try{
-      const r=await fetch("/api/deals/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({category,query,condition,partBudget,buildBudget,committed,sortBy,deepScan,providerKeys}),signal:AbortSignal.timeout(40000)});
+      const r=await fetch("/api/deals/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({category,query,condition,partBudget,sortBy,deepScan,providerKeys}),signal:AbortSignal.timeout(40000)});
       const d=await r.json();
       setData(d);
       if(d.available)setTrend(saveMarketSnapshot({category,query,condition},d.market));
@@ -549,21 +551,19 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
   }
   function saveThisSearch(){
     track("save_search",{category,condition,deepScan});
-    saveSearch({category,query,condition,partBudget,buildBudget,committed,sortBy,deepScan});
+    saveSearch({category,query,condition,partBudget,sortBy,deepScan});
     onSearchSaved?.();
   }
 
   return <div className="pageStack">
     <section className="panel">
-      <div className="sectionHeading"><div><span className="eyebrow">DEAL SCANNER</span><h2>Find underpriced parts before other flippers do.</h2><p>Rank by delivered cost, market discount, flip appeal, and how the part fits the rest of your budget.</p></div><ShoppingCart/></div>
+      <div className="sectionHeading"><div><span className="eyebrow">DEAL SCANNER</span><h2>Find a better deal, not just a lower price.</h2><p>Compare actual listings using price versus market, condition, shipping confidence and listing quality. The cheapest result is not always the best one.</p></div><ShoppingCart/></div>
       <div className="formGrid">
         <label>Part type<select value={category} onChange={e=>changeCategory(e.target.value)}>{SCANNER_CATEGORIES.map(x=><option key={x.name}>{x.name}</option>)}</select></label>
         <label>Part / requirement<input value={query} onChange={e=>setQuery(e.target.value)}/></label>
         <label>Condition<select value={condition} onChange={e=>setCondition(e.target.value)}>{SNIPER_CONDITIONS.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}</select></label>
         <label>Max part budget<input type="number" value={partBudget} onChange={e=>setPartBudget(e.target.value)}/></label>
-        <label>Total build budget<input type="number" value={buildBudget} onChange={e=>setBuildBudget(e.target.value)}/></label>
-        <label>Already committed<input type="number" value={committed} onChange={e=>setCommitted(e.target.value)}/></label>
-        <label>Rank by<select value={sortBy} onChange={e=>setSortBy(e.target.value)}><option value="best">Best Deal</option><option value="lowest">Lowest Price</option><option value="under">Most Under Market</option><option value="flip">Best for Flip</option><option value="budget">Best Fit for Budget</option></select></label>
+                <label>Rank by<select value={sortBy} onChange={e=>setSortBy(e.target.value)}><option value="best">Best Deal</option><option value="lowest">Lowest Price</option><option value="under">Most Under Market</option><option value="flip">Best for Flip</option></select></label>
       </div>
       <label className="toggleLine"><input type="checkbox" checked={deepScan} onChange={e=>setDeepScan(e.target.checked)}/><span><b>Deep multi-source scan</b><small>Uses additional direct retailer/marketplace sources when configured.</small></span></label>
       <div className="rowActions"><button className="primary large" onClick={scan} disabled={loading}>{loading?<><RefreshCw className="spin" size={18}/>Scanning market...</>:<><Search size={18}/>Find live deals</>}</button><button className="secondary" onClick={saveThisSearch}><Bookmark size={16}/>Save search</button></div>
@@ -580,15 +580,22 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
         <div><span>Relevant comps</span><strong>{data.market.sampleSize}</strong><small>{data.market.rawSampleSize} raw listings checked · {Object.keys(data.market.bySource||{}).length} source{Object.keys(data.market.bySource||{}).length===1?"":"s"}</small></div>
         <div><span>Confidence</span><strong>{data.market.confidence}</strong><small>{data.market.shippingKnownPct}% with known shipping</small></div>
       </div>
-      <div className="dealList">{(data.results||[]).map((x,i)=><article className="dealCard" key={x.id||i}>
+      <div className="resultToolbar"><b>{visible.length} listings · ranked by {sortBy==="best"?"best overall value":sortBy==="under"?"discount versus market":sortBy==="lowest"?"lowest listed cost":"resale potential"}</b><label>Store<select value={merchantFilter} onChange={e=>{setMerchantFilter(e.target.value);setPage(0);}}><option value="all">All stores</option>{merchants.map(name=><option key={name} value={name}>{name}</option>)}</select></label></div>
+      <div className="dealList">{visible.slice(page*12,(page+1)*12).map((x,i)=><article className="dealCard" key={x.id||i}>
         <div className="dealTop"><div><div className="dealBadges"><span className="source">{x.source}</span>{x.soldCount>0&&<span className="soldChip">{x.soldCount}+ sold</span>}</div><h3>{x.title}</h3></div><div className="dealScore"><b>{x.score}</b><small>cap {x.scoreCap||100}</small></div></div>
         <div className="dealPriceRow"><strong>{x.shippingKnown?money(x.totalPrice):money(x.itemPrice)}</strong><span>{x.shippingKnown?"delivered":"shipping unknown"}</span></div>
-        <div className="dealMeta"><span>{x.condition} · {x.seller}</span><span className={x.percentVsMarket>=10?"goodText":x.percentVsMarket<0?"badText":""}>{x.percentVsMarket>=0?x.percentVsMarket+"% under market":Math.abs(x.percentVsMarket)+"% over market"}</span><span>Build left {money(x.budgetLeft)}{!x.shippingKnown?" before shipping":""}</span><span>{x.withinPartBudget?(x.shippingKnown?"Fits part budget":"Check shipping for budget"):"Over part budget"}</span></div>
+        <div className="dealMeta"><span>{x.condition} · {x.seller}</span><span className={x.percentVsMarket>=10?"goodText":x.percentVsMarket<0?"badText":""}>{x.percentVsMarket>=0?x.percentVsMarket+"% under market":Math.abs(x.percentVsMarket)+"% over market"}</span><span>{x.withinPartBudget?(x.shippingKnown?"Fits part budget":"Check shipping for budget"):"Over part budget"}</span></div>
         {x.riskFlags?.length>0&&<div className="dealRisks">{x.riskFlags.slice(0,3).map((risk,j)=><span key={j}><AlertTriangle size={12}/>{risk}</span>)}</div>}
         <div className="dealActions">{x.url&&<a className="listingLink" href={x.url} target="_blank" rel="noreferrer">Open listing <ExternalLink size={14}/></a>}<button className="watchButton" onClick={()=>toggle(x)}>{watchedNow(x)?<BookmarkCheck size={16}/>:<Bookmark size={16}/>} {watchedNow(x)?"Watching":"Watch"}</button></div>
       </article>)}</div>
+      <Pagination page={page} pages={pageCount} onChange={setPage}/>
     </>}
   </div>;
+}
+
+function Pagination({page,pages,onChange}){
+  if(pages<=1)return null;
+  return <div className="resultPagination"><button className="secondary small" disabled={page<=0} onClick={()=>onChange(page-1)}>Previous</button><span>Page {page+1} of {pages}</span><button className="secondary small" disabled={page>=pages-1} onClick={()=>onChange(page+1)}>Next</button></div>;
 }
 
 function PartsSniper({providerKeys,onWatchChange}){
@@ -598,6 +605,7 @@ function PartsSniper({providerKeys,onWatchChange}){
   ]);
   const [marketplaces,setMarketplaces]=useState(["amazon","bestbuy","walmart","newegg","ebay","aliexpress","bhphoto","adorama","microcenter","mercari"]);
   const [deepScan,setDeepScan]=useState(false);
+  const [pages,setPages]=useState({});
   const [loading,setLoading]=useState(false);
   const [data,setData]=useState(null);
   const [error,setError]=useState("");
@@ -648,7 +656,7 @@ function PartsSniper({providerKeys,onWatchChange}){
     if(!marketplaces.length){setError("Choose at least one marketplace.");return;}
     const invalid=targets.find(x=>!String(x.query||"").trim());
     if(invalid){setError("Every target needs a part or model.");return;}
-    setLoading(true);setError("");setData(null);
+    setLoading(true);setError("");setData(null);setPages({});
     track("sniper_scan",{targets:targets.length,marketplaces:marketplaces.length,deepScan});
     try{
       const r=await fetch("/api/parts/sniper",{
@@ -668,12 +676,12 @@ function PartsSniper({providerKeys,onWatchChange}){
 
   return <div className="pageStack">
     <section className="sniperHero">
-      <div><span className="eyebrow">DEAL HUNT</span><h2>Search the PC market from one place.</h2><p>Track up to five parts across trusted retailers and marketplaces. FlipScout filters irrelevant results, compares delivered prices, and ranks the listings that deserve attention.</p></div>
-      <div className="sniperHeroStats"><div><b>38</b><span>part categories</span></div><div><b>10</b><span>shopping sources</span></div><div><b>5</b><span>targets per scan</span></div><div><b>6</b><span>condition filters</span></div></div>
+      <div><span className="eyebrow">DEAL HUNT</span><h2>Real deals, across the stores you trust.</h2><p>Search your selected stores for complete, relevant parts. We sort by deal quality, flag questionable listings, and show where each result actually came from.</p></div>
+      <div className="sniperHeroStats"><div><b>38</b><span>part categories</span></div><div><b>10</b><span>selectable retailers</span></div><div><b>5</b><span>targets per scan</span></div><div><b>6</b><span>condition filters</span></div></div>
     </section>
 
     <section className="panel">
-      <div className="sectionHeading"><div><span className="eyebrow">MARKETPLACES</span><h3>Where should FlipScout hunt?</h3><p>Retail sources use shopping search; eBay uses direct structured marketplace results when available.</p></div><Target/></div>
+      <div className="sectionHeading"><div><span className="eyebrow">MARKETPLACES</span><h3>Where should FlipScout hunt?</h3><p>Choose where to look. Availability depends on the connected search providers and actual matching listings — a selected store is not a guarantee of results.</p></div><Target/></div>
       <div className="marketplacePicker">
         {SNIPER_MARKETPLACES.map(m=><button key={m.id} className={marketplaces.includes(m.id)?"marketplaceChip active":"marketplaceChip"} onClick={()=>toggleMarketplace(m.id)}><span className="marketplaceInitial">{m.name.slice(0,1)}</span><span><b>{m.name}</b><small>{marketplaces.includes(m.id)?"Included":"Tap to include"}</small></span></button>)}
       </div>
@@ -681,7 +689,7 @@ function PartsSniper({providerKeys,onWatchChange}){
     </section>
 
     <section className="panel">
-      <div className="sectionHeading"><div><span className="eyebrow">TARGETS</span><h3>What are you trying to snipe?</h3><p>Each target can have its own category, condition, and ceiling price.</p></div><span className="targetCounter">{targets.length}/5</span></div>
+      <div className="sectionHeading"><div><span className="eyebrow">TARGETS</span><h3>What are you looking for?</h3><p>Each target can have its own category, condition, and ceiling price.</p></div><span className="targetCounter">{targets.length}/5</span></div>
       <div className="targetList">
         {targets.map((target,index)=><div className="targetCard" key={target.id}>
           <div className="targetNumber">#{index+1}</div>
@@ -692,18 +700,19 @@ function PartsSniper({providerKeys,onWatchChange}){
           <button className="targetRemove" disabled={targets.length===1} onClick={()=>removeTarget(target.id)} aria-label={"Remove target "+(index+1)}><Trash2 size={16}/></button>
         </div>)}
       </div>
-      <div className="sniperActions"><button className="secondary" onClick={addTarget} disabled={targets.length>=5}><span className="plusText">+</span>Add target</button><button className="primary large" onClick={scan} disabled={loading}>{loading?<><RefreshCw className="spin" size={18}/>Scanning marketplaces...</>:<><Target size={18}/>Run sniper scan</>}</button></div>
+      <div className="sniperActions"><button className="secondary" onClick={addTarget} disabled={targets.length>=5}><span className="plusText">+</span>Add target</button><button className="primary large" onClick={scan} disabled={loading}>{loading?<><RefreshCw className="spin" size={18}/>Scanning marketplaces...</>:<><Target size={18}/>Find deals</>}</button></div>
       {error&&<div className="notice"><AlertTriangle size={18}/><div><b>{error}</b>{data?.sources&&<p>Check the source-health footer for provider status.</p>}</div></div>}
     </section>
 
     {data?.available&&<section className="sniperResults">
-      <div className="sniperResultsHead"><div><span className="eyebrow">LIVE RESULTS</span><h2>{data.successfulTargets}/{data.targetCount} targets found qualifying listings</h2><p>Scanned {data.marketplaces.map(id=>SNIPER_MARKETPLACES.find(x=>x.id===id)?.name||id).join(", ")}.</p></div><div className="scanTime">{new Date(data.searchedAt).toLocaleTimeString()}</div></div>
+      <div className="sniperResultsHead"><div><span className="eyebrow">LIVE RESULTS</span><h2>{data.successfulTargets}/{data.targetCount} targets found qualifying listings</h2><p>Selected stores: {data.marketplaces.map(id=>SNIPER_MARKETPLACES.find(x=>x.id===id)?.name||id).join(", ")}. Only stores with real matching results appear below.</p></div><div className="scanTime">{new Date(data.searchedAt).toLocaleTimeString()}</div></div>
       {(data.results||[]).map(group=><section className="panel sniperTargetResults" key={group.id}>
         <div className="targetResultHeader">
           <div><span className="eyebrow">{group.target.category}</span><h3>{group.target.query}</h3><p>{SNIPER_CONDITIONS.find(x=>x.value===group.target.condition)?.label||group.target.condition}{group.target.maxPrice>0?" · max "+money(group.target.maxPrice):" · no price cap"}</p></div>
           {group.available?<div className="marketMini"><span>Market median</span><b>{money(group.market.median)}</b><small>{group.market.sampleSize} comps · {group.market.confidence}</small></div>:<div className="marketMini weak"><span>Evidence</span><b>Too thin</b><small>No trustworthy market range</small></div>}
         </div>
 
+        {!!group.sourceCoverage?.length&&<div className="storeCoverage">{group.sourceCoverage.map(store=><span key={store.id} className={store.count?"hasResults":"noResults"} title={store.status}>{store.name} <b>{store.count?store.count:"—"}</b></span>)}</div>}
         {group.bestDeal&&<div className="sniperWinner">
           <div className="sniperWinnerBadge"><Zap size={15}/>BEST MATCH</div>
           <div><b>{group.bestDeal.title}</b><span>{group.bestDeal.source} · {group.bestDeal.condition} · score {group.bestDeal.score}/{group.bestDeal.scoreCap||100}</span></div>
@@ -711,7 +720,7 @@ function PartsSniper({providerKeys,onWatchChange}){
           {group.bestDeal.url&&<a href={group.bestDeal.url} target="_blank" rel="noreferrer">Open <ExternalLink size={14}/></a>}
         </div>}
 
-        {!group.results?.length?<div className="emptyState">No relevant priced listings survived FlipScout's filters for this target.</div>:<div className="sniperDealGrid">{group.results.slice(0,12).map((item,i)=><article className="sniperDeal" key={item.id||i}>
+        {!group.results?.length?<div className="emptyState">No relevant priced listings survived FlipScout's filters for this target.</div>:<div className="sniperDealGrid">{group.results.slice((pages[group.id]||0)*12,((pages[group.id]||0)+1)*12).map((item,i)=><article className="sniperDeal" key={item.id||i}>
           <div className="sniperDealTop"><div><span className="source">{item.source}</span>{item.soldCount>0&&<span className="soldChip">{item.soldCount}+ sold</span>}</div><div className="dealScore"><b>{item.score}</b><small>cap {item.scoreCap||100}</small></div></div>
           <h4>{item.title}</h4>
           <div className="sniperPrice"><b>{money(item.totalPrice)}</b><span>{item.shippingKnown?"delivered":"shipping not confirmed"}</span></div>
@@ -719,6 +728,7 @@ function PartsSniper({providerKeys,onWatchChange}){
           {item.riskFlags?.length>0&&<div className="dealRisks">{item.riskFlags.slice(0,2).map((risk,j)=><span key={j}><AlertTriangle size={12}/>{risk}</span>)}</div>}
           <div className="dealActions">{item.url&&<a className="listingLink" href={item.url} target="_blank" rel="noreferrer">Open listing <ExternalLink size={14}/></a>}<button className="watchButton" onClick={()=>toggleWatch(item,group.target)}>{isWatched(item)?<BookmarkCheck size={15}/>:<Bookmark size={15}/>} {isWatched(item)?"Watching":"Watch"}</button></div>
         </article>)}</div>}
+        <Pagination page={pages[group.id]||0} pages={Math.ceil((group.results?.length||0)/12)} onChange={p=>setPages(current=>({...current,[group.id]:p}))}/>
         {group.errors?.length>0&&<details className="providerDetails"><summary>Provider notes ({group.errors.length})</summary>{group.errors.map((e,i)=><p key={i}>{e.provider}: {e.message}</p>)}</details>}
       </section>)}
     </section>}
@@ -775,26 +785,24 @@ function Workspace({refreshKey}){
   </div>;
 }
 
-function ProPage(){
+function ProPage({setTab}){
   useEffect(()=>{track("view_pro_pricing");},[]);
   return <div className="pageStack">
     <section className="proHero">
-      <span className="eyebrow">FLIPSCOUT PRO</span>
-      <h2>One good avoided mistake can pay for the tool for months.</h2>
-      <p>The product is in founders beta, so Pro features are currently unlocked while the workflow is being proven with real flippers.</p>
-      <div className="proBadge"><Sparkles size={17}/>Founders beta: all features unlocked</div>
+      <span className="eyebrow">FLIPSCOUT PRO · FOUNDERS EDITION</span>
+      <h2>Better decisions. Fewer expensive mistakes.</h2>
+      <p>Pro is a toolkit for enthusiasts, PC builders and people who buy and sell hardware. Every feature is open during the founders beta — no payment required.</p>
+      <div className="proBadge"><CheckCircle2 size={17}/>All current tools available in beta</div>
+      <div className="heroActions"><button className="primary large" onClick={()=>setTab("sniper")}>Explore live deals <ArrowRight size={16}/></button><button className="secondary large" onClick={()=>setTab("home")}>Check a PC's value</button></div>
     </section>
-
-    <div className="pricingGrid">
-      <div className="priceCard"><span>FREE</span><h3>$0</h3><p>For checking an occasional PC.</p><ul><li>Basic build valuation</li><li>Compatibility checks</li><li>Limited live scans</li><li>Basic profit estimate</li></ul><button className="secondary">Current free tier</button></div>
-      <div className="priceCard featuredPrice"><div className="popular">BEST FOR FLIPPERS</div><span>PRO</span><h3>$9<span>/mo</span></h3><p>For people buying and selling every month.</p><ul><li>Unlimited PC analyses</li><li>Sales-backed evidence</li><li>Local vs online pricing</li><li>Deep deal scanner</li><li>Negotiation targets</li><li>Channel profit calculator</li><li>Listing Studio</li><li>Saved deal workspace</li></ul><button className="primary">Included in beta</button></div>
-      <div className="priceCard"><span>POWER SELLER</span><h3>$19<span>/mo</span></h3><p>For repeat sellers and small shops.</p><ul><li>Everything in Pro</li><li>Batch analysis</li><li>Price-history alerts</li><li>Advanced inventory tracking</li><li>CSV export</li><li>Priority new-marketplace integrations</li></ul><button className="secondary">Planned</button></div>
+    <div className="proFeatureGrid">
+      <div className="proFeature"><Search size={22}/><span>01 / DISCOVER</span><h3>Better deal discovery</h3><p>Rank listings by value, relevance, condition and shipping confidence. See real stores and listings, not fictional price targets.</p></div>
+      <div className="proFeature"><Cpu size={22}/><span>02 / VERIFY</span><h3>Hardware sanity checks</h3><p>Identify model mismatches and parts-only listings before a low price looks too good to pass up.</p></div>
+      <div className="proFeature"><BarChart3 size={22}/><span>03 / COMPARE</span><h3>Context around the price</h3><p>Use current asking-price evidence, market medians and clearly marked confidence limits.</p></div>
     </div>
-
-    <section className="panel valueProof">
-      <div><b>$200</b><span>If FlipScout helps you avoid one bad $800 PC with a hidden $200 margin problem, that's more than a year of a $9 plan.</span></div>
-      <div><b>Faster sourcing</b><span>The paid value isn't “a calculator.” It's fewer tabs, fewer bad buys, faster offers, and a repeatable selling process.</span></div>
-      <div><b>Trust matters</b><span>Evidence type, sample size, confidence, live links, and fallback labeling stay visible instead of hiding uncertainty.</span></div>
+    <section className="panel betaPanel">
+      <div><span className="eyebrow">BUILT WITH PRACTICAL BUYERS IN MIND</span><h3>Powerful tools, straightforward answers.</h3><p>We're improving live-market coverage and validation without promising a store integration or a price history that has not been verified.</p></div>
+      <span className="betaPanelLabel">FOUNDERS BETA</span>
     </section>
   </div>;
 }
@@ -805,26 +813,27 @@ function Sources({providerKeys}){
     fetch("/api/sources",{headers:{"x-serper-key":providerKeys.SERPER_API_KEY||"","x-searchapi-key":providerKeys.SEARCHAPI_API_KEY||""}})
       .then(r=>r.json()).then(d=>setSources(d.sources||[])).catch(()=>{});
   },[providerKeys.SERPER_API_KEY,providerKeys.SEARCHAPI_API_KEY]);
+  const active=sources.filter(x=>["serper","searchapi"].includes(x.id)||x.status.startsWith("Configured"));
   return <footer className="sourceFooter">
-    <div><b>Market source health</b><span>FlipScout labels fallbacks instead of pretending they are live.</span></div>
-    <div className="footerSources">{sources.slice(0,5).map(x=><span key={x.id}><i className={x.status==="Connected"?"on":""}></i>{x.name} <em className={statusTone(x.status)}>{x.status}</em></span>)}</div>
+    <div><b>Search providers</b><span>Optional integrations are hidden until configured. Store result counts appear in Deal Hunt.</span></div>
+    <div className="footerSources">{active.map(x=><span key={x.id}><i className={x.status==="Connected"?"on":""}></i>{x.name} <em className={statusTone(x.status)}>{x.status}</em></span>)}</div>
   </footer>;
 }
 
 export default function App(){
-  const [tab,setTab]=useState("analyze");
+  const [tab,setTab]=useState("home");
   const [providerKeys,setProviderKeys]=useState(()=>loadProviderKeys());
   const [refreshKey,setRefreshKey]=useState(0);
+  const [showSaved,setShowSaved]=useState(false);
   const bump=()=>setRefreshKey(x=>x+1);
 
   return <div className="appShell">
     <TopNav tab={tab} setTab={setTab}/>
     <main className="mainWrap">
-      {tab==="analyze"&&<><Hero tab={tab} setTab={setTab}/><ProviderSetup providerKeys={providerKeys} setProviderKeys={setProviderKeys}/><Analyze providerKeys={providerKeys} onSaved={bump}/></>}
+      {tab==="home"&&<><Hero tab={tab} setTab={setTab}/><ProviderSetup providerKeys={providerKeys} setProviderKeys={setProviderKeys}/><Analyze providerKeys={providerKeys} onSaved={bump}/><div className="savedToggle"><button className="secondary" onClick={()=>setShowSaved(!showSaved)}>{showSaved?"Hide":"View"} saved deals & searches <ChevronDown size={16}/></button></div>{showSaved&&<Workspace refreshKey={refreshKey}/>}</>}
       {tab==="scan"&&<><Hero tab={tab} setTab={setTab}/><DealScanner providerKeys={providerKeys} onWatchChange={bump} onSearchSaved={bump}/></>}
       {tab==="sniper"&&<PartsSniper providerKeys={providerKeys} onWatchChange={bump}/>}
-      {tab==="workspace"&&<Workspace refreshKey={refreshKey}/>} 
-      {tab==="pro"&&<ProPage/>}
+      {tab==="pro"&&<ProPage setTab={setTab}/>}
       <Sources providerKeys={providerKeys}/>
     </main>
   </div>;
