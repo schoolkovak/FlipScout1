@@ -1158,13 +1158,19 @@ export async function searchPartsSniper(input){
   if(hasSearchApi&&selected.includes("bestbuy"))providers.push(["Best Buy",()=>searchSearchApiBestBuy(input)]);
   if(hasSearchApi&&selected.includes("walmart"))providers.push(["Walmart",()=>searchSearchApiWalmart(input)]);
 
-  // Deep Scan checks each selected retailer independently when SearchAPI is configured.
-  // Default browsing uses the broad shopping feed without extra calls.
-  if(input.deepScan && hasSearchApi){
-    const priority=["mercari","newegg","aliexpress"];
-    const selectedTargets=priority.filter(id=>selected.includes(id));
-    for(const marketplace of selectedTargets){
-      providers.push([marketplaceName(marketplace),()=>searchSearchApiSiteMarketplace(input,marketplace)]);
+  // Dedicated retailer-domain discovery only for deliberate deep scans.
+  // Use SearchAPI when configured; otherwise reuse Serper shopping with a
+  // strict merchant domain check to avoid displaying unrelated retailers.
+  if(input.deepScan){
+    const domains={newegg:"newegg.com",aliexpress:"aliexpress.com",mercari:"mercari.com"};
+    for(const id of ["newegg","aliexpress","mercari"].filter(x=>selected.includes(x))){
+      if(hasSearchApi){
+        providers.push([marketplaceName(id),()=>searchSearchApiSiteMarketplace(input,id)]);
+      }else if(hasSerper){
+        providers.push([marketplaceName(id)+" shopping",()=>searchSerperMarketplaces({
+          ...input,query:"site:"+domains[id]+" "+input.query,marketplaces:[id]
+        })]);
+      }
     }
   }
 
@@ -1200,9 +1206,12 @@ export async function searchPartsSniper(input){
   const counts=Object.fromEntries(selected.map(id=>[id,0]));
   for(const item of ranked)if(item.marketplace in counts)counts[item.marketplace]++;
   const sourceCoverage=selected.map(id=>({
-    id,name:marketplaceName(id),count:counts[id],status:counts[id]?"Results found":errors.some(x=>x.provider===marketplaceName(id))?"Store search failed":providers.length?"No matching listings returned":"No search provider configured",
-    searched:providers.some(([name])=>name==="Retail marketplace search"||name==="Shopping merchants"||name===marketplaceName(id)||name===id||(name==="eBay"&&id==="ebay")),
-    errors:errors.filter(x=>x.provider===marketplaceName(id))
+    id,name:marketplaceName(id),count:counts[id],
+    status:counts[id]?"Usable listings found":
+      errors.some(x=>x.provider.toLowerCase().includes(id)||x.provider.startsWith(marketplaceName(id)))?"Provider returned an error":
+      providers.length?"No priced direct listings found":"No search provider configured",
+    searched:providers.some(([name])=>name==="Retail marketplace search"||name==="Shopping merchants"||name.toLowerCase().includes(id)||name.startsWith(marketplaceName(id))),
+    errors:errors.filter(x=>x.provider.toLowerCase().includes(id)||x.provider.startsWith(marketplaceName(id)))
   }));
   const value={items,market,ranked,sourceCoverage,errors,providerReports,
     funnel:{raw:rawCount,eligible:items.length,ranked:ranked.length},
