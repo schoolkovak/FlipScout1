@@ -473,6 +473,19 @@ export async function searchSearchApiWalmart(input) {
 }
 
 
+function correctMarketplaceUrl(marketplace,value){
+  const domains={
+    amazon:["amazon.com"],bestbuy:["bestbuy.com"],walmart:["walmart.com"],
+    newegg:["newegg.com"],ebay:["ebay.com"],aliexpress:["aliexpress.com","aliexpress.us"],
+    bhphoto:["bhphotovideo.com"],adorama:["adorama.com"],
+    microcenter:["microcenter.com"],mercari:["mercari.com"]
+  };
+  try{
+    const u=new URL(value);
+    return u.protocol==="https:" && (domains[marketplace]||[]).some(d=>u.hostname===d||u.hostname.endsWith("."+d));
+  }catch{return false;}
+}
+
 function marketplaceIdFromResult(seller,url){
   const s=String(seller||"").toLowerCase();
   let host="";
@@ -1119,7 +1132,7 @@ export async function searchPartsSniper(input){
       if(x.conditionAssumed)extraRisks.push("Condition inferred from the requested filter; verify the listing.");
       return {...x,marketplace,category:input.category,source:marketplaceName(marketplace),url:safeUrl(x.url),sniperRiskFlags:extraRisks};
     })
-    .filter(x=>x.relevance>=.72 && Number.isFinite(x.totalPrice) && x.totalPrice>0 && x.url && !unsafeHardwareListing(x.title,input.category));
+    .filter(x=>x.relevance>=.72 && Number.isFinite(x.totalPrice) && x.totalPrice>0 && correctMarketplaceUrl(x.marketplace,x.url) && !unsafeHardwareListing(x.title,input.category));
 
   const market=buildMarket(items);
   const ranked=rankDeals(items,market,input).map(x=>({
