@@ -172,7 +172,17 @@ export function relevanceScore(title, query, category) {
   if(["gpu","cpu"].includes(cat)){
     const expected=resolveCatalogPart(cat,query);
     const identified=parseListingText(title)[cat];
-    if(expected.item && identified!==expected.canonical)return 0;
+    // A seller often appends VRAM or core counts to a valid model name.
+    // The full build parser treats those suffixes as non-exact, but that
+    // must not discard the actual listing if the unambiguous model matches.
+    if(expected.item){
+      if(identified && identified!==expected.canonical)return 0;
+      if(!identified){
+        const modelKey=normalizeText(expected.canonical).replace(/\s+/g,"");
+        const titleKey=t.replace(/\s+/g,"");
+        if(!titleKey.includes(modelKey))return 0;
+      }
+    }
     const model=String(query).match(/\b(?:\d{3,5}[a-z]*|[ab]\d{3})\b/i)?.[0];
     if(model && !t.replace(/\s+/g,"").includes(model.toLowerCase()))return 0;
     if(/\b(laptop|notebook|mobile|waterblock|water block|replacement fan|empty box|box only|riser|adapter|for parts|parts only|not working|broken|untested|repair|as is|gaming pc|desktop pc|prebuilt|bundle|motherboard combo)\b/.test(t))return 0;
