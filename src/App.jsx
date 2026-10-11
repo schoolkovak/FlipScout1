@@ -11,7 +11,9 @@ import {
   CASE_OPTIONS,COOLER_OPTIONS,SCANNER_CATEGORIES,MARKET_SNAPSHOT,groupedCatalog
 } from "../shared/catalog.js";
 import { SNIPER_CATEGORIES, SNIPER_MARKETPLACES, SNIPER_CONDITIONS, groupedSniperCategories } from "../shared/sniper.js";
-import AutomaticDiscovery from "./AutomaticDiscovery.jsx";
+import AutomaticDiscovery,{ItemCard} from "./AutomaticDiscovery.jsx";
+import {CORE_PC_CATEGORIES} from "../shared/discovery.js";
+import {dedupeOffers,filterOffers,sortOffers} from "./dealSort.js";
 import {buildOpportunitySummary} from "./intelligence";
 import {parseListingText} from "./listingParser";
 import { track } from "@vercel/analytics";
@@ -508,97 +510,156 @@ function Analyze({providerKeys,onSaved}){
   </div>;
 }
 
-function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
+function DealScanner({providerKeys,onSearchSaved}){
   const [category,setCategory]=useState("GPU");
-  const [query,setQuery]=useState("RTX 5070");
+  const [query,setQuery]=useState("RTX 4060");
   const [condition,setCondition]=useState("any");
-  const [partBudget,setPartBudget]=useState(600);
-  const [minPartPrice,setMinPartPrice]=useState(0);
-    const [sortBy,setSortBy]=useState("best");
+  const [minPartPrice,setMinPartPrice]=useState("");
+  const [partBudget,setPartBudget]=useState("");
+  const [sortBy,setSortBy]=useState("best");
   const [deepScan,setDeepScan]=useState(true);
-  const [page,setPage]=useState(0);
   const [merchantFilter,setMerchantFilter]=useState("all");
+  const [page,setPage]=useState(0);
   const [loading,setLoading]=useState(false);
+  const [autoRefresh,setAutoRefresh]=useState(false);
+  const [refreshMinutes,setRefreshMinutes]=useState(10);
+  const [error,setError]=useState("");
   const [data,setData]=useState(null);
   const [trend,setTrend]=useState(null);
-  const [watched,setWatched]=useState(()=>getWatchlist());
-  const merchants=[...new Set((data?.results||[]).map(x=>x.source).filter(Boolean))].sort();
-  const visible=(data?.results||[]).filter(x=>merchantFilter==="all"||x.source===merchantFilter).slice().sort(
-    sortBy==="lowest"?(a,b)=>a.totalPrice-b.totalPrice:
-    sortBy==="under"?(a,b)=>b.percentVsMarket-a.percentVsMarket:
-    (a,b)=>b.score-a.score||a.totalPrice-b.totalPrice
-  );
-  const pageCount=Math.max(1,Math.ceil(visible.length/12));
+  const busyRef=useRef(false);
+  const scanRef=useRef(null);
+  const cleaned=sortOffers(dedupeOffers((data?.results||[]).map(x=>({
+    ...x,category,subtype:query,checkedAt:data?.searchedAt
+  }))),sortBy==="lowest"?"price":sortBy==="newest"?"newest":"best");
+  const visible=filterOffers(cleaned,{
+    store:merchantFilter,minimum:minPartPrice,maximum:partBudget
+  });
+  const pages=Math.max(1,Math.ceil(visible.length/18));
 
-  function changeCategory(value){
-    setCategory(value);
-    setQuery(SCANNER_CATEGORIES.find(x=>x.name===value)?.example||"");
+  function changeCategory(name){
+    setCategory(name);
+    const example=SCANNER_CATEGORIES.find(x=>x.name===name)?.example||
+      (name==="CPU"?"Ryzen 5 5600":name==="Motherboard"?"B550 AM4 motherboard":name==="RAM / Memory"?"16GB DDR4 3600 2x8GB":name==="NVMe SSD"?"1TB NVMe SSD":"");
+    setQuery(example);
+    setPage(0);
   }
-  async function scan(){
-    track("scan_parts",{category,condition,deepScan});
-    setLoading(true);setData(null);setPage(0);setMerchantFilter("all");
+  async function scan(quiet=false){
+    if(busyRef.current)return;
+    if(!query.trim()){setError("Enter a component model or use a quick part above.");return;}
+    const min=Number(minPartPrice)||0,max=Number(partBudget)||0;
+    if(min<0||max<0||(max>0&&max<min)){
+      setError("Check the price range: minimum cannot exceed maximum.");return;
+    }
+    busyRef.current=true;setLoading(true);setError("");
     try{
-      const r=await fetch("/api/deals/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({category,query,condition,partBudget,minPartPrice,sortBy,deepScan,providerKeys}),signal:AbortSignal.timeout(40000)});
-      const d=await r.json();
-      setData(d);
-      if(d.available)setTrend(saveMarketSnapshot({category,query,condition},d.market));
-    }catch{setData({available:false,message:"Live search backend is unavailable."});}
-    finally{setLoading(false);}
+      const response=await fetch("/api/deals/search",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({category,query:query.trim(),condition,minPartPrice:min,partBudget:max,
+          deepScan:quiet?false:deepScan,providerKeys}),
+        signal:AbortSignal.timeout(55000)
+      });
+      const result=await response.json();
+      if(!response.ok)throw Error(result.message||"Part Scanner returned an error");
+      setData(result);setPage(0);
+      if(result.available&&result.market?.sampleSize>0){
+        setTrend(saveMarketSnapshot({category,query,condition},result.market));
+      }else{
+        const providerErrors=(result.errors||[]).filter(x=>x.message);
+        setError(result.message||providerErrors[0]?.message||"No priced, usable listings returned. Check Source Details.");
+      }
+      if(result.errors?.some(x=>/quota|429|credits|401|403/i.test(x.message||"")))setAutoRefresh(false);
+    }catch(e){setError("Part Scanner failed: "+(e.message||"Search request unavailable"));}
+    finally{busyRef.current=false;setLoading(false);}
   }
-  function toggle(item){
-    track("toggle_watch",{category,source:item.source||"unknown"});
-    const out=toggleWatchItem({...item,category,query});
-    setWatched(out.items);onWatchChange?.();
-  }
-  function watchedNow(item){
-    const key=item.url||item.id||item.title;
-    return watched.some(x=>(x.url||x.id||x.title)===key);
-  }
+  scanRef.current=scan;
+  useEffect(()=>{
+    if(!autoRefresh)return;
+    const timer=window.setInterval(()=>{
+      if(document.visibilityState==="visible")scanRef.current?.(true);
+    },refreshMinutes*60*1000);
+    return()=>window.clearInterval(timer);
+  },[autoRefresh,refreshMinutes]);
   function saveThisSearch(){
-    track("save_search",{category,condition,deepScan});
-    saveSearch({category,query,condition,partBudget,minPartPrice,sortBy,deepScan});
+    saveSearch({category,query,condition,minPartPrice,partBudget,sortBy,deepScan});
     onSearchSaved?.();
   }
+  const sourceCounts=(data?.sourceCoverage||[]);
 
-  return <div className="pageStack">
-    <section className="panel">
-      <div className="sectionHeading"><div><span className="eyebrow">DEAL SCANNER</span><h2>Find a better deal, not just a lower price.</h2><p>Compare actual listings using price versus market, condition, shipping confidence and listing quality. The cheapest result is not always the best one.</p></div><ShoppingCart/></div>
-      <div className="formGrid">
-        <label>Part type<select value={category} onChange={e=>changeCategory(e.target.value)}>{SCANNER_CATEGORIES.map(x=><option key={x.name}>{x.name}</option>)}</select></label>
-        <label>Part / requirement<input value={query} onChange={e=>setQuery(e.target.value)}/></label>
-        <label>Condition<select value={condition} onChange={e=>setCondition(e.target.value)}>{SNIPER_CONDITIONS.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}</select></label>
-        <label>Minimum part price<input type="number" min="0" value={minPartPrice} onChange={e=>setMinPartPrice(e.target.value)}/></label>
-         <label>Maximum part price<input type="number" min="0" value={partBudget} onChange={e=>setPartBudget(e.target.value)}/></label>
-                <label>Rank by<select value={sortBy} onChange={e=>setSortBy(e.target.value)}><option value="best">Best Deal</option><option value="lowest">Lowest Total Price</option><option value="under">Most Under Market</option><option value="flip">Best for Flip</option></select></label>
+  return <div className="pageStack fsManualScanner">
+    <section className="panel fsManualTop">
+      <div className="sectionHeading"><div><span className="eyebrow">PART SCANNER / DIRECT MARKET SEARCH</span>
+        <h2>Find the actual lowest-priced working part.</h2>
+        <p>Run a targeted multi-retailer search. Sort, filter and compare the results locally without spending another provider request.</p>
+      </div><Search/></div>
+      <div className="fsManualQuick">
+        {["GPU","CPU","Motherboard","RAM / Memory","NVMe SSD","Power Supply / PSU","PC Case"].map(name=>
+          <button key={name} className={category===name?"chosen":""} onClick={()=>changeCategory(name)}>{name}</button>)}
       </div>
-      <label className="toggleLine"><input type="checkbox" checked={deepScan} onChange={e=>setDeepScan(e.target.checked)}/><span><b>Deep multi-source scan</b><small>Uses additional direct retailer/marketplace sources when configured.</small></span></label>
-      <div className="rowActions"><button className="primary large" onClick={scan} disabled={loading}>{loading?<><RefreshCw className="spin" size={18}/>Scanning market...</>:<><Search size={18}/>Find live deals</>}</button><button className="secondary" onClick={saveThisSearch}><Bookmark size={16}/>Save search</button></div>
+      <div className="formGrid fsManualForm">
+        <label>PC component<select value={category} onChange={e=>changeCategory(e.target.value)}>
+          {CORE_PC_CATEGORIES.map(name=><option key={name} value={name}>{name}</option>)}
+        </select></label>
+        <label>Exact model / requirement<input value={query} onChange={e=>setQuery(e.target.value)} placeholder="e.g. RTX 4060"/></label>
+        <label>Condition<select value={condition} onChange={e=>setCondition(e.target.value)}>
+          <option value="any">Any working condition</option>
+          <option value="new">New</option><option value="used">Used</option>
+          <option value="open-box">Open box</option><option value="refurbished">Refurbished</option>
+          <option value="renewed">Renewed</option>
+        </select></label>
+        <label>Minimum total price<input type="number" min="0" value={minPartPrice}
+          onChange={e=>setMinPartPrice(e.target.value)} placeholder="No minimum"/></label>
+        <label>Maximum total price<input type="number" min="0" value={partBudget}
+          onChange={e=>setPartBudget(e.target.value)} placeholder="No maximum"/></label>
+      </div>
+      <div className="fsManualActions">
+        <label className="fsDeepOption"><input type="checkbox" checked={deepScan}
+          onChange={e=>setDeepScan(e.target.checked)}/> Search additional retailer domains (uses extra provider credits)</label>
+        <button className="primary large" disabled={loading} onClick={()=>scan(false)}>
+          <Search size={16}/>{loading?"SCANNING SOURCES…":"SCAN LIVE MARKET"}</button>
+        <button className="secondary" onClick={saveThisSearch}><Bookmark size={15}/>Save search</button>
+      </div>
+      <div className="fsManualWatch">
+        <label><input type="checkbox" checked={autoRefresh} onChange={e=>setAutoRefresh(e.target.checked)}/> Watch this search while open</label>
+        <select value={refreshMinutes} onChange={e=>setRefreshMinutes(Number(e.target.value))} aria-label="Auto-refresh interval">
+          <option value={10}>Every 10 minutes</option><option value={5}>Every 5 minutes (high API usage)</option>
+          <option value={30}>Every 30 minutes</option>
+        </select>
+        <small>{data?.searchedAt?"Last scan "+new Date(data.searchedAt).toLocaleTimeString():"Not scanned yet"}</small>
+      </div>
+      {error&&<div className="fsMarketWarning" role="alert">{error}</div>}
     </section>
-
-    {data&&!data.available&&<div className="notice"><AlertTriangle size={20}/><div><b>Live provider data unavailable</b><p>{data.message}</p></div></div>}
-    {data?.available&&<>
-      {trend&&<div className="trendCard">
-        <div><span className="eyebrow">PRICE MEMORY</span><b>{trend.count<2?"First market snapshot saved":(trend.changeSinceLast>=0?"+":"")+trend.changeSinceLast.toFixed(1)+"% vs last scan"}</b><small>{trend.count} snapshot{trend.count===1?"":"s"} stored on this device</small></div>
-        <div className="sparkBars">{trend.series.slice(-12).map((v,i)=>{const max=Math.max(...trend.series.slice(-12)),min=Math.min(...trend.series.slice(-12));const h=max===min?50:20+((v-min)/(max-min))*80;return <i key={i} style={{height:h+"%"}} title={money(v)}></i>})}</div>
-      </div>}
-      <div className="marketHeadline">
-        <div><span>{data.market.valueLabel}</span><strong>{money(data.market.median)}</strong><small>{money(data.market.low)}–{money(data.market.high)} trimmed range</small></div>
-        <div><span>Relevant comps</span><strong>{data.market.sampleSize}</strong><small>{data.market.rawSampleSize} raw listings checked · {Object.keys(data.market.bySource||{}).length} source{Object.keys(data.market.bySource||{}).length===1?"":"s"}</small></div>
-        <div><span>Confidence</span><strong>{data.market.confidence}</strong><small>{data.market.shippingKnownPct}% with known shipping</small></div>
+    {data&&<>
+      <div className="fsScannerSummary">
+        <div><span>Priced listings</span><b>{data.results?.length||0}</b></div>
+        <div><span>Comparable median</span><b>{money(data.market?.median)}</b></div>
+        <div><span>Store sources</span><b>{sourceCounts.filter(x=>x.count>0).length}/{SNIPER_MARKETPLACES.length}</b></div>
+        <div><span>Comparison confidence</span><b>{data.market?.confidence||"Low"}</b></div>
       </div>
-      <div className="resultToolbar"><b>{visible.length} loaded listings · sorted locally by {sortBy==="best"?"best overall value":sortBy==="under"?"discount versus market":sortBy==="lowest"?"lowest listed cost":"resale potential"}</b><label>Store<select value={merchantFilter} onChange={e=>{setMerchantFilter(e.target.value);setPage(0);}}><option value="all">All stores</option>{merchants.map(name=><option key={name} value={name}>{name}</option>)}</select></label></div>
-      {!!data.sourceCoverage?.length&&<div className="discoveryCoverage">{data.sourceCoverage.map(source=><span key={source.id} className={source.count?"hasOffers":"noOffers"} title={source.status}>{source.name} <b>{source.count||"—"}</b></span>)}</div>}
-      <div className="dealList">{visible.slice(page*12,(page+1)*12).map((x,i)=><article className="dealCard" key={x.id||i}>
-        <div className="dealTop"><div><div className="dealBadges"><span className="source">{x.source}</span>{x.soldCount>0&&<span className="soldChip">{x.soldCount}+ sold</span>}</div><h3>{x.title}</h3></div></div>
-        {x.imageUrl&&<div className="scannerProductPhoto"><img src={x.imageUrl} alt={x.title} loading="lazy" referrerPolicy="no-referrer"/></div>}
-        <div className="dealPriceRow"><strong>{x.shippingKnown?money(x.totalPrice):money(x.itemPrice)}</strong><span>{x.shippingKnown?"delivered":"shipping unconfirmed"}</span></div>
-        <div className="scannerSavings">{x.msrp?<><strong className={x.percentVsMsrp>=0?"goodText":"badText"}>{Math.abs(x.percentVsMsrp)}% {x.percentVsMsrp>=0?"below":"above"} reference launch MSRP</strong><small>Reference: {money(x.msrp)}</small></>:<small>Verified MSRP unavailable</small>}
-        {x.comparedMarketMedian>0&&<span>Observed market median {money(x.comparedMarketMedian)} · {Math.abs(x.percentVsMarket)}% {x.percentVsMarket>=0?"below":"above"} market</span>}</div>
-        <div className="dealMeta"><span>{x.condition} · {x.seller}</span><span className={x.percentVsMarket>=10?"goodText":x.percentVsMarket<0?"badText":""}>{x.percentVsMarket>=0?x.percentVsMarket+"% under market":Math.abs(x.percentVsMarket)+"% over market"}</span><span>{x.withinPartBudget?(x.shippingKnown?"Fits part budget":"Check shipping for budget"):"Over part budget"}</span></div>
-        {x.riskFlags?.length>0&&<div className="dealRisks">{x.riskFlags.slice(0,3).map((risk,j)=><span key={j}><AlertTriangle size={12}/>{risk}</span>)}</div>}
-        <div className="dealActions">{x.url&&<a className="listingLink" href={x.url} target="_blank" rel="noreferrer">Open listing <ExternalLink size={14}/></a>}<button className="watchButton" onClick={()=>toggle(x)}>{watchedNow(x)?<BookmarkCheck size={16}/>:<Bookmark size={16}/>} {watchedNow(x)?"Watching":"Watch"}</button></div>
-      </article>)}</div>
-      <Pagination page={page} pages={pageCount} onChange={setPage}/>
+      <div className="discoveryCoverage">{SNIPER_MARKETPLACES.map(m=>{
+        const coverage=sourceCounts.find(s=>s.id===m.id);
+        return <span key={m.id} className={coverage?.count?"hasOffers":"noOffers"} title={coverage?.status||"No confirmed results"}>
+          {m.name} <b>{coverage?.count||"—"}</b>
+        </span>})}</div>
+      <div className="fsManualResultsControls">
+        <label>Retailer<select value={merchantFilter} onChange={e=>{setMerchantFilter(e.target.value);setPage(0)}}>
+          <option value="all">All stores</option>{SNIPER_MARKETPLACES.map(m=><option value={m.id} key={m.id}>{m.name}</option>)}
+        </select></label>
+        <label>Sort these loaded results<select value={sortBy} onChange={e=>{setSortBy(e.target.value);setPage(0)}}>
+          <option value="best">Best savings</option><option value="lowest">Lowest total price</option><option value="newest">Latest checked</option>
+        </select></label>
+        <b>{visible.length} results</b>
+      </div>
+      {visible.length?<div className="fsProducts">
+        {visible.slice(page*18,(page+1)*18).map(x=><ItemCard key={x.url} item={x}/>)}
+      </div>:<div className="fsNoDeals"><h3>No matching priced listings returned</h3>
+        <p>Check the selected price range and store, then open Source Details to see which providers failed or returned zero results.</p>
+        <button className="fsScanButton" onClick={()=>scan(false)} disabled={loading}>RETRY SEARCH</button></div>}
+      <Pagination page={page} pages={pages} onChange={setPage}/>
+      <details className="fsSourceDetails"><summary>SCANNER SOURCE DETAILS</summary>
+        {data?.errors?.length>0&&data.errors.map((x,i)=><p key={i}>{x.provider}: {x.message}</p>)}
+        {!data?.errors?.length&&<p>No provider errors reported; retailers with zero results may not have returned a usable direct listing.</p>}
+        {sourceCounts.map(x=><p key={x.id}>{x.name}: {x.count} listings · {x.status}</p>)}
+      </details>
     </>}
   </div>;
 }

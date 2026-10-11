@@ -44,7 +44,10 @@ export default async function handler(req,res){
   }
 
   const deepScan=Boolean(req.body?.deepScan);
-  const results=await Promise.all(targets.map(async target=>{
+  // Limit bursts: five model searches at once can trip provider rate limits.
+  const results=[];
+  for(let i=0;i<targets.length;i+=2){
+    const completed=await Promise.all(targets.slice(i,i+2).map(async target=>{
     const searchInput={
       query:target.query,
       category:target.category,
@@ -65,7 +68,7 @@ export default async function handler(req,res){
       return {
         id:target.id,
         target,
-        available:data.market.sampleSize>0,
+        available:data.ranked.length>0,
         searchedAt:data.observedAt,
         cached:data.cached,
         market:{
@@ -80,7 +83,13 @@ export default async function handler(req,res){
           confidence:data.market.confidence
         },
         bestDeal:best,
-        results:data.ranked.slice(0,100),
+        // Include both top-ranked and cheapest candidates for local sorting.
+        results:[...new Map([
+          ...data.ranked.slice(0,85),
+          ...data.ranked.slice().sort((a,b)=>a.totalPrice-b.totalPrice).slice(0,65)
+        ].map(x=>[x.url||x.id,x])).values()],
+        providerReports:data.providerReports||[],
+        funnel:data.funnel||null,
         sourceCoverage:data.sourceCoverage||[],
         errors:data.errors
       };
@@ -91,10 +100,13 @@ export default async function handler(req,res){
         available:false,
         market:{sampleSize:0},
         results:[],
-        errors:[{provider:"Deal Hunt",message:String(error?.message||error).slice(0,180)}]
+        errors:[{provider:"Deal Hunt",message:String(error?.message||error).slice(0,180)}],
+        providerReports:[],funnel:null
       };
     }
-  }));
+    }));
+    results.push(...completed);
+  }
 
   const successful=results.filter(x=>x.available).length;
   res.status(200).json({

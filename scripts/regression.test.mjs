@@ -156,3 +156,123 @@ test('only seven desired retailers remain selectable',()=>{
   const ids=SNIPER_MARKETPLACES.map(m=>m.id);
   assert.deepEqual(ids,['amazon','bestbuy','walmart','newegg','ebay','aliexpress','mercari']);
 });
+
+
+test('loaded listing sorting and filters are pure, stable and keep lowest-priced offers',async()=>{
+  const {sortOffers,filterOffers,dedupeOffers,savingsPercent,offerReference}=await import('../src/dealSort.js');
+  const src=[
+    {url:'https://www.ebay.com/itm/a',title:'RTX 4060 A',totalPrice:180,msrp:299,marketplace:'ebay',category:'GPU',condition:'used',shippingKnown:true},
+    {url:'https://www.newegg.com/p/b',title:'RTX 4060 B',totalPrice:210,msrp:299,marketplace:'newegg',category:'GPU',condition:'new',shippingKnown:true},
+    {url:'https://www.amazon.com/dp/c',title:'RTX 4060 C',totalPrice:155,marketplace:'amazon',category:'GPU',condition:'new',shippingKnown:false},
+    {url:'https://www.ebay.com/itm/a?ref=duplicate',title:'RTX 4060 A',totalPrice:180,msrp:299,marketplace:'ebay',category:'GPU',condition:'used'}
+  ];
+  const originals=src.map(x=>x.url);
+  assert.equal(dedupeOffers(src).length,3);
+  const cheapest=sortOffers(dedupeOffers(src),'price');
+  const best=sortOffers(dedupeOffers(src),'best');
+  assert.equal(cheapest[0].marketplace,'amazon');
+  assert.equal(best[0].marketplace,'ebay'); // Verified reference outranks unknown savings.
+  assert.deepEqual(src.map(x=>x.url),originals); // No mutation.
+  assert.equal(filterOffers(cheapest,{category:'GPU',condition:'used'}).length,1);
+  assert.equal(offerReference(src[2]),null);
+  assert.ok(savingsPercent(src[0])>39);
+});
+
+test('all seven structured retailer offers survive strict direct-link and pricing checks',async()=>{
+  const previous=globalThis.fetch;
+  const base='RTX 4060 8GB complete desktop graphics card';
+  const seen=[];
+  globalThis.fetch=async(url,options)=>{
+    const u=new URL(url);
+    const engine=u.searchParams.get('engine');
+    const q=u.searchParams.get('q')||JSON.parse(options?.body||'{}').q||'';
+    seen.push(engine||'serper');
+    let payload={};
+    if(u.hostname==='google.serper.dev')payload={shopping:[
+      {title:base,source:'Newegg',price:'$229.99',delivery:'Free shipping',link:'https://www.newegg.com/p/abc123',thumbnail:'https://images.example.test/a.jpg'}
+    ]};
+    else if(engine==='google_shopping')payload={shopping_results:[
+      {title:base,seller:'Mercari',extracted_price:208,condition:'used',link:'https://www.mercari.com/us/item/m999'},
+      {title:base,seller:'AliExpress',extracted_price:240,condition:'new',link:'https://www.aliexpress.com/item/1001.html'}
+    ]};
+    else if(engine==='ebay_search')payload={organic_results:[
+      {title:base,extracted_price:190,extracted_shipping:10,condition:'Used',item_id:'987',link:'https://www.ebay.com/itm/987654321'}
+    ]};
+    else if(engine==='amazon_search')payload={organic_results:[
+      {title:base,extracted_price:260,link:'https://www.amazon.com/dp/B01A02A03',thumbnail:'https://images.example.test/b.jpg'}
+    ]};
+    else if(engine==='bestbuy_search')payload={organic_results:[
+      {title:base,extracted_price:255,link:'https://www.bestbuy.com/product/gpu/123',condition:'new',thumbnail:'https://images.example.test/c.jpg'}
+    ]};
+    else if(engine==='walmart_search')payload={organic_results:[
+      {title:base,extracted_price:245,link:'https://www.walmart.com/ip/12345',thumbnail:'https://images.example.test/d.jpg'}
+    ]};
+    else if(engine==='google')payload={organic_results:[]};
+    else throw Error('Unexpected provider '+engine);
+    return {ok:true,status:200,json:async()=>payload};
+  };
+  try{
+    const search=await searchPartsSniper({
+      query:'RTX 4060',category:'GPU',condition:'any',
+      marketplaces:SNIPER_MARKETPLACES.map(s=>s.id),
+      providerKeys:{SERPER_API_KEY:'all-stores-mock',SEARCHAPI_API_KEY:'all-stores-mock'},
+      deepScan:false
+    });
+    assert.deepEqual(new Set(search.ranked.map(x=>x.marketplace)),
+      new Set(['amazon','bestbuy','walmart','newegg','ebay','aliexpress','mercari']));
+    assert.equal(search.sourceCoverage.reduce((n,x)=>n+x.count,0),7);
+    assert.ok(search.ranked.every(x=>x.url.startsWith('https://')));
+    assert.ok(search.ranked.some(x=>x.marketplace==='bestbuy'&&x.imageUrl));
+    assert.ok(search.providerReports.every(x=>x.status==='results'));
+    assert.ok(seen.includes('google_shopping')&&seen.includes('amazon_search'));
+  }finally{globalThis.fetch=previous;}
+});
+
+test('Part Scanner API enforces price range and returns real multi-store results',async()=>{
+  const {default:handler}=await import('../api/deals/search.js');
+  const previous=globalThis.fetch;
+  globalThis.fetch=async(url,options)=>{
+    const u=new URL(url);
+    const engine=u.searchParams.get('engine');
+    const payload=engine==='ebay_search'?{organic_results:[
+      {title:'RTX 4060 8GB desktop GPU complete',extracted_price:190,extracted_shipping:10,condition:'Used',link:'https://www.ebay.com/itm/99887',item_id:'99887'}
+    ]}:engine==='bestbuy_search'?{organic_results:[
+      {title:'RTX 4060 8GB desktop GPU complete',extracted_price:259,link:'https://www.bestbuy.com/product/gpu/123'}
+    ]}:engine==='amazon_search'?{organic_results:[
+      {title:'RTX 4060 8GB desktop GPU complete',extracted_price:270,link:'https://www.amazon.com/dp/B000000011'}
+    ]}:engine==='google_shopping'?{shopping_results:[]}:
+      engine==='walmart_search'?{organic_results:[]}:engine==='google'?{organic_results:[]}:
+      {shopping:[]};
+    return {ok:true,status:200,json:async()=>payload};
+  };
+  const reply=async body=>{
+    let status,payload;
+    await handler({method:'POST',body},{status(n){status=n;return this},json(o){payload=o;return o}});
+    return {status,payload};
+  };
+  try{
+    const invalid=await reply({query:'RTX 4060',category:'GPU',minPartPrice:350,partBudget:200});
+    assert.equal(invalid.status,400);
+    const result=await reply({query:'RTX 4060',category:'GPU',minPartPrice:195,partBudget:300,
+      providerKeys:{SEARCHAPI_API_KEY:'part-scanner-mock',SERPER_API_KEY:'part-scanner-mock'}});
+    assert.equal(result.status,200);
+    assert.equal(result.payload.available,true);
+    assert.ok(result.payload.results.some(x=>x.marketplace==='ebay'));
+    assert.ok(result.payload.results.some(x=>x.marketplace==='bestbuy'));
+    assert.ok(result.payload.results.every(x=>x.totalPrice>=195&&x.totalPrice<=300));
+  }finally{globalThis.fetch=previous;}
+});
+
+
+test('valid RTX 4060 VRAM suffix survives, while wrong VRAM, Ti and broken cards do not',()=>{
+  assert.ok(relevanceScore('Gigabyte GeForce RTX 4060 8GB Windforce OC desktop GPU','RTX 4060','GPU')>=.72);
+  assert.equal(relevanceScore('GeForce RTX 4060 Ti 16GB desktop graphics card','RTX 4060','GPU'),0);
+  assert.equal(relevanceScore('RTX 4060 12GB desktop graphics card','RTX 4060','GPU'),0);
+  assert.equal(relevanceScore('RTX 4060 8GB bare PCB only','RTX 4060','GPU'),0);
+  assert.equal(relevanceScore('RTX 4060 8GB laptop GPU','RTX 4060','GPU'),0);
+});
+
+test('valid CPU titles with core count keep relevance without allowing a different CPU',()=>{
+  assert.ok(relevanceScore('AMD Ryzen 5 5600 6 Core Desktop CPU Processor','Ryzen 5 5600','CPU')>=.72);
+  assert.equal(relevanceScore('AMD Ryzen 5 5600X Processor','Ryzen 5 5600','CPU'),0);
+});

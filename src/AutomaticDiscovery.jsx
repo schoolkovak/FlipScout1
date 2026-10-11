@@ -1,230 +1,339 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
-import {CORE_DISCOVERY_TARGETS as DISCOVERY_TARGETS,CORE_PC_CATEGORIES} from "../shared/discovery.js";
-import {SNIPER_CATEGORIES,SNIPER_MARKETPLACES} from "../shared/sniper.js";
+import {CORE_DISCOVERY_TARGETS as TARGETS,CORE_PC_CATEGORIES as PARTS} from "../shared/discovery.js";
+import {SNIPER_MARKETPLACES as STORES} from "../shared/sniper.js";
+import {dedupeOffers,filterOffers,offerReference,offerTotal,savingsPercent,sortOffers} from "./dealSort.js";
 
-const STORE_KEY="flipscout-automatic-discovery-core-v1";
-const BATCH=5;
-const INTERVAL_MS=15*60*1000;
-const HOURLY_INTERVAL_MS=Math.max(20000,Math.floor(3600000/Math.ceil(DISCOVERY_TARGETS.length/BATCH)));
-const MAX_AGE_MS=72*60*60*1000;
-const storeNames=new Map(SNIPER_MARKETPLACES.map(x=>[x.id,x.name]));
-
-function loadCatalog(){
+const CACHE_NAME="flipscout-deals-catalog-v2";
+const CACHE_AGE=6*60*60*1000;
+const CATALOG_BATCH=2;
+const FOCUSED_BATCH=3;
+const MODELS=PARTS.map(category=>({category,targets:TARGETS.filter(t=>t.category===category)}));
+const QUICK=[
+  ["GPU","Graphics Cards"],["CPU","Processors"],["RAM / Memory","Memory"],
+  ["NVMe SSD","SSD"],["Motherboard","Motherboards"],["Power Supply / PSU","Power"],
+  ["PC Case","Cases"],["CPU Air Cooler","Cooling"]
+];
+const GPU_SERIES=[
+  ["All","All GPUs"],["RTX 50","RTX 50"],["RTX 40","RTX 40"],["RTX 30","RTX 30"],
+  ["RTX 20","RTX 20"],["RX 9000","RX 9000"],["RX 7000","RX 7000"],["RX 6000","RX 6000"],["Arc","Intel Arc"]
+];
+function money(value){
+  return Number.isFinite(Number(value))&&value!==null?
+    Number(value).toLocaleString("en-US",{style:"currency",currency:"USD"}):"—";
+}
+function timestamp(value){
+  const ms=Date.parse(value||"");
+  if(!Number.isFinite(ms))return "Never";
+  const minutes=Math.round((Date.now()-ms)/60000);
+  return minutes<1?"Just now":minutes<60?minutes+"m ago":minutes<1440?Math.round(minutes/60)+"h ago":new Date(ms).toLocaleDateString();
+}
+function load(){
   try{
-    const stored=JSON.parse(localStorage.getItem(STORE_KEY)||"{}");
-    if(!stored||typeof stored!=="object")return {};
-    const validIds=new Set(DISCOVERY_TARGETS.map(x=>x.id));
-    return Object.fromEntries(Object.entries(stored).filter(([id,row])=>
-      validIds.has(id)&&row?.checkedAt&&Date.now()-Date.parse(row.checkedAt)<MAX_AGE_MS
+    const saved=JSON.parse(localStorage.getItem(CACHE_NAME)||"{}");
+    const ids=new Set(TARGETS.map(t=>t.id));
+    return Object.fromEntries(Object.entries(saved).filter(([id,row])=>
+      ids.has(id)&&row?.checkedAt&&Date.now()-Date.parse(row.checkedAt)<CACHE_AGE
     ));
   }catch{return {};}
 }
-function dollars(value){
-  return Number.isFinite(Number(value))?new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0}).format(Number(value)):"—";
+function blockedOffer(item){
+  return !item?.url?.startsWith("https://")||!Number.isFinite(offerTotal(item));
 }
-function isHealthy(item){
-  return item?.url?.startsWith("https://")&&Number.isFinite(Number(item.totalPrice))&&Number(item.totalPrice)>0;
+export function ItemCard({item}){
+  const [details,setDetails]=useState(false);
+  const reference=offerReference(item);
+  const saved=savingsPercent(item);
+  const isBelow=saved!==null&&saved>=0;
+  return <article className="fsProduct" data-store={item.marketplace}>
+    <div className="fsProductHeading">
+      <b>{item.subtype||item.category}</b>
+      {reference&&isBelow&&<span className="fsSaveBadge">BELOW {item.msrp?"MSRP":"MARKET"}</span>}
+    </div>
+    <div className="fsProductVisual">
+      {item.imageUrl?
+        <img src={item.imageUrl} alt={item.title||"PC part"} loading="lazy" referrerPolicy="no-referrer"
+          onError={e=>{e.currentTarget.style.visibility="hidden"}}/>:
+        <div className="fsImageFallback"><span>NO IMAGE</span><small>Check retailer photos</small></div>}
+    </div>
+    <div className="fsProductInfo">
+      <div className="fsStoreLine"><span>{item.source||item.marketplace}</span><b>{item.condition||"Condition not specified"}</b></div>
+      <h3 title={item.title}>{item.title}</h3>
+      <div className="fsProductDesc">{item.category} · {item.subtype}</div>
+      <div className="fsPrice"><strong>{money(offerTotal(item))}</strong>
+        {saved!==null&&<b className={isBelow?"fsPositive":"fsNegative"}>{Math.abs(saved).toFixed(1)}% {isBelow?"below":"above"} {item.msrp?"MSRP":"market"}</b>}
+      </div>
+      <div className="fsPriceExtra">
+        <span>{reference?reference.type+": "+money(reference.price):"No verified MSRP or comparable price"}</span>
+        <span>{item.shippingKnown?"Delivered total":"Shipping not confirmed"}</span>
+      </div>
+      <div className="fsConditionLine"><small>Checked {timestamp(item.checkedAt)}</small>
+        <small>{item.evidenceSampleSize||0} comparisons</small></div>
+      <button className="fsMoreButton" type="button" onClick={()=>setDetails(v=>!v)}>
+        {details?"HIDE DETAILS":"MORE INFO"} <span aria-hidden="true">{details?"−":"→"}</span>
+      </button>
+      {details&&<div className="fsMoreDetails">
+        <p>Price vs current sampled market: {item.comparedMarketMedian?money(item.comparedMarketMedian):"Not enough comparisons"}</p>
+        <p>Condition: {item.condition||"Unverified"}; shipping {item.shippingKnown?"included":"is not confirmed"}.</p>
+        {item.riskFlags?.map((risk,i)=><p key={i} className="fsRisk">⚠ {risk}</p>)}
+        {item.msrpSource&&<a href={item.msrpSource} target="_blank" rel="noreferrer">Manufacturer starting-price source ↗</a>}
+      </div>}
+      <a className="fsProductLink" href={item.url} target="_blank" rel="noopener noreferrer">
+        VIEW AT {String(item.source||item.marketplace||"RETAILER").toUpperCase()} <span>↗</span>
+      </a>
+    </div>
+  </article>;
 }
-
 export default function AutomaticDiscovery({providerKeys}){
-  const [catalog,setCatalog]=useState(loadCatalog);
-  const [position,setPosition]=useState(0);
-  const [auto,setAuto]=useState(true);
-  const [hourly,setHourly]=useState(false);
-  const [busy,setBusy]=useState(false);
-  const [error,setError]=useState("");
-  const [category,setCategory]=useState("All");
-  const [requestedCategory,setRequestedCategory]=useState(null);
-  const [variation,setVariation]=useState("all");
-  const [store,setStore]=useState("all");
+  const [catalog,setCatalog]=useState(load);
+  const [part,setPart]=useState("GPU");
+  const [series,setSeries]=useState("All");
+  const [model,setModel]=useState("all");
+  const [stores,setStores]=useState(()=>STORES.map(x=>x.id));
   const [condition,setCondition]=useState("any");
-  const [sort,setSort]=useState("score");
+  const [minimum,setMinimum]=useState("");
+  const [maximum,setMaximum]=useState("");
+  const [sort,setSort]=useState("best");
   const [limit,setLimit]=useState(24);
+  const [auto,setAuto]=useState(true);
+  const [speed,setSpeed]=useState(10);
+  const [busy,setBusy]=useState(false);
+  const [queued,setQueued]=useState("");
+  const [message,setMessage]=useState("");
+  const [recentProviders,setRecentProviders]=useState([]);
+  const [diagnostics,setDiagnostics]=useState(null);
   const busyRef=useRef(false);
-  const positionRef=useRef((()=>{
-    try{return Math.max(0,Number(localStorage.getItem("flipscout-catalog-position")||0))%DISCOVERY_TARGETS.length;}
-    catch{return 0;}
-  })());
   const mountedRef=useRef(true);
+  const pendingRef=useRef(null);
   const scanRef=useRef(null);
-  const parts=CORE_PC_CATEGORIES;
-  const variations=useMemo(()=>DISCOVERY_TARGETS.filter(x=>category!=="All"&&x.category===category),[category]);
-  useEffect(()=>{mountedRef.current=true;return()=>{mountedRef.current=false;}},[]);
-  useEffect(()=>{
-    try{localStorage.setItem(STORE_KEY,JSON.stringify(catalog));}catch{}
-  },[catalog]);
+  const catalogRef=useRef(catalog);
+  const partRef=useRef(part);
+  catalogRef.current=catalog;
+  partRef.current=part;
 
-  async function scanBatch(priorityCategory=null){
-    if(busyRef.current||document.visibilityState==="hidden")return;
+  useEffect(()=>{mountedRef.current=true;return()=>{mountedRef.current=false}},[]);
+  useEffect(()=>{try{localStorage.setItem(CACHE_NAME,JSON.stringify(catalog))}catch{}},[catalog]);
+
+  function targetAge(t){return Date.parse(catalogRef.current[t.id]?.checkedAt||"")||0}
+  function chooseBatch(category){
+    const options=TARGETS.filter(t=>!category||t.category===category);
+    // Always scan missing models first; then the oldest model in the selected part.
+    return [...options].sort((a,b)=>targetAge(a)-targetAge(b)).slice(0,category?FOCUSED_BATCH:CATALOG_BATCH);
+  }
+  async function runScan(category=null,deep=false){
+    if(busyRef.current){
+      pendingRef.current={category,deep};
+      if(mountedRef.current)setQueued(category||"next component batch");
+      return;
+    }
+    if(!deep&&typeof document!=="undefined"&&document.visibilityState==="hidden")return;
+    const targets=chooseBatch(category);
+    if(!targets.length)return;
     busyRef.current=true;
-    setBusy(true);
-    setError("");
-    const start=positionRef.current;
-    const unsampled=priorityCategory?DISCOVERY_TARGETS.filter(x=>x.category===priorityCategory):[];
-    const targets=priorityCategory?
-      unsampled.filter(x=>!catalog[x.id]||Date.now()-Date.parse(catalog[x.id].checkedAt)>60*60*1000).slice(0,BATCH):
-      Array.from({length:BATCH},(_,offset)=>DISCOVERY_TARGETS[(start+offset)%DISCOVERY_TARGETS.length]);
-    if(!targets.length){busyRef.current=false;setBusy(false);setRequestedCategory(null);return;}
+    setBusy(true);setMessage("");setQueued("");
     try{
       const response=await fetch("/api/parts/sniper",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
+        method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
-          targets,marketplaces:SNIPER_MARKETPLACES.map(x=>x.id),deepScan:Boolean(priorityCategory)||hourly,providerKeys
-        }),
-        signal:AbortSignal.timeout(55000)
+          targets,marketplaces:STORES.map(s=>s.id),deepScan:deep,providerKeys
+        }),signal:AbortSignal.timeout(55000)
       });
       const data=await response.json();
-      if(!response.ok)throw new Error(data.message||"Search failed");
-      if(!Array.isArray(data.results))throw new Error(data.message||"No search data was returned");
-      const checkedAt=new Date().toISOString();
+      if(!response.ok)throw Error(data.message||"Search failed");
+      if(!Array.isArray(data.results))throw Error(data.message||"Search provider returned an unexpected response");
       const updates={};
+      const time=new Date().toISOString();
       for(const group of data.results){
         updates[group.id]={
-          checkedAt,
-          results:(group.results||[]).filter(isHealthy).slice(0,12),
-          sourceCoverage:group.sourceCoverage||[],
-          errors:group.errors||[]
+          results:(group.results||[]).filter(x=>!blockedOffer(x)).slice(0,55),
+          checkedAt:group.searchedAt||time,
+          errors:group.errors||[],sourceCoverage:group.sourceCoverage||[],
+          providerReports:group.providerReports||[],funnel:group.funnel||null
         };
       }
       if(!mountedRef.current)return;
       setCatalog(prev=>({...prev,...updates}));
-      if(!priorityCategory)positionRef.current=(start+BATCH)%DISCOVERY_TARGETS.length;
-      try{localStorage.setItem("flipscout-catalog-position",String(positionRef.current));}catch{}
-      setPosition(positionRef.current);
-      setRequestedCategory(null);
-    }catch(e){
+      const reports=data.results.flatMap(group=>group.providerReports||[]);
+      setRecentProviders(reports);
+      setDiagnostics({targets:targets.length,received:reports.reduce((n,x)=>n+x.returned,0),
+        eligible:Object.values(updates).reduce((n,x)=>n+x.results.length,0)});
+      const providerErrors=data.results.flatMap(group=>group.errors||[]);
+      if(providerErrors.length){
+        const first=providerErrors[0];
+        setMessage("Some sources failed: "+first.provider+" — "+first.message+". Open Source Details below.");
+        if(providerErrors.some(e=>/429|quota|credits|limit exceeded/i.test(e.message||"")))setAuto(false);
+      }else if(!Object.values(updates).some(x=>x.results.length)){
+        setMessage("No qualifying direct listings were returned for this batch. Try another model or check Source Details.");
+      }
+    }catch(error){
       if(mountedRef.current){
-        setError(String(e?.message||"Unable to scan parts"));
-        setRequestedCategory(null);
+        setMessage("Scan error: "+(error.message||"Unknown provider error"));
         setAuto(false);
       }
     }finally{
       busyRef.current=false;
-      if(mountedRef.current)setBusy(false);
+      if(mountedRef.current){setBusy(false);setQueued("");}
+      const pending=pendingRef.current;
+      pendingRef.current=null;
+      if(pending&&mountedRef.current)Promise.resolve().then(()=>scanRef.current?.(pending.category,pending.deep));
     }
   }
-  scanRef.current=scanBatch;
-  useEffect(()=>{scanRef.current?.()},[]);
-  useEffect(()=>{
-    if(requestedCategory&&!busy)scanRef.current?.(requestedCategory);
-  },[requestedCategory,busy]);
+  scanRef.current=runScan;
+  // Start with the model group users are actually looking at, rather than
+  // spending initial requests on hundreds of unrelated queries.
+  useEffect(()=>{scanRef.current?.("GPU",false)},[]);
   useEffect(()=>{
     if(!auto)return;
-    const interval=window.setInterval(()=>{
-      if(document.visibilityState==="visible")scanRef.current?.();
-    },hourly?HOURLY_INTERVAL_MS:INTERVAL_MS);
-    return ()=>window.clearInterval(interval);
-  },[auto,hourly]);
+    const timer=window.setInterval(()=>scanRef.current?.(null,false),speed*60*1000);
+    return ()=>window.clearInterval(timer);
+  },[auto,speed]);
 
-  const checked=DISCOVERY_TARGETS.filter(x=>catalog[x.id]).length;
-  const checkedCategories=new Set(DISCOVERY_TARGETS.filter(x=>catalog[x.id]).map(x=>x.category)).size;
-  const offers=DISCOVERY_TARGETS.filter(target=>(category==="All"||target.category===category)&&(variation==="all"||target.id===variation))
-    .flatMap(target=>(catalog[target.id]?.results||[]).map(item=>({
-      ...item,category:target.category,subtype:target.query,checkedAt:catalog[target.id].checkedAt
-    })))
-    .filter(item=>(store==="all"||item.marketplace===store)&&(condition==="any"||item.condition===condition));
-  const unique=[...new Map(offers.map(item=>[item.url,item])).values()];
-  const storeCounts=Object.fromEntries(SNIPER_MARKETPLACES.map(x=>[x.id,new Set(offers.filter(item=>item.marketplace===x.id).map(item=>item.url)).size]));
-  function savingsPct(item){
-    if(item.msrp && Number(item.msrp)>0)return (item.msrp-item.totalPrice)/item.msrp*100;
-    if(item.comparedMarketMedian && Number(item.comparedMarketMedian)>0)return (item.comparedMarketMedian-item.totalPrice)/item.comparedMarketMedian*100;
-    return -999;
+  function choosePart(next){
+    setPart(next);setSeries("All");setModel("all");setLimit(24);
+    if(next!=="All")scanRef.current?.(next,false);
   }
-  // Client-only sorting: never issues another retailer/provider call.
-  unique.sort(sort==="price"?(a,b)=>a.totalPrice-b.totalPrice:
-    (a,b)=>savingsPct(b)-savingsPct(a)||a.totalPrice-b.totalPrice);
-  const newest=Object.values(catalog).map(x=>x.checkedAt).sort().at(-1);
-  const categoryTargets=DISCOVERY_TARGETS.filter(t=>category==="All"||t.category===category);
-  const categoryChecked=categoryTargets.filter(t=>catalog[t.id]).length;
-  function selectPart(part){
-    setCategory(part);setVariation("all");setLimit(24);
-    if(part!=="All"){
-      const unchecked=DISCOVERY_TARGETS.some(t=>t.category===part&&!catalog[t.id]);
-      if(unchecked){
-        setRequestedCategory(part);
-        if(!busyRef.current)scanRef.current?.(part);
-      }
+  function chooseSeries(value){
+    setSeries(value);setModel("all");setLimit(24);
+    if(value!=="All"){
+      // A series selection needs no API call to filter; the category scan
+      // remains explicit and uses existing cached offers where possible.
     }
   }
-  const totalPages=Math.ceil(DISCOVERY_TARGETS.length/BATCH);
-  const scanInterval=hourly?HOURLY_INTERVAL_MS:INTERVAL_MS;
+  const all=useMemo(()=>TARGETS.flatMap(t=>(catalog[t.id]?.results||[]).map(item=>({
+    ...item,category:t.category,subtype:t.query,discoveryId:t.id,
+    checkedAt:catalog[t.id].checkedAt
+  }))),[catalog]);
+  const currentTargets=TARGETS.filter(t=>part==="All"||t.category===part);
+  const checkedTargets=currentTargets.filter(t=>catalog[t.id]);
+  const seriesMatch=t=>part!=="GPU"||series==="All"||(
+    series==="Arc"?/\barc\b/i.test(t.query):
+      series==="RTX 50"?/\brtx\s?50/i.test(t.query):
+      series==="RTX 40"?/\brtx\s?40/i.test(t.query):
+      series==="RTX 30"?/\brtx\s?30/i.test(t.query):
+      series==="RTX 20"?/\brtx\s?20/i.test(t.query):
+      series==="RX 9000"?/\brx\s?9\d{3}/i.test(t.query):
+      series==="RX 7000"?/\brx\s?7\d{3}/i.test(t.query):
+      /\brx\s?6\d{3}/i.test(t.query)
+  );
+  const modelChoices=currentTargets.filter(seriesMatch);
+  const filtered=filterOffers(all,{
+    category:part,model,condition,minimum,maximum
+  }).filter(item=>stores.includes(item.marketplace)&&(
+    series==="All"||part!=="GPU"||seriesMatch({query:item.subtype||""})
+  ));
+  const offers=sortOffers(dedupeOffers(filtered),sort);
+  const shown=offers.slice(0,limit);
+  const coverage=STORES.map(s=>({...s,count:new Set(
+    all.filter(x=>x.marketplace===s.id&&(part==="All"||x.category===part)).map(x=>x.url)
+  ).size}));
+  const latest=Object.values(catalog).map(row=>row.checkedAt).sort().at(-1);
+  const scannedAll=TARGETS.filter(t=>catalog[t.id]).length;
+  const pageStatus=busy?"SEARCHING":auto?"AUTO WATCH ON":"PAUSED";
 
-  return <section className="discoveryBoard">
-    <div className="discoveryHeader">
-      <div>
-        <span className="eyebrow">AUTOMATIC PART DISCOVERY</span>
-        <h2>THE LIVE DEAL BOARD<span>.</span></h2>
-        <p>Browse currently discovered listings without typing a query. Price rankings only compare loaded results; no scanner can guarantee the absolute lowest offer without complete marketplace coverage.</p>
+  return <div className="fsDealLayout">
+    <aside className="fsSidebar" aria-label="PC parts and deal filters">
+      <div className="fsSidePanel">
+        <h3>⚙ PC PART GROUPS</h3>
+        <button className={"fsSidePick "+(part==="All"?"chosen":"")} onClick={()=>choosePart("All")}>All PC components</button>
+        {MODELS.map(x=><button key={x.category} className={"fsSidePick "+(part===x.category?"chosen":"")} onClick={()=>choosePart(x.category)}>
+          {x.category}<small>{x.targets.length}</small>
+        </button>)}
       </div>
-      <div className="discoveryStats">
-        <div><strong>{DISCOVERY_TARGETS.length}</strong><small>Build part variations</small></div>
-        <div><strong>{checked}</strong><small>Subtypes checked</small></div>
-        <div><strong>{unique.length}</strong><small>Matching offers</small></div>
-      </div>
-    </div>
-
-    <div className="discoveryControls">
-      <div className="discoveryStatus">
-        <span className={auto?"pulseDot active":"pulseDot"}/>
-        <div><b>{busy?"Checking live listings":auto?"Rolling scan enabled":"Rolling scan paused"}</b>
-          <small>{checkedCategories} of {SNIPER_CATEGORIES.length} categories observed · {newest?"Last update "+new Date(newest).toLocaleString():"Not scanned yet"}</small>
+      <div className="fsSidePanel">
+        <h3>PRICE RANGE</h3>
+        <div className="fsPriceInputs">
+          <label>MIN $<input type="number" min="0" value={minimum} onChange={e=>setMinimum(e.target.value)} placeholder="Any"/></label>
+          <label>MAX $<input type="number" min="0" value={maximum} onChange={e=>setMaximum(e.target.value)} placeholder="Any"/></label>
+        </div>
+        <h4>PRICING MODE</h4>
+        <div className="fsSegment">
+          <button className={sort==="price"?"chosen":""} onClick={()=>setSort("price")}>Cheapest</button>
+          <button className={sort==="best"?"chosen":""} onClick={()=>setSort("best")}>Best Deal</button>
+          <button className={sort==="newest"?"chosen":""} onClick={()=>setSort("newest")}>Newest</button>
         </div>
       </div>
-      <button className="secondary small" onClick={()=>setAuto(x=>!x)}>{auto?"Pause":"Resume"} auto-scan</button>
-      <button className="primary small" onClick={()=>scanRef.current?.()} disabled={busy}>{busy?"Scanning…":"Scan next 5 models"}</button>
-      <label className="discoveryHourlyToggle"><input type="checkbox" checked={hourly} onChange={e=>{setHourly(e.target.checked);setAuto(true)}}/> Hourly full-catalog mode</label>
-    </div>
-    <div className="discoveryProgress"><div style={{width:(100*checked/DISCOVERY_TARGETS.length)+"%"}}/></div>
-    <p className="discoveryDisclaimer">{hourly?"High-usage mode: "+DISCOVERY_TARGETS.length+" model searches per hourly cycle (potentially several provider calls per model). Next 5-model batch approximately every "+Math.ceil(scanInterval/1000)+" seconds.":"Economy mode: 5 models every 15 minutes. Enable hourly mode for a complete one-hour sweep."} Selecting a component runs a deeper retailer scan; hourly mode also searches individual retailer domains and uses substantially more paid provider credits. Scans only while this browser tab is open and visible. Sorting and filtering do not search again. Stored results expire after 72 hours and may no longer be available.</p>
-    {error&&<div className="discoveryError">{error}</div>}
+      <div className="fsSidePanel">
+        <h3>CONDITION</h3>
+        <label className="fsInputLabel">Listing condition
+          <select value={condition} onChange={e=>setCondition(e.target.value)}>
+            <option value="any">Any working condition</option>
+            <option value="new">New</option><option value="used">Used</option>
+            <option value="open-box">Open box</option><option value="refurbished">Refurbished</option>
+            <option value="renewed">Renewed</option>
+          </select>
+        </label>
+      </div>
+      <div className="fsSidePanel">
+        <h3>RETAILERS</h3>
+        {coverage.map(s=><label className="fsRetailer" key={s.id}>
+          <input type="checkbox" checked={stores.includes(s.id)} onChange={e=>
+            setStores(prev=>e.target.checked?[...prev,s.id]:prev.filter(id=>id!==s.id))}/>
+          <span>{s.name}</span><small>{s.count||"—"}</small>
+        </label>)}
+      </div>
+    </aside>
 
-
-    <div className="componentTabs"><button className={category==="All"?"active":""} onClick={()=>selectPart("All")}>All PC parts</button>{parts.map(part=><button key={part} className={category===part?"active":""} onClick={()=>selectPart(part)}>{part}</button>)}</div>
-    <div className="discoveryFilters">
-      <label>PC components<select value={category} onChange={e=>selectPart(e.target.value)}>
-        <option value="All">All PC parts ({parts.length})</option>{parts.map(part=><option key={part} value={part}>{part}</option>)}
-      </select></label>
-      <label>Model / variation<select value={variation} disabled={category==="All"} onChange={e=>{setVariation(e.target.value);setLimit(24)}}>
-        <option value="all">All variations ({variations.length})</option>{variations.map(item=><option value={item.id} key={item.id}>{item.query}</option>)}
-      </select></label>
-      <label>Store<select value={store} onChange={e=>{setStore(e.target.value);setLimit(24)}}>
-        <option value="all">All stores</option>{SNIPER_MARKETPLACES.map(x=><option value={x.id} key={x.id}>{x.name} ({storeCounts[x.id]||0})</option>)}
-      </select></label>
-      <label>Condition<select value={condition} onChange={e=>{setCondition(e.target.value);setLimit(24)}}>
-        <option value="any">Any working condition</option><option value="new">New</option><option value="used">Used</option><option value="open-box">Open box</option><option value="refurbished">Refurbished</option><option value="renewed">Renewed</option>
-      </select></label>
-      <label>Sort loaded deals<select value={sort} onChange={e=>setSort(e.target.value)}>
-        <option value="score">Best savings first</option><option value="price">Lowest total price</option>
-      </select></label>
-    </div>
-    <p className="discoverySortingNote">Sorting, part and variation filters only rearrange offers already loaded; only scan controls contact live providers.</p>
-    <div className="discoveryCoverage">{SNIPER_MARKETPLACES.map(x=><span key={x.id} className={storeCounts[x.id]?"hasOffers":"noOffers"}>{x.name} <b>{storeCounts[x.id]||"—"}</b></span>)}</div>
-
-    {!unique.length?<div className="discoveryEmpty">{requestedCategory===category?"Searching "+category+" offers now…":categoryChecked===0?"This component has not finished a scan. Select the component to search it now, or let the rolling catalog reach it.":"No qualifying listings have been returned for the selected part and filters. This does not mean no offers exist."}</div>:
-      <div className="discoveryGrid">{unique.slice(0,limit).map(item=><article className="discoveryCard" key={item.url}>
-        <div className="discoveryCardTop">
-          <span>{storeNames.get(item.marketplace)||item.source}</span>
-          <span className="discoveryCondition">{item.condition||"Condition unknown"}</span>
+    <section className="fsDealMain">
+      <div className="fsCategoryStrip">
+        {QUICK.map(([cat,title])=><button key={cat} className={part===cat?"chosen":""} onClick={()=>choosePart(cat)}>{title}</button>)}
+      </div>
+      <header className="fsDealTitle">
+        <div><span className="fsEyebrow">FLIPSCOUT / LIVE PC COMPONENTS</span>
+          <h1>{part==="All"?"FIND YOUR NEXT BUILD DEAL":part==="GPU"?"GPU PRICE TRACKER":part.toUpperCase()+" DEAL TRACKER"}</h1>
+          <p>Real retailer offers · New, used and refurbished · Sorted from loaded results, not a new search</p>
         </div>
-        <div className="discoveryCardImage">
-          {item.imageUrl?<img src={item.imageUrl} alt={item.title||"PC component"} loading="lazy" referrerPolicy="no-referrer"/>:<span className="discoveryImagePlaceholder">PC PART</span>}
-        </div>
-        <h3>{item.title}</h3>
-        <p className="discoverySubtype">{item.category} / {item.subtype}</p>
-        <div className="discoveryPrice">{dollars(item.totalPrice)}
-          <small>{item.shippingKnown?"Total including known shipping":"Shipping unconfirmed — final total may be higher"}</small>
-        </div>
-        <div className="discoverySavings">
-          {item.msrp?<><strong className={item.percentVsMsrp>=0?"discountPositive":"discountNegative"}>{Math.abs(item.percentVsMsrp)}% {item.percentVsMsrp>=0?"below":"above"} launch MSRP</strong><span>Reference MSRP: {dollars(item.msrp)}</span></>:
-            <><strong>MSRP not verified</strong><span>Reference price unavailable for this exact model</span></>}
-          {item.comparedMarketMedian>0&&<span>{item.percentVsMarket>=0?item.percentVsMarket+"% below":Math.abs(item.percentVsMarket)+"% above"} current sampled market · median {dollars(item.comparedMarketMedian)}</span>}
-        </div>
-        <div className="discoveryDetails"><span>{item.evidenceSampleSize||0} price comparisons</span><span>Checked {new Date(item.checkedAt).toLocaleTimeString()}</span></div>
-        {item.riskFlags?.length>0&&<div className="discoveryRisk">{item.riskFlags[0]}</div>}
-        {item.msrpSource&&<a className="discoveryMsrpSource" href={item.msrpSource} target="_blank" rel="noopener noreferrer">Reference MSRP source ↗</a>}
-        <a className="discoveryBuyLink" href={item.url} target="_blank" rel="noopener noreferrer">VIEW AT {String(storeNames.get(item.marketplace)||item.source||"STORE").toUpperCase()} ↗</a>
-      </article>)}</div>}
-    {limit<unique.length&&<button className="secondary discoveryMore" onClick={()=>setLimit(l=>l+24)}>Show more deals ({unique.length-limit} remaining)</button>}
-  </section>;
+        <div className="fsHeaderStat"><strong>{offers.length}</strong><small>DISPLAYED DEALS</small></div>
+      </header>
+      {part==="GPU"&&<nav className="fsSeriesNav" aria-label="GPU series">{GPU_SERIES.map(([id,name])=>
+        <button key={id} onClick={()=>chooseSeries(id)} className={series===id?"chosen":""}>{name}</button>
+      )}</nav>}
+      <div className="fsScanControls">
+        <div className="fsScanLive"><span className={"fsPulse "+(auto?"enabled":"")}></span>
+          <div><b>{pageStatus}</b><small>{scannedAll}/{TARGETS.length} model searches checked · Last {timestamp(latest)}</small></div></div>
+        <button className="fsSmallButton" onClick={()=>setAuto(a=>!a)}>{auto?"PAUSE":"RESUME"}</button>
+        <select aria-label="Automatic refresh interval" value={speed} onChange={e=>setSpeed(Number(e.target.value))}>
+          <option value={10}>Auto: 10 min</option><option value={5}>Auto: 5 min (high usage)</option>
+          <option value={30}>Auto: 30 min</option>
+        </select>
+        <button className="fsScanButton" disabled={busy} onClick={()=>scanRef.current?.(part==="All"?null:part,true)}>
+          {busy?"SCANNING…":part==="All"?"SCAN NEXT MODELS":"DEEP SCAN "+part}
+        </button>
+      </div>
+      <div className="fsSubfilters">
+        <label>MODEL / VARIATION
+          <select value={model} onChange={e=>setModel(e.target.value)}>
+            <option value="all">All {part==="GPU"&&series!=="All"?series+" ":""}models ({modelChoices.length})</option>
+            {modelChoices.map(m=><option value={m.id} key={m.id}>{m.query}</option>)}
+          </select>
+        </label>
+        <label>SORT LOADED DEALS
+          <select value={sort} onChange={e=>setSort(e.target.value)}>
+            <option value="best">Best deal / biggest savings</option>
+            <option value="price">Lowest total price</option>
+            <option value="newest">Newest scanned first</option>
+          </select>
+        </label>
+        <div className="fsLoadedCount">{currentTargets.filter(t=>catalog[t.id]).length}/{currentTargets.length} model searches checked</div>
+      </div>
+      {message&&<div className="fsMarketWarning" role="status">{message}</div>}
+      {queued&&<div className="fsMarketWarning">Queued: {queued}. The current scan must finish first.</div>}
+      <p className="fsMarketNote">Auto-watch checks a small rotating batch while this browser tab is open. Five-minute mode consumes more provider credits. Filtering and sorting do not make a search request. Store counts show usable direct offers, not guaranteed inventory.</p>
+      {shown.length?
+        <div className="fsProducts">{shown.map(item=><ItemCard key={item.url} item={item}/>)}</div>:
+        <div className="fsNoDeals">
+          <h3>{busy?"Looking for genuine listings…":"No matching listings loaded yet"}</h3>
+          <p>{part!=="All"?
+            "Try DEEP SCAN "+part+" to search this component now. If none appear, check Source Details below for marketplace errors or link filtering.":
+            "A rolling scan starts with core components and fills this board over time."}</p>
+          <button className="fsScanButton" disabled={busy} onClick={()=>scanRef.current?.(part==="All"?null:part,true)}>SEARCH {part==="All"?"MORE COMPONENTS":part+" NOW"}</button>
+        </div>}
+      {limit<offers.length&&<button className="fsShowMore" onClick={()=>setLimit(v=>v+24)}>SHOW MORE ({offers.length-limit} REMAINING) ↓</button>}
+      <details className="fsSourceDetails">
+        <summary>SOURCE DETAILS & DIAGNOSTICS</summary>
+        <p>Last scan: {diagnostics?diagnostics.targets+" model(s), "+diagnostics.received+" raw candidates and "+diagnostics.eligible+" saved offers":"No scan completed yet"}. Results may be rejected for missing direct retailer URLs, incomplete price data, wrong model, or broken condition.</p>
+        {recentProviders.length?recentProviders.map((p,i)=><div key={i} className="fsProviderRow">
+          <b>{p.provider}</b><span>{p.status} · {p.returned} candidates</span>
+          {p.message&&<small>{p.message}</small>}</div>):<p>Run a scan for provider-specific results.</p>}
+      </details>
+    </section>
+  </div>;
 }

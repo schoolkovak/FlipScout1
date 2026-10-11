@@ -172,7 +172,17 @@ export function relevanceScore(title, query, category) {
   if(["gpu","cpu"].includes(cat)){
     const expected=resolveCatalogPart(cat,query);
     const identified=parseListingText(title)[cat];
-    if(expected.item && identified!==expected.canonical)return 0;
+    // A seller often appends VRAM or core counts to a valid model name.
+    // The full build parser treats those suffixes as non-exact, but that
+    // must not discard the actual listing if the unambiguous model matches.
+    if(expected.item){
+      if(identified && identified!==expected.canonical)return 0;
+      if(!identified){
+        const modelKey=normalizeText(expected.canonical).replace(/\s+/g,"");
+        const titleKey=t.replace(/\s+/g,"");
+        if(!titleKey.includes(modelKey))return 0;
+      }
+    }
     const model=String(query).match(/\b(?:\d{3,5}[a-z]*|[ab]\d{3})\b/i)?.[0];
     if(model && !t.replace(/\s+/g,"").includes(model.toLowerCase()))return 0;
     if(/\b(laptop|notebook|mobile|waterblock|water block|replacement fan|empty box|box only|riser|adapter|for parts|parts only|not working|broken|untested|repair|as is|gaming pc|desktop pc|prebuilt|bundle|motherboard combo)\b/.test(t))return 0;
@@ -405,7 +415,7 @@ export async function searchSearchApiBestBuy(input) {
   if(!data) return [];
   const out=[];
   for(const [index,x] of (data.organic_results||[]).entries()){
-    const itemPrice=Number(x.extracted_price||0);
+    const itemPrice=Number(x.extracted_price||parseMoney(x.price)||0);
     if(itemPrice>0 && (condition==="any"||condition==="new")){
       out.push({
         id:"searchapi-bestbuy-new-"+(x.product_id||index),
@@ -419,6 +429,7 @@ export async function searchSearchApiBestBuy(input) {
         totalPrice:itemPrice,
         seller:x.seller?.name||"Best Buy",
         url:x.link||null,
+        imageUrl:safeImage(x.thumbnail||x.image),
         freshness:null,
         relevance:relevanceScore(x.title,query,category)
       });
@@ -439,6 +450,7 @@ export async function searchSearchApiBestBuy(input) {
           totalPrice:openPrice,
           seller:"Best Buy",
           url:offer.link||x.link||null,
+          imageUrl:safeImage(x.thumbnail||x.image),
           freshness:null,
           relevance:relevanceScore(x.title,query,category)
         });
@@ -454,7 +466,7 @@ export async function searchSearchApiWalmart(input) {
   const data=await searchSearchApiEngine("walmart_search",query,{sort_by:"best_match"},providerKeys);
   if(!data) return [];
   return (data.organic_results||[]).map((x,index)=>{
-    const itemPrice=Number(x.extracted_price||0);
+    const itemPrice=Number(x.extracted_price||parseMoney(x.price)||0);
     const shippingKnown=Boolean(x.is_free_shipping);
     return {
       id:"searchapi-walmart-"+(x.id||index),
@@ -468,6 +480,7 @@ export async function searchSearchApiWalmart(input) {
       totalPrice:itemPrice,
       seller:x.seller_name||"Walmart",
       url:x.link||null,
+      imageUrl:safeImage(x.thumbnail||x.image),
       freshness:null,
       relevance:relevanceScore(x.title,query,category)
     };
@@ -562,7 +575,7 @@ export async function searchSerperMarketplaces(input){
       shippingKnown:ship.shippingKnown,
       totalPrice:(itemPrice||0)+ship.shipping,
       seller:x.source||marketplaceName(marketplace),
-      url:merchantLink(marketplace,x.link,x.product_link,x.merchant_link),
+      url:merchantLink(marketplace,x.link,x.product_link,x.merchant_link,x.productUrl,x.offer_link,x.destination),
       imageUrl:safeImage(x.thumbnail||x.image||x.serpapi_thumbnail),
       freshness:null,
       relevance:relevanceScore(x.title,query,category)
@@ -579,7 +592,7 @@ export async function searchSearchApiShopping(input){
   return (data?.shopping_results||[]).map((x,index)=>{
     const merchant=x.seller||x.source||"";
     // Google sometimes provides a product-page URL rather than a store checkout URL.
-    const url=merchantLink(marketplaceIdFromResult(merchant,x.domain||x.link||x.product_link),x.link,x.product_link,x.merchant_link,x.offer_link);
+    const url=merchantLink(marketplaceIdFromResult(merchant,x.domain||x.link||x.product_link),x.link,x.product_link,x.merchant_link,x.offer_link,x.productUrl,x.destination);
     const store=marketplaceIdFromResult(merchant,x.domain||url);
     const itemPrice=Number(x.extracted_price||parseMoney(x.price)||0);
     const ship=parseShippingFromSerp({delivery:x.delivery});
@@ -623,6 +636,7 @@ export async function searchSearchApiAmazon(input){
       totalPrice:itemPrice+ship.shipping,
       seller:"Amazon",
       url:x.link||null,
+      imageUrl:safeImage(x.thumbnail||x.image),
       rating:Number(x.rating||0)||null,
       reviews:Number(x.reviews||0)||null,
       freshness:null,
@@ -636,18 +650,24 @@ function structuredGooglePrice(x){
     x.extracted_price,
     x.rich_snippet?.top?.detected_extensions?.price,
     x.rich_snippet?.bottom?.detected_extensions?.price,
-    x.detected_extensions?.price
+    x.detected_extensions?.price,
+    x.price,
+    x.price_information?.price
   ];
   for(const value of candidates){
     const n=typeof value==="number"?value:parseMoney(value);
     if(Number.isFinite(n)&&n>0)return n;
   }
-  return null;
+  // A dollar-denominated snippet price is useful evidence, but never mistake
+  // a wattage, quantity, or review count for a price.
+  const snippet=String(x.snippet||"");
+  const match=snippet.match(/\$\s*([0-9]{1,5}(?:,[0-9]{3})*(?:\.[0-9]{2})?)/);
+  return match?Number(match[1].replace(/,/g,"")):null;
 }
 
 export async function searchSearchApiSiteMarketplace(input,marketplace){
   const {query,category,condition,providerKeys={}}=input;
-  const domains={newegg:"newegg.com",mercari:"mercari.com",bestbuy:"bestbuy.com",walmart:"walmart.com",aliexpress:"aliexpress.us",bhphoto:"bhphotovideo.com",adorama:"adorama.com",microcenter:"microcenter.com"};
+  const domains={newegg:"newegg.com",mercari:"mercari.com",bestbuy:"bestbuy.com",walmart:"walmart.com",aliexpress:"aliexpress.com",bhphoto:"bhphotovideo.com",adorama:"adorama.com",microcenter:"microcenter.com"};
   const domain=domains[marketplace]||null;
   if(!domain)return [];
   const q=["site:"+domain,conditionSearchTerm(condition),query].filter(Boolean).join(" ");
@@ -673,6 +693,7 @@ export async function searchSearchApiSiteMarketplace(input,marketplace){
       totalPrice:itemPrice||0,
       seller:marketplaceName(marketplace),
       url:x.link||null,
+      imageUrl:safeImage(x.thumbnail||x.image),
       freshness:x.date||null,
       relevance:relevanceScore(x.title,query,category)
     };
@@ -819,6 +840,7 @@ export async function searchEbay({query,category,condition}) {
       totalPrice:itemPrice+shipping,
       seller:x.seller?.username||"eBay seller",
       url:x.itemWebUrl||null,
+      imageUrl:safeImage(x.image?.imageUrl||x.thumbnailImages?.[0]?.imageUrl),
       freshness:x.itemCreationDate||null,
       relevance:relevanceScore(x.title,query,category)
     };
@@ -1116,7 +1138,7 @@ export async function liveSearch(input){
 
 export async function searchPartsSniper(input){
   const selected=[...new Set((input.marketplaces||["amazon","bestbuy","walmart","newegg","ebay","aliexpress","mercari"]).filter(Boolean))];
-  const key="sniper|"+cacheKey({...input,marketplaces:selected});
+  const key="sniper|"+selected.slice().sort().join(",")+"|"+cacheKey(input);
   const hit=searchCache.get(key);
   if(hit && Date.now()-hit.savedAt<hit.ttl)return {...hit.value,cached:true};
 
@@ -1135,7 +1157,6 @@ export async function searchPartsSniper(input){
     // Deep scans also inspect eBay's Best Match and newest listings, which do not
     // necessarily overlap with the cheapest-delivered results.
     if(input.deepScan){
-      providers.push(["eBay best match",async()=> (await searchSearchApiEbay({...input,ebaySort:"best_match"})).map(x=>({...x,marketplace:"ebay",provider:"SearchAPI eBay relevance"}))]);
       providers.push(["eBay newly listed",async()=> (await searchSearchApiEbay({...input,ebaySort:"time_newly_listed"})).map(x=>({...x,marketplace:"ebay",provider:"SearchAPI eBay newest"}))]);
     }
   }
@@ -1147,13 +1168,19 @@ export async function searchPartsSniper(input){
   if(hasSearchApi&&selected.includes("bestbuy"))providers.push(["Best Buy",()=>searchSearchApiBestBuy(input)]);
   if(hasSearchApi&&selected.includes("walmart"))providers.push(["Walmart",()=>searchSearchApiWalmart(input)]);
 
-  // Deep Scan checks each selected retailer independently when SearchAPI is configured.
-  // Default browsing uses the broad shopping feed without extra calls.
-  if(input.deepScan && hasSearchApi){
-    const priority=["mercari","newegg","aliexpress"];
-    const selectedTargets=priority.filter(id=>selected.includes(id));
-    for(const marketplace of selectedTargets){
-      providers.push([marketplaceName(marketplace),()=>searchSearchApiSiteMarketplace(input,marketplace)]);
+  // Dedicated retailer-domain discovery only for deliberate deep scans.
+  // Use SearchAPI when configured; otherwise reuse Serper shopping with a
+  // strict merchant domain check to avoid displaying unrelated retailers.
+  if(input.deepScan){
+    const domains={newegg:"newegg.com",aliexpress:"aliexpress.com",mercari:"mercari.com"};
+    for(const id of ["newegg","aliexpress","mercari"].filter(x=>selected.includes(x))){
+      if(hasSearchApi){
+        providers.push([marketplaceName(id),()=>searchSearchApiSiteMarketplace(input,id)]);
+      }else if(hasSerper){
+        providers.push([marketplaceName(id)+" shopping",()=>searchSerperMarketplaces({
+          ...input,query:"site:"+domains[id]+" "+input.query,marketplaces:[id]
+        })]);
+      }
     }
   }
 
@@ -1162,6 +1189,9 @@ export async function searchPartsSniper(input){
     catch(error){return {name,error:error.name==="TimeoutError"?"Provider timed out":String(error.message||error).replace(/https?:\/\/\S+/g,"[provider]")};}
   }));
   const errors=settled.filter(x=>x.error).map(x=>({provider:x.name,message:x.error}));
+  const providerReports=settled.map(x=>({provider:x.name,returned:x.items?.length||0,
+    status:x.error?"error":x.items?.length?"results":"empty",message:x.error||null}));
+  const rawCount=settled.reduce((sum,x)=>sum+(x.items?.length||0),0);
   const items=dedupe(settled.flatMap(x=>x.items||[]))
     .filter(x=>selected.includes(x.marketplace||marketplaceIdFromResult(x.seller,x.url)))
     .map(x=>{
@@ -1186,11 +1216,16 @@ export async function searchPartsSniper(input){
   const counts=Object.fromEntries(selected.map(id=>[id,0]));
   for(const item of ranked)if(item.marketplace in counts)counts[item.marketplace]++;
   const sourceCoverage=selected.map(id=>({
-    id,name:marketplaceName(id),count:counts[id],status:counts[id]?"Results found":errors.some(x=>x.provider===marketplaceName(id))?"Store search failed":providers.length?"No matching listings returned":"No search provider configured",
-    searched:providers.some(([name])=>name==="Retail marketplace search"||name==="Shopping merchants"||name===marketplaceName(id)||name===id||(name==="eBay"&&id==="ebay")),
-    errors:errors.filter(x=>x.provider===marketplaceName(id))
+    id,name:marketplaceName(id),count:counts[id],
+    status:counts[id]?"Usable listings found":
+      errors.some(x=>x.provider.toLowerCase().includes(id)||x.provider.startsWith(marketplaceName(id)))?"Provider returned an error":
+      providers.length?"No priced direct listings found":"No search provider configured",
+    searched:providers.some(([name])=>name==="Retail marketplace search"||name==="Shopping merchants"||name.toLowerCase().includes(id)||name.startsWith(marketplaceName(id))),
+    errors:errors.filter(x=>x.provider.toLowerCase().includes(id)||x.provider.startsWith(marketplaceName(id)))
   }));
-  const value={items,market,ranked,sourceCoverage,errors,observedAt:new Date().toISOString(),stale:false,cached:false};
+  const value={items,market,ranked,sourceCoverage,errors,providerReports,
+    funnel:{raw:rawCount,eligible:items.length,ranked:ranked.length},
+    observedAt:new Date().toISOString(),stale:false,cached:false};
   searchCache.set(key,{savedAt:Date.now(),ttl:errors.length?30000:CACHE_MS,value});
   return value;
 }
