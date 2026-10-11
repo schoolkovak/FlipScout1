@@ -517,6 +517,21 @@ function merchantLink(marketplace,...candidates){
   }
   return null;
 }
+function realShoppingLink(...candidates){
+  for(const value of candidates){
+    try{
+      const url=new URL(value);
+      if(url.protocol==="https:" && (
+        url.hostname==="www.google.com"||url.hostname==="google.com"
+      ) && /^\/shopping\/(?:product|.*item)/.test(url.pathname))return url.href;
+    }catch{}
+  }
+  return null;
+}
+function resolveOfferLink(marketplace,...candidates){
+  const direct=merchantLink(marketplace,...candidates);
+  return {url:direct||realShoppingLink(...candidates),linkType:direct?"direct":"shopping"};
+}
 function safeImage(value){
   try{const u=new URL(String(value||""));return u.protocol==="https:"?u.href:null;}catch{return null;}
 }
@@ -576,6 +591,7 @@ export async function searchSerperMarketplaces(input){
     let normalized=normalizeCondition((x.title||"")+" "+(x.condition||""));
     let conditionAssumed=false;
     if(normalized==="unknown" && condition!=="any"){normalized=condition;conditionAssumed=true;}
+    const offer=resolveOfferLink(marketplace,x.link,x.product_link,x.merchant_link,x.productUrl,x.offer_link,x.destination);
     return {
       id:"serper-market-"+(x.productId||index)+"-"+itemPrice,
       source:marketplaceName(marketplace),
@@ -590,7 +606,7 @@ export async function searchSerperMarketplaces(input){
       shippingKnown:ship.shippingKnown,
       totalPrice:(itemPrice||0)+ship.shipping,
       seller:x.source||marketplaceName(marketplace),
-      url:merchantLink(marketplace,x.link,x.product_link,x.merchant_link,x.productUrl,x.offer_link,x.destination),
+      url:offer.url,linkType:offer.linkType,
       imageUrl:safeImage(x.thumbnail||x.image||x.serpapi_thumbnail),
       freshness:null,
       relevance:relevanceScore(x.title,query,category)
@@ -607,7 +623,9 @@ export async function searchSearchApiShopping(input){
   return (data?.shopping_results||[]).map((x,index)=>{
     const merchant=x.seller||x.source||"";
     // Google sometimes provides a product-page URL rather than a store checkout URL.
-    const url=merchantLink(marketplaceIdFromResult(merchant,x.domain||x.link||x.product_link),x.link,x.product_link,x.merchant_link,x.offer_link,x.productUrl,x.destination);
+    const marketplace=marketplaceIdFromResult(merchant,x.domain||x.link||x.product_link);
+    const offer=resolveOfferLink(marketplace,x.link,x.product_link,x.merchant_link,x.offer_link,x.productUrl,x.destination);
+    const url=offer.url;
     const store=marketplaceIdFromResult(merchant,x.domain||url);
     const itemPrice=Number(x.extracted_price||parseMoney(x.price)||0);
     const ship=parseShippingFromSerp({delivery:x.delivery});
@@ -620,7 +638,7 @@ export async function searchSearchApiShopping(input){
       condition:conditionAssumed?condition:normalized,conditionAssumed,
       itemPrice,shipping:ship.shipping,shippingKnown:ship.shippingKnown,
       totalPrice:itemPrice+ship.shipping,seller:merchant||marketplaceName(store),
-      url,imageUrl:safeImage(x.thumbnail||x.image),freshness:null,relevance:relevanceScore(x.title,query,category)
+      url,linkType:offer.linkType,imageUrl:safeImage(x.thumbnail||x.image),freshness:null,relevance:relevanceScore(x.title,query,category)
     };
   }).filter(x=>x.marketplace&&selected.has(x.marketplace)&&x.itemPrice>0&&conditionMatches(x.condition,condition));
 }
@@ -1217,10 +1235,14 @@ export async function searchPartsSniper(input){
     .map(x=>{
       const marketplace=x.marketplace||marketplaceIdFromResult(x.seller,x.url);
       const extraRisks=[];
+      if(x.linkType==="shopping")extraRisks.push("Opens a Google Shopping product page, not a verified direct checkout. Check the seller and current price.");
       if(x.conditionAssumed)extraRisks.push("Condition inferred from the requested filter; verify the listing.");
       return {...x,marketplace,category:input.category,source:marketplaceName(marketplace),url:safeUrl(x.url),sniperRiskFlags:extraRisks};
     })
-    .filter(x=>x.relevance>=.72 && Number.isFinite(x.totalPrice) && x.totalPrice>0 && correctMarketplaceUrl(x.marketplace,x.url) && !unsafeHardwareListing(x.title,input.category));
+    .filter(x=>x.relevance>=.72 && Number.isFinite(x.totalPrice) && x.totalPrice>0 &&
+      (correctMarketplaceUrl(x.marketplace,x.url) ||
+       (x.linkType==="shopping"&&Boolean(realShoppingLink(x.url)))) &&
+      !unsafeHardwareListing(x.title,input.category));
 
   const market=buildMarket(items);
   const ranked=rankDeals(items,market,input).map(x=>{
