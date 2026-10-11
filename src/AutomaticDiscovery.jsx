@@ -39,7 +39,7 @@ function load(){
 function blockedOffer(item){
   return !item?.url?.startsWith("https://")||!Number.isFinite(offerTotal(item));
 }
-function ItemCard({item}){
+export function ItemCard({item}){
   const [details,setDetails]=useState(false);
   const reference=offerReference(item);
   const saved=savingsPercent(item);
