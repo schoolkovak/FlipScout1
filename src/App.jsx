@@ -513,8 +513,9 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
   const [query,setQuery]=useState("RTX 5070");
   const [condition,setCondition]=useState("any");
   const [partBudget,setPartBudget]=useState(600);
+  const [minPartPrice,setMinPartPrice]=useState(0);
     const [sortBy,setSortBy]=useState("best");
-  const [deepScan,setDeepScan]=useState(false);
+  const [deepScan,setDeepScan]=useState(true);
   const [page,setPage]=useState(0);
   const [merchantFilter,setMerchantFilter]=useState("all");
   const [loading,setLoading]=useState(false);
@@ -522,7 +523,11 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
   const [trend,setTrend]=useState(null);
   const [watched,setWatched]=useState(()=>getWatchlist());
   const merchants=[...new Set((data?.results||[]).map(x=>x.source).filter(Boolean))].sort();
-  const visible=(data?.results||[]).filter(x=>merchantFilter==="all"||x.source===merchantFilter);
+  const visible=(data?.results||[]).filter(x=>merchantFilter==="all"||x.source===merchantFilter).slice().sort(
+    sortBy==="lowest"?(a,b)=>a.totalPrice-b.totalPrice:
+    sortBy==="under"?(a,b)=>b.percentVsMarket-a.percentVsMarket:
+    (a,b)=>b.score-a.score||a.totalPrice-b.totalPrice
+  );
   const pageCount=Math.max(1,Math.ceil(visible.length/12));
 
   function changeCategory(value){
@@ -533,7 +538,7 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
     track("scan_parts",{category,condition,deepScan});
     setLoading(true);setData(null);setPage(0);setMerchantFilter("all");
     try{
-      const r=await fetch("/api/deals/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({category,query,condition,partBudget,sortBy,deepScan,providerKeys}),signal:AbortSignal.timeout(40000)});
+      const r=await fetch("/api/deals/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({category,query,condition,partBudget,minPartPrice,sortBy,deepScan,providerKeys}),signal:AbortSignal.timeout(40000)});
       const d=await r.json();
       setData(d);
       if(d.available)setTrend(saveMarketSnapshot({category,query,condition},d.market));
@@ -551,7 +556,7 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
   }
   function saveThisSearch(){
     track("save_search",{category,condition,deepScan});
-    saveSearch({category,query,condition,partBudget,sortBy,deepScan});
+    saveSearch({category,query,condition,partBudget,minPartPrice,sortBy,deepScan});
     onSearchSaved?.();
   }
 
@@ -562,8 +567,9 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
         <label>Part type<select value={category} onChange={e=>changeCategory(e.target.value)}>{SCANNER_CATEGORIES.map(x=><option key={x.name}>{x.name}</option>)}</select></label>
         <label>Part / requirement<input value={query} onChange={e=>setQuery(e.target.value)}/></label>
         <label>Condition<select value={condition} onChange={e=>setCondition(e.target.value)}>{SNIPER_CONDITIONS.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}</select></label>
-        <label>Max part budget<input type="number" value={partBudget} onChange={e=>setPartBudget(e.target.value)}/></label>
-                <label>Rank by<select value={sortBy} onChange={e=>setSortBy(e.target.value)}><option value="best">Best Deal</option><option value="lowest">Lowest Price</option><option value="under">Most Under Market</option><option value="flip">Best for Flip</option></select></label>
+        <label>Minimum part price<input type="number" min="0" value={minPartPrice} onChange={e=>setMinPartPrice(e.target.value)}/></label>
+         <label>Maximum part price<input type="number" min="0" value={partBudget} onChange={e=>setPartBudget(e.target.value)}/></label>
+                <label>Rank by<select value={sortBy} onChange={e=>setSortBy(e.target.value)}><option value="best">Best Deal</option><option value="lowest">Lowest Total Price</option><option value="under">Most Under Market</option><option value="flip">Best for Flip</option></select></label>
       </div>
       <label className="toggleLine"><input type="checkbox" checked={deepScan} onChange={e=>setDeepScan(e.target.checked)}/><span><b>Deep multi-source scan</b><small>Uses additional direct retailer/marketplace sources when configured.</small></span></label>
       <div className="rowActions"><button className="primary large" onClick={scan} disabled={loading}>{loading?<><RefreshCw className="spin" size={18}/>Scanning market...</>:<><Search size={18}/>Find live deals</>}</button><button className="secondary" onClick={saveThisSearch}><Bookmark size={16}/>Save search</button></div>
@@ -580,10 +586,14 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
         <div><span>Relevant comps</span><strong>{data.market.sampleSize}</strong><small>{data.market.rawSampleSize} raw listings checked · {Object.keys(data.market.bySource||{}).length} source{Object.keys(data.market.bySource||{}).length===1?"":"s"}</small></div>
         <div><span>Confidence</span><strong>{data.market.confidence}</strong><small>{data.market.shippingKnownPct}% with known shipping</small></div>
       </div>
-      <div className="resultToolbar"><b>{visible.length} listings · ranked by {sortBy==="best"?"best overall value":sortBy==="under"?"discount versus market":sortBy==="lowest"?"lowest listed cost":"resale potential"}</b><label>Store<select value={merchantFilter} onChange={e=>{setMerchantFilter(e.target.value);setPage(0);}}><option value="all">All stores</option>{merchants.map(name=><option key={name} value={name}>{name}</option>)}</select></label></div>
+      <div className="resultToolbar"><b>{visible.length} loaded listings · sorted locally by {sortBy==="best"?"best overall value":sortBy==="under"?"discount versus market":sortBy==="lowest"?"lowest listed cost":"resale potential"}</b><label>Store<select value={merchantFilter} onChange={e=>{setMerchantFilter(e.target.value);setPage(0);}}><option value="all">All stores</option>{merchants.map(name=><option key={name} value={name}>{name}</option>)}</select></label></div>
+      {!!data.sourceCoverage?.length&&<div className="discoveryCoverage">{data.sourceCoverage.map(source=><span key={source.id} className={source.count?"hasOffers":"noOffers"} title={source.status}>{source.name} <b>{source.count||"—"}</b></span>)}</div>}
       <div className="dealList">{visible.slice(page*12,(page+1)*12).map((x,i)=><article className="dealCard" key={x.id||i}>
-        <div className="dealTop"><div><div className="dealBadges"><span className="source">{x.source}</span>{x.soldCount>0&&<span className="soldChip">{x.soldCount}+ sold</span>}</div><h3>{x.title}</h3></div><div className="dealScore"><b>{x.score}</b><small>cap {x.scoreCap||100}</small></div></div>
-        <div className="dealPriceRow"><strong>{x.shippingKnown?money(x.totalPrice):money(x.itemPrice)}</strong><span>{x.shippingKnown?"delivered":"shipping unknown"}</span></div>
+        <div className="dealTop"><div><div className="dealBadges"><span className="source">{x.source}</span>{x.soldCount>0&&<span className="soldChip">{x.soldCount}+ sold</span>}</div><h3>{x.title}</h3></div></div>
+        {x.imageUrl&&<div className="scannerProductPhoto"><img src={x.imageUrl} alt={x.title} loading="lazy" referrerPolicy="no-referrer"/></div>}
+        <div className="dealPriceRow"><strong>{x.shippingKnown?money(x.totalPrice):money(x.itemPrice)}</strong><span>{x.shippingKnown?"delivered":"shipping unconfirmed"}</span></div>
+        <div className="scannerSavings">{x.msrp?<><strong className={x.percentVsMsrp>=0?"goodText":"badText"}>{Math.abs(x.percentVsMsrp)}% {x.percentVsMsrp>=0?"below":"above"} reference launch MSRP</strong><small>Reference: {money(x.msrp)}</small></>:<small>Verified MSRP unavailable</small>}
+        {x.comparedMarketMedian>0&&<span>Observed market median {money(x.comparedMarketMedian)} · {Math.abs(x.percentVsMarket)}% {x.percentVsMarket>=0?"below":"above"} market</span>}</div>
         <div className="dealMeta"><span>{x.condition} · {x.seller}</span><span className={x.percentVsMarket>=10?"goodText":x.percentVsMarket<0?"badText":""}>{x.percentVsMarket>=0?x.percentVsMarket+"% under market":Math.abs(x.percentVsMarket)+"% over market"}</span><span>{x.withinPartBudget?(x.shippingKnown?"Fits part budget":"Check shipping for budget"):"Over part budget"}</span></div>
         {x.riskFlags?.length>0&&<div className="dealRisks">{x.riskFlags.slice(0,3).map((risk,j)=><span key={j}><AlertTriangle size={12}/>{risk}</span>)}</div>}
         <div className="dealActions">{x.url&&<a className="listingLink" href={x.url} target="_blank" rel="noreferrer">Open listing <ExternalLink size={14}/></a>}<button className="watchButton" onClick={()=>toggle(x)}>{watchedNow(x)?<BookmarkCheck size={16}/>:<Bookmark size={16}/>} {watchedNow(x)?"Watching":"Watch"}</button></div>
@@ -603,7 +613,7 @@ function PartsSniper({providerKeys,onWatchChange}){
   const [targets,setTargets]=useState(()=>[
     {id:"target-1",category:"GPU",query:"RTX 5070",condition:"used",maxPrice:550,buildBudget:1000,committed:300}
   ]);
-  const [marketplaces,setMarketplaces]=useState(["amazon","bestbuy","walmart","newegg","ebay","aliexpress","bhphoto","adorama","microcenter","mercari"]);
+  const [marketplaces,setMarketplaces]=useState(["amazon","bestbuy","walmart","newegg","ebay","aliexpress","mercari"]);
   const [deepScan,setDeepScan]=useState(false);
   const [pages,setPages]=useState({});
   const [storeFilters,setStoreFilters]=useState({});
@@ -699,7 +709,7 @@ function PartsSniper({providerKeys,onWatchChange}){
   return <div className="pageStack">
     <section className="sniperHero">
       <div><span className="eyebrow">PC PARTS / LIVE MARKET INTELLIGENCE</span><h2>BETTER PARTS.<br/>BETTER PRICES.</h2><p>Real new, open-box, refurbished and used hardware. Filter out obvious junk. Rank deals by actual value, evidence and total cost.</p></div>
-      <div className="sniperHeroStats"><div><b>38</b><span>part categories</span></div><div><b>10</b><span>retailers & marketplaces</span></div><div><b>5</b><span>targets per manual scan</span></div></div>
+      <div className="sniperHeroStats"><div><b>38</b><span>part categories</span></div><div><b>7</b><span>retailers & marketplaces</span></div><div><b>5</b><span>targets per manual scan</span></div></div>
     </section>
 
     <section className="panel">

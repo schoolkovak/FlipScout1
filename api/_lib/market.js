@@ -2,6 +2,7 @@ import { parseListingText } from "../../src/listingParser.js";
 import { createHash } from "node:crypto";
 import { resolveCatalogPart } from "../../shared/catalog.js";
 import { SNIPER_CATEGORIES } from "../../shared/sniper.js";
+import {referenceMsrp} from "../../shared/msrp.js";
 const EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope";
 const searchCache=new Map();
 const CACHE_MS=10*60*1000;
@@ -370,6 +371,7 @@ function mapSearchApiEbayResult(x,index,{query,category}) {
     soldCount:Number(x.extracted_items_sold||0)||0,
     watchers:Number(x.extracted_watching||0)||0,
     url:x.link||null,
+    imageUrl:safeImage(x.thumbnail||x.image),
     freshness:null,
     relevance:relevanceScore(x.title,query,category)
   };
@@ -473,6 +475,23 @@ export async function searchSearchApiWalmart(input) {
 }
 
 
+function merchantLink(marketplace,...candidates){
+  for(const value of candidates){
+    if(!value)continue;
+    if(correctMarketplaceUrl(marketplace,value))return value;
+    try{
+      const u=new URL(value);
+      for(const key of ["url","adurl","redirect","redirect_url","merchant_url","destination"]){
+        const direct=u.searchParams.get(key);
+        if(direct && correctMarketplaceUrl(marketplace,direct))return direct;
+      }
+    }catch{}
+  }
+  return null;
+}
+function safeImage(value){
+  try{const u=new URL(String(value||""));return u.protocol==="https:"?u.href:null;}catch{return null;}
+}
 function correctMarketplaceUrl(marketplace,value){
   const domains={
     amazon:["amazon.com"],bestbuy:["bestbuy.com"],walmart:["walmart.com"],
@@ -543,7 +562,8 @@ export async function searchSerperMarketplaces(input){
       shippingKnown:ship.shippingKnown,
       totalPrice:(itemPrice||0)+ship.shipping,
       seller:x.source||marketplaceName(marketplace),
-      url:x.link||null,
+      url:merchantLink(marketplace,x.link,x.product_link,x.merchant_link),
+      imageUrl:safeImage(x.thumbnail||x.image||x.serpapi_thumbnail),
       freshness:null,
       relevance:relevanceScore(x.title,query,category)
     };
@@ -559,7 +579,7 @@ export async function searchSearchApiShopping(input){
   return (data?.shopping_results||[]).map((x,index)=>{
     const merchant=x.seller||x.source||"";
     // Google sometimes provides a product-page URL rather than a store checkout URL.
-    const url=x.link||x.product_link||null;
+    const url=merchantLink(marketplaceIdFromResult(merchant,x.domain||x.link||x.product_link),x.link,x.product_link,x.merchant_link,x.offer_link);
     const store=marketplaceIdFromResult(merchant,x.domain||url);
     const itemPrice=Number(x.extracted_price||parseMoney(x.price)||0);
     const ship=parseShippingFromSerp({delivery:x.delivery});
@@ -572,7 +592,7 @@ export async function searchSearchApiShopping(input){
       condition:conditionAssumed?condition:normalized,conditionAssumed,
       itemPrice,shipping:ship.shipping,shippingKnown:ship.shippingKnown,
       totalPrice:itemPrice+ship.shipping,seller:merchant||marketplaceName(store),
-      url,freshness:null,relevance:relevanceScore(x.title,query,category)
+      url,imageUrl:safeImage(x.thumbnail||x.image),freshness:null,relevance:relevanceScore(x.title,query,category)
     };
   }).filter(x=>x.marketplace&&selected.has(x.marketplace)&&x.itemPrice>0&&conditionMatches(x.condition,condition));
 }
@@ -1095,7 +1115,7 @@ export async function liveSearch(input){
 }
 
 export async function searchPartsSniper(input){
-  const selected=[...new Set((input.marketplaces||["amazon","bestbuy","walmart","newegg","ebay","aliexpress","bhphoto","adorama","microcenter","mercari"]).filter(Boolean))];
+  const selected=[...new Set((input.marketplaces||["amazon","bestbuy","walmart","newegg","ebay","aliexpress","mercari"]).filter(Boolean))];
   const key="sniper|"+cacheKey({...input,marketplaces:selected});
   const hit=searchCache.get(key);
   if(hit && Date.now()-hit.savedAt<hit.ttl)return {...hit.value,cached:true};
@@ -1120,14 +1140,17 @@ export async function searchPartsSniper(input){
     }
   }
 
-  if(selected.includes("amazon")&&hasSearchApi&&(input.deepScan||!hasSerper)){
+  if(selected.includes("amazon")&&hasSearchApi){
     providers.push(["Amazon",()=>searchSearchApiAmazon(input)]);
   }
+
+  if(hasSearchApi&&selected.includes("bestbuy"))providers.push(["Best Buy",()=>searchSearchApiBestBuy(input)]);
+  if(hasSearchApi&&selected.includes("walmart"))providers.push(["Walmart",()=>searchSearchApiWalmart(input)]);
 
   // Deep Scan checks each selected retailer independently when SearchAPI is configured.
   // Default browsing uses the broad shopping feed without extra calls.
   if(input.deepScan && hasSearchApi){
-    const priority=["mercari","newegg","walmart","bestbuy","aliexpress","microcenter","bhphoto","adorama"];
+    const priority=["mercari","newegg","aliexpress"];
     const selectedTargets=priority.filter(id=>selected.includes(id));
     for(const marketplace of selectedTargets){
       providers.push([marketplaceName(marketplace),()=>searchSearchApiSiteMarketplace(input,marketplace)]);
@@ -1150,10 +1173,16 @@ export async function searchPartsSniper(input){
     .filter(x=>x.relevance>=.72 && Number.isFinite(x.totalPrice) && x.totalPrice>0 && correctMarketplaceUrl(x.marketplace,x.url) && !unsafeHardwareListing(x.title,input.category));
 
   const market=buildMarket(items);
-  const ranked=rankDeals(items,market,input).map(x=>({
-    ...x,
-    riskFlags:[...(x.riskFlags||[]),...(x.sniperRiskFlags||[])]
-  }));
+  const ranked=rankDeals(items,market,input).map(x=>{
+    const msrp=referenceMsrp(input.category,input.query,x.title);
+    const referenceDifference=msrp?Math.round((msrp.amount-x.totalPrice)/msrp.amount*100):null;
+    return {...x,
+      msrp:msrp?.amount||null,msrpSource:msrp?.source||null,msrpLabel:msrp?.label||null,
+      percentVsMsrp:referenceDifference,
+      imageUrl:safeImage(x.imageUrl),
+      riskFlags:[...(x.riskFlags||[]),...(x.sniperRiskFlags||[])]
+    };
+  });
   const counts=Object.fromEntries(selected.map(id=>[id,0]));
   for(const item of ranked)if(item.marketplace in counts)counts[item.marketplace]++;
   const sourceCoverage=selected.map(id=>({
