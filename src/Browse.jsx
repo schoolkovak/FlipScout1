@@ -171,9 +171,13 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
   const toggle=k=>setOpen(o=>({...o,[k]:!o[k]}));
   const usedGroup=allowsUsed(series.items[0]?.category);
   useEffect(()=>{if(!usedGroup)setCond("any");},[usedGroup]);
+  // Phones: the sidebar folds into a drawer so the price cards come first.
+  const [drawer,setDrawer]=useState(false);
+  useEffect(()=>setDrawer(false),[group.id,series.id]);
 
   return <div className="browse">
-    <aside className="sidebar">
+    <button className="drawerBtn" onClick={()=>setDrawer(d=>!d)} aria-expanded={drawer}><Filter size={15}/><span>{series.label}</span><small>Series, models & filters</small><ChevronDown size={16} className={drawer?"flip":""}/></button>
+    <aside className={"sidebar"+(drawer?" open":"")}>
       <section className="sideBox">
         <button className="sideHead" onClick={()=>toggle("group")}><Layers size={15}/>Part Group<ChevronDown size={15} className={open.group?"flip":""}/></button>
         {open.group&&<div className="seriesList">
@@ -249,6 +253,15 @@ export function guessCategory(q){
   return "Other";
 }
 
+// Plain-language versions of provider errors.
+function friendly(msg){
+  const m=String(msg||"");
+  if(/out of credits|not enough credits|quota/i.test(m))return "Live search is paused because today's search credits are used up. Saved prices keep updating in the background — check back later.";
+  if(/timed out|network error|unavailable|failed/i.test(m))return "The price service didn't answer in time. Try again in a minute.";
+  if(/no listing matched|no .* listings in the latest update/i.test(m))return "Nothing matching this exact model and condition was for sale at a trusted store in the latest check. Try another condition, or check back after the next update.";
+  return m||"Nothing found yet. Prices update in the background — check back soon.";
+}
+
 export function ModelPage({providerKeys,route,setRoute,onWatchChange}){
   const {group,series}=findSeries(route.group,route.series);
   const typed=route.query?normalizePartQuery(route.query):"";
@@ -305,7 +318,7 @@ export function ModelPage({providerKeys,route,setRoute,onWatchChange}){
     </section>
     {data?.searchedAt&&<p className="snapNote">Prices updated {ago(data.searchedAt,Date.now())}{data.snapshot?" · refreshed automatically in the background":""}</p>}
     {loading&&<ScanSkeleton label={item.name+" — every real listing across trusted stores"}/>}
-    {data&&!data.available&&<div className="notice"><Info size={18}/><div><b>No live listings</b><p>{data.message}</p><ProviderNotes providers={data.providers} coverage={data.coverage} errors={data.errors}/></div></div>}
+    {data&&!data.available&&<div className="notice"><Info size={18}/><div><b>No listings for {item.name} right now</b><p>{friendly(data.message)}</p><ProviderNotes providers={data.providers} coverage={data.coverage} errors={data.errors}/></div></div>}
     {data?.available&&<section className="resultsPanel">
       <MarketPulse market={data.market} results={data.results}/>
       <DealResults results={data.results} isWatched={isWatched} onWatch={toggle} msrp={item.msrp}/>
