@@ -105,7 +105,7 @@ function DealCard({item,rank,watched,onWatch,cheapest,msrp}){
     </div>
     {risks.length>0&&<div className="tileRisks">{risks.slice(0,2).map((r,j)=><span key={j}><AlertTriangle size={11}/>{r}</span>)}</div>}
     <div className="tileActions">
-      {item.url?<a className="openBtn" href={item.url} target="_blank" rel="noreferrer">{item.linkType==="google"?"View offer on Google":"View listing"} <ExternalLink size={13}/></a>:<span className="mutedText">No link</span>}
+      {item.url?<a className="openBtn" href={item.url} target="_blank" rel="noreferrer">View listing <ExternalLink size={13}/></a>:<span className="mutedText">No link</span>}
       {onWatch&&<button className={"iconBtn"+(watched?" on":"")} onClick={()=>onWatch(item)} aria-label={watched?"Stop watching":"Watch"}>{watched?<BookmarkCheck size={16}/>:<Bookmark size={16}/>}</button>}
     </div>
   </article>;

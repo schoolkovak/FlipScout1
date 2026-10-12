@@ -38,9 +38,9 @@ export function providerStatus(providerKeys = {}) {
   return [
     {
       id: "serper",
-      name: "Serper Shopping",
+      name: "Serper",
       status: has.serper ? "Connected" : "Missing credentials",
-      coverage: "Google Shopping results: Amazon, Best Buy, Walmart, Newegg, eBay, AliExpress, Mercari, B&H, Adorama, Micro Center and other stores Google lists",
+      coverage: "Store price search: Amazon, Best Buy, Walmart, Newegg, eBay, AliExpress, Mercari, B&H, Adorama, Micro Center and other trusted stores",
       signupUrl: "https://serper.dev/",
       freeAllowance: "2,500 free queries (each 100-result shopping search uses 2)"
     },
@@ -56,7 +56,7 @@ export function providerStatus(providerKeys = {}) {
       id: "serpapi",
       name: "SerpApi (eBay)",
       status: has.serpapi ? "Connected" : "Missing credentials",
-      coverage: "Structured eBay search (condition-filtered, never for-parts); Google Shopping fallback",
+      coverage: "Structured eBay search (condition-filtered, never for-parts)",
       signupUrl: "https://serpapi.com/",
       freeAllowance: "250 searches/month free"
     },
@@ -285,7 +285,7 @@ export async function searchSerperShopping(input, { q, page = 1 } = {}) {
     headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
     body: JSON.stringify(body)
   }, [apiKey]);
-  return (data.shopping || []).map((x, i) => googleShoppingOffer(x, "Google Shopping (Serper)", i));
+  return (data.shopping || []).map((x, i) => googleShoppingOffer(x, "Store price search", i));
 }
 
 // Item pages on eBay, AliExpress and Mercari through ONE Serper web search
@@ -478,7 +478,7 @@ export async function searchSearchApiGoogleShopping(input, { q } = {}) {
   const query = q || [conditionSearchTerm(input.condition || "any"), input.query].filter(Boolean).join(" ");
   const data = await searchApiRequest(input, "google_shopping", { q: query, gl: "us", hl: "en" });
   if (!data) return [];
-  return [...(data.shopping_results || []), ...(data.inline_shopping_results || [])].map((x, i) => googleShoppingOffer(x, "Google Shopping (SearchAPI)", i));
+  return [...(data.shopping_results || []), ...(data.inline_shopping_results || [])].map((x, i) => googleShoppingOffer(x, "Store price search (SearchAPI)", i));
 }
 
 function structuredGooglePrice(x) {
@@ -498,7 +498,7 @@ export async function searchSearchApiSiteMarketplace(input, marketplace) {
   const data = await searchApiRequest(input, "google", { q, gl: "us", hl: "en" });
   if (!data) return [];
   return (data.organic_results || []).map(x => offer({
-    provider: marketplaceName(marketplace) + " (Google site search)",
+    provider: marketplaceName(marketplace) + " (site search)",
     marketplace,
     seller: marketplaceName(marketplace),
     title: x.title || "",
@@ -515,7 +515,7 @@ export async function searchSerpApi(input) {
   const q = [conditionSearchTerm(input.condition || "any"), input.query].filter(Boolean).join(" ");
   const params = new URLSearchParams({ engine: "google_shopping", q, api_key: apiKey, gl: "us", hl: "en" });
   const data = await providerFetch("serpapi", "https://serpapi.com/search.json?" + params.toString(), {}, [apiKey]);
-  return (data.shopping_results || []).map((x, i) => googleShoppingOffer(x, "Google Shopping (SerpApi)", i));
+  return (data.shopping_results || []).map((x, i) => googleShoppingOffer(x, "Store price search (SerpApi)", i));
 }
 
 // eBay condition ids: 1000 new, 1500 open box, 2000-2500 refurbished,
@@ -652,7 +652,7 @@ function titlePriceKey(x) {
 // Direct marketplace data (structured condition, shipping, item ids) wins
 // over the same listing seen through Google Shopping.
 function providerPriority(provider) {
-  if (/Google Shopping/.test(provider || "")) return 2;
+  if (/Store price search/.test(provider || "")) return 2;
   if (/site search/.test(provider || "")) return 3;
   return 1;
 }
@@ -1132,9 +1132,9 @@ const STORE_QUERY_NAMES = { amazon: "amazon", walmart: "walmart", bestbuy: "best
 const STORE_PRIORITY = ["ebay", "newegg", "amazon", "walmart", "bestbuy", "mercari", "aliexpress", "microcenter", "bhphoto", "adorama"];
 
 function shoppingCall(input, has, q) {
-  if (has.serper) return callSpec("serper", "Google Shopping (Serper)", null, input, { q }, () => searchSerperShopping(input, { q }));
-  if (has.serpapi) return callSpec("serpapi", "Google Shopping (SerpApi)", null, input, { q }, () => searchSerpApi({ ...input, query: q, condition: "any" }));
-  if (has.searchapi) return callSpec("searchapi-gshop", "Google Shopping (SearchAPI)", null, input, { q }, () => searchSearchApiGoogleShopping(input, { q }));
+  if (has.serper) return callSpec("serper", "Store price search", null, input, { q }, () => searchSerperShopping(input, { q }));
+  if (has.serpapi) return callSpec("serpapi", "Store price search (SerpApi)", null, input, { q }, () => searchSerpApi({ ...input, query: q, condition: "any" }));
+  if (has.searchapi) return callSpec("searchapi-gshop", "Store price search (SearchAPI)", null, input, { q }, () => searchSearchApiGoogleShopping(input, { q }));
   return null;
 }
 
@@ -1161,7 +1161,7 @@ export async function searchMarketplaces(input, { includeOtherMerchants = false,
   // separate used-only item-page search, for many more listings per part.
   if (!lite && has.serper) {
     const q2 = shoppingQueries(query, condition)[0];
-    round1.push(callSpec("serper", "Google Shopping (Serper)", null, searchInput, { q: q2, page: 2 }, () => searchSerperShopping(searchInput, { q: q2, page: 2 })));
+    round1.push(callSpec("serper", "Store price search", null, searchInput, { q: q2, page: 2 }, () => searchSerperShopping(searchInput, { q: q2, page: 2 })));
   }
   const retailSites = ["amazon", "newegg", "bestbuy", "walmart", "microcenter", "bhphoto"].filter(wants);
   if (organicOk && has.serper && retailSites.length) round1.push(callSpec("serper-retail", "Retailer pages (Serper web search)", retailSites, searchInput, { q: query, condition: "new", sites: retailSites }, () => searchSerperItemPages({ ...searchInput, condition: "new" }, { marketplaces: retailSites, retail: true })));
@@ -1195,7 +1195,7 @@ export async function searchMarketplaces(input, { includeOtherMerchants = false,
         round2.push(callSpec("searchapi-" + id, engine.name, [id], searchInput, { q: query, condition }, () => engine.run(searchInput)));
       } else if (has.serper && targeted < 3) {
         const q = [conditionSearchTerm(condition), query, STORE_QUERY_NAMES[id]].filter(Boolean).join(" ");
-        round2.push(callSpec("serper", "Google Shopping (Serper)", [id], searchInput, { q }, () => searchSerperShopping(searchInput, { q })));
+        round2.push(callSpec("serper", "Store price search", [id], searchInput, { q }, () => searchSerperShopping(searchInput, { q })));
         targeted++;
       }
     }
@@ -1265,8 +1265,8 @@ function marketplaceCoverage(selected, has, results, storeCounts, condition) {
     const direct = queried.has(id);
     let note;
     if (direct) note = "Searched directly";
-    else if (targeted.has(id)) note = "Google Shopping + store-targeted query";
-    else if (broad) note = "Searched through Google Shopping";
+    else if (targeted.has(id)) note = "Store price search + store-targeted query";
+    else if (broad) note = "Searched via store price search";
     else note = "Not searched: no working provider";
     if (!direct && id in DIRECT_STORE_ENGINES && !DIRECT_STORE_ENGINES[id].conditions.includes(condition)) note += "; store search has no " + condition + " filter";
     if (!direct && ["newegg", "mercari", "aliexpress", "bhphoto", "adorama", "microcenter"].includes(id)) note += " (no public listing API)";
@@ -1306,14 +1306,14 @@ function chooseProviders(input) {
   if (input.componentEstimate) {
     const cat = String(input.category || "").toLowerCase();
     if (condition === "used" && has.searchapi && (cat === "gpu" || cat === "cpu")) return [["eBay (SearchAPI)", () => searchSearchApiEbay(input)]];
-    if (has.serper) return [["Google Shopping (Serper)", () => searchSerperShopping(input)]];
+    if (has.serper) return [["Store price search", () => searchSerperShopping(input)]];
   }
 
   if (condition === "used" || condition === "renewed" || condition === "refurbished") {
     if (has.searchapi) providers.push(["eBay (SearchAPI)", () => searchSearchApiEbay(input)]);
     else if (has.ebayApi && condition === "used") providers.push(["eBay Browse API", () => searchEbay(input)]);
-    if (has.serper) providers.push(["Google Shopping (Serper)", () => searchSerperShopping(input)]);
-    else if (!providers.length && has.serpapi) providers.push(["Google Shopping (SerpApi)", () => searchSerpApi(input)]);
+    if (has.serper) providers.push(["Store price search", () => searchSerperShopping(input)]);
+    else if (!providers.length && has.serpapi) providers.push(["Store price search (SerpApi)", () => searchSerpApi(input)]);
     return providers;
   }
 
@@ -1323,12 +1323,12 @@ function chooseProviders(input) {
       providers.push(["eBay (SearchAPI)", () => searchSearchApiEbay(input)]);
     } else if (has.bestbuyApi) providers.push(["Best Buy API", () => searchBestBuy(input)]);
     else if (has.ebayApi) providers.push(["eBay Browse API", () => searchEbay(input)]);
-    else if (has.serper) providers.push(["Google Shopping (Serper)", () => searchSerperShopping(input)]);
+    else if (has.serper) providers.push(["Store price search", () => searchSerperShopping(input)]);
     return providers;
   }
 
-  if (has.serper) providers.push(["Google Shopping (Serper)", () => searchSerperShopping(input)]);
-  else if (has.serpapi) providers.push(["Google Shopping (SerpApi)", () => searchSerpApi(input)]);
+  if (has.serper) providers.push(["Store price search", () => searchSerperShopping(input)]);
+  else if (has.serpapi) providers.push(["Store price search (SerpApi)", () => searchSerpApi(input)]);
   if ((input.deepScan || (!has.serper && !has.serpapi)) && has.searchapi) {
     providers.push(["Walmart (SearchAPI)", () => searchSearchApiWalmart(input)]);
     providers.push(["Best Buy (SearchAPI)", () => searchSearchApiBestBuy(input)]);

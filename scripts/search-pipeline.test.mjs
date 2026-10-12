@@ -64,12 +64,12 @@ test("condition: eBay/Walmart/Amazon wording maps to the right family", () => {
 
 test("used search does not relabel new retail stock as used", async () => {
   const offers = [
-    { provider: "Google Shopping (Serper)", marketplace: "amazon", seller: "Amazon.com", title: "MSI GeForce RTX 5070 12G Ventus 2X OC", url: "https://www.amazon.com/dp/B0DTEST001", itemPrice: 549, totalPrice: 549, shipping: 0, shippingKnown: true, defaultCondition: "new" },
-    { provider: "Google Shopping (Serper)", marketplace: "mercari", seller: "Mercari", title: "RTX 5070 Founders Edition", url: "https://www.mercari.com/us/item/m123456/", itemPrice: 470, totalPrice: 470, shipping: 0, shippingKnown: false, defaultCondition: "used" }
+    { provider: "Store price search", marketplace: "amazon", seller: "Amazon.com", title: "MSI GeForce RTX 5070 12G Ventus 2X OC", url: "https://www.amazon.com/dp/B0DTEST001", itemPrice: 549, totalPrice: 549, shipping: 0, shippingKnown: true, defaultCondition: "new" },
+    { provider: "Store price search", marketplace: "mercari", seller: "Mercari", title: "RTX 5070 Founders Edition", url: "https://www.mercari.com/us/item/m123456/", itemPrice: 470, totalPrice: 470, shipping: 0, shippingKnown: false, defaultCondition: "used" }
   ];
   const { items, stats } = qualifyOffers(offers, { query: "RTX 5070", category: "GPU", condition: "used" });
   assert.deepEqual(items.map(x => x.marketplace), ["mercari"]);
-  assert.equal(stats.get("Google Shopping (Serper)").dropped["condition-mismatch"], 1);
+  assert.equal(stats.get("Store price search").dropped["condition-mismatch"], 1);
 });
 
 test("Deal Scanner queries Google Shopping, eBay, and direct stores missing from Google results", async () => {
@@ -130,7 +130,7 @@ test("no extra direct-store request when Google Shopping already covers that sto
 });
 
 test("same Amazon item from Google Shopping and Amazon search is shown once, direct copy kept", () => {
-  const google = { provider: "Google Shopping (Serper)", marketplace: "amazon", seller: "Amazon.com", title: "Samsung 990 PRO 2TB PCIe 4.0 NVMe SSD", url: "https://www.amazon.com/Samsung-990-PRO/dp/B0BHJJ9Y77?tag=x", itemPrice: 169.99, totalPrice: 169.99, shipping: 0, shippingKnown: false, defaultCondition: "new" };
+  const google = { provider: "Store price search", marketplace: "amazon", seller: "Amazon.com", title: "Samsung 990 PRO 2TB PCIe 4.0 NVMe SSD", url: "https://www.amazon.com/Samsung-990-PRO/dp/B0BHJJ9Y77?tag=x", itemPrice: 169.99, totalPrice: 169.99, shipping: 0, shippingKnown: false, defaultCondition: "new" };
   const direct = { ...google, provider: "Amazon (SearchAPI)", seller: "Amazon", title: "SAMSUNG 990 PRO SSD 2TB PCIe 4.0 M.2 2280 Internal Solid State Drive", url: "https://www.amazon.com/dp/B0BHJJ9Y77", shippingKnown: true };
   const { items } = qualifyOffers([google, direct, { ...google }], { query: "2TB NVMe SSD", category: "NVMe SSD", condition: "new" });
   assert.equal(items.length, 1);
@@ -169,7 +169,7 @@ test("Deal Scanner API returns provider diagnostics when nothing qualifies", asy
     let body;
     await dealsHandler({ method: "POST", body: { query: "RTX 4090", category: "GPU", condition: "new", providerKeys: keys() } }, { status() { return this; }, json(x) { body = x; return x; } });
     assert.equal(body.available, false);
-    const serper = body.providers.find(p => p.name === "Google Shopping (Serper)");
+    const serper = body.providers.find(p => p.name === "Store price search");
     assert.ok(serper.dropped.accessory >= 1);
   } finally { stub.restore(); }
 });
@@ -242,7 +242,7 @@ test("SerpApi eBay engine requests sellable conditions only", async () => {
 });
 
 test("unknown web shops, too-good-to-be-true prices and listings without a real item link are dropped", () => {
-  const base = { provider: "Google Shopping (Serper)", shipping: 0, shippingKnown: false, defaultCondition: "new" };
+  const base = { provider: "Store price search", shipping: 0, shippingKnown: false, defaultCondition: "new" };
   const mk = (seller, title, price, url) => ({ ...base, seller, title, itemPrice: price, totalPrice: price, url });
   const offers = [
     mk("mafsantander.com", "vga sapphire rx 5700 xt rgb Graphics Card", 54, "https://mafsantander.com/p/1"),
@@ -253,10 +253,10 @@ test("unknown web shops, too-good-to-be-true prices and listings without a real 
   ];
   const { items, stats } = qualifyOffers(offers, { query: "RX 5700 XT", category: "GPU", condition: "any" });
   assert.ok(!items.some(x => /mafsantander|resmab/.test(x.seller)));
-  assert.equal(stats.get("Google Shopping (Serper)").dropped["untrusted-store"], 2);
+  assert.equal(stats.get("Store price search").dropped["untrusted-store"], 2);
   assert.ok(!items.some(x => x.totalPrice === 70), "$70 when the median is ~$180 is dropped");
   assert.ok(!items.some(x => x.title.startsWith("XFX")), "no link -> not shown");
-  assert.equal(stats.get("Google Shopping (Serper)").dropped["no-direct-link"], 1);
+  assert.equal(stats.get("Store price search").dropped["no-direct-link"], 1);
   assert.ok(items.every(x => x.linkType === "listing" && !/google\.|\/sch\/|search/.test(x.url)));
 });
 
@@ -332,7 +332,7 @@ test("Best value blends market value with launch MSRP; Google Shopping offer pag
   const withMsrp = rankDeals(rows, market, { query: "RTX 5070", msrp: 549 });
   const score = (list, id) => list.find(x => x.id === id).score;
   assert.ok(score(withMsrp, "d") <= score(plain, "d"), "listings far over MSRP lose value");
-  const { items } = qualifyOffers([{ provider: "Google Shopping (Serper)", marketplace: "bestbuy", seller: "Best Buy", title: "NVIDIA GeForce RTX 5070 12GB", itemPrice: 549, totalPrice: 549, shipping: 0, shippingKnown: false, defaultCondition: "new", url: "https://www.google.com/shopping/product/123456789?prds=oid:1" }], { query: "RTX 5070", category: "GPU", condition: "any" });
+  const { items } = qualifyOffers([{ provider: "Store price search", marketplace: "bestbuy", seller: "Best Buy", title: "NVIDIA GeForce RTX 5070 12GB", itemPrice: 549, totalPrice: 549, shipping: 0, shippingKnown: false, defaultCondition: "new", url: "https://www.google.com/shopping/product/123456789?prds=oid:1" }], { query: "RTX 5070", category: "GPU", condition: "any" });
   assert.equal(items.length, 1);
   assert.equal(items[0].linkType, "google");
 });
