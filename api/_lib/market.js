@@ -53,11 +53,11 @@ export function providerStatus(providerKeys = {}) {
     },
     {
       id: "serpapi",
-      name: "SerpApi Google Shopping",
+      name: "SerpApi (eBay)",
       status: has.serpapi ? "Connected" : "Missing credentials",
-      coverage: "Optional Google Shopping provider used when Serper and SearchAPI are not configured",
+      coverage: "Structured eBay search (condition-filtered, never for-parts); Google Shopping fallback",
       signupUrl: "https://serpapi.com/",
-      freeAllowance: "250 searches/month"
+      freeAllowance: "250 searches/month free"
     },
     {
       id: "bestbuy",
@@ -279,7 +279,8 @@ function searchApiEbayCondition(condition) {
   if (condition === "used") return "pre_owned_excellent,used_very_good,used_good,used_acceptable,pre_owned_fair,like_new";
   if (condition === "open-box") return "new_opened";
   if (condition === "renewed" || condition === "refurbished") return "certified_refurbished,excellent_refurbished,very_good_refurbished,good_refurbished,seller_refurbished";
-  return null;
+  // "Any" = every sellable condition; for-parts listings are never requested.
+  return "new,new_opened,like_new,pre_owned_excellent,used_very_good,used_good,used_acceptable,pre_owned_fair,certified_refurbished,excellent_refurbished,very_good_refurbished,good_refurbished,seller_refurbished";
 }
 
 export async function searchSearchApiEbay(input) {
@@ -428,6 +429,35 @@ export async function searchSerpApi(input) {
   return (data.shopping_results || []).map((x, i) => googleShoppingOffer(x, "Google Shopping (SerpApi)", i));
 }
 
+// eBay condition ids: 1000 new, 1500 open box, 2000-2500 refurbished,
+// 3000 used. 7000 (for parts / not working) is never requested.
+const EBAY_CONDITION_IDS = {
+  any: "1000|1500|2000|2010|2020|2030|2500|3000",
+  new: "1000", "open-box": "1500", used: "3000",
+  refurbished: "2000|2010|2020|2030|2500", renewed: "2000|2010|2020|2030|2500"
+};
+
+export async function searchSerpApiEbay(input) {
+  const apiKey = env("SERPAPI_API_KEY");
+  if (!apiKey) return [];
+  const params = new URLSearchParams({
+    engine: "ebay", ebay_domain: "ebay.com", _nkw: input.query, _ipg: "200", LH_BIN: "1",
+    LH_ItemCondition: EBAY_CONDITION_IDS[input.condition || "any"] || EBAY_CONDITION_IDS.any, api_key: apiKey
+  });
+  const data = await providerFetch("serpapi", "https://serpapi.com/search.json?" + params.toString(), {}, [apiKey]);
+  return (data.organic_results || []).map(x => {
+    const price = x.price?.extracted ?? x.price?.from?.extracted ?? parseMoney(x.price?.raw ?? x.price);
+    const ship = parseShippingText(typeof x.shipping === "string" ? x.shipping : x.shipping?.raw || "");
+    return offer({
+      provider: "eBay (SerpApi)", providerItemId: x.product_id || x.item_id || null, marketplace: "ebay",
+      seller: x.seller?.username || x.seller?.name || "eBay seller", title: x.title || "", url: x.link || null,
+      itemPrice: Number(price || 0), shipping: ship.shipping, shippingKnown: ship.shippingKnown,
+      structuredCondition: x.condition || "", priceIsRange: x.price?.extracted === undefined && x.price?.from !== undefined,
+      soldCount: parseMoney(x.sold) || 0
+    });
+  });
+}
+
 async function bestBuyOpenBoxForSkus(skus) {
   const apiKey = env("BESTBUY_API_KEY");
   if (!skus.length || !apiKey) return [];
@@ -485,7 +515,8 @@ export async function searchEbay(input) {
   const condition = input.condition || "any";
   const filters = ["buyingOptions:{FIXED_PRICE}"];
   if (condition === "new") filters.push("conditions:{NEW}");
-  if (condition === "used") filters.push("conditions:{USED}");
+  else if (condition === "used") filters.push("conditions:{USED}");
+  else filters.push("conditionIds:{" + (EBAY_CONDITION_IDS[condition] || EBAY_CONDITION_IDS.any) + "}");
   const params = new URLSearchParams({ q: input.query, limit: "200", filter: filters.join(",") });
   const data = await providerFetch("ebay", "https://api.ebay.com/buy/browse/v1/item_summary/search?" + params.toString(), {
     headers: { "Authorization": "Bearer " + token, "X-EBAY-C-MARKETPLACE-ID": "EBAY_US" }
@@ -867,65 +898,62 @@ const DIRECT_STORE_ENGINES = {
   bestbuy: { name: "Best Buy (SearchAPI)", run: searchSearchApiBestBuy, conditions: ["any", "new", "open-box"] }
 };
 
-function planBroadCalls(input, has, { deep, query, condition }) {
-  const calls = [];
-  const conditioned = [conditionSearchTerm(condition), query].filter(Boolean).join(" ");
-  if (has.serper) {
-    calls.push(callSpec("serper", "Google Shopping (Serper)", null, input, { q: conditioned, page: 1 }, () => searchSerperShopping(input, { q: conditioned })));
-    // Google Shopping's default results are mostly new retail stock; a
-    // second "used" query surfaces eBay/Mercari/refurb offers for Any.
-    if (condition === "any") calls.push(callSpec("serper", "Google Shopping (Serper)", null, input, { q: "used " + query, page: 1 }, () => searchSerperShopping(input, { q: "used " + query })));
-    if (deep) calls.push(callSpec("serper", "Google Shopping (Serper)", null, input, { q: conditioned, page: 2 }, () => searchSerperShopping(input, { q: conditioned, page: 2 })));
-  } else if (has.searchapi) {
-    calls.push(callSpec("searchapi-gshop", "Google Shopping (SearchAPI)", null, input, { q: conditioned }, () => searchSearchApiGoogleShopping(input, { q: conditioned })));
-  } else if (has.serpapi) {
-    calls.push(callSpec("serpapi", "Google Shopping (SerpApi)", null, input, { q: conditioned }, () => searchSerpApi(input)));
-  }
-  return calls;
+// Google Shopping query variants. Shopping results default to new retail
+// stock, so used/refurbished/open-box listings need their own queries.
+function shoppingQueries(query, condition) {
+  if (condition === "any") return [query, "used " + query, "refurbished " + query];
+  return [[conditionSearchTerm(condition), query].filter(Boolean).join(" ")];
 }
 
+const STORE_QUERY_NAMES = { amazon: "amazon", walmart: "walmart", bestbuy: "best buy", newegg: "newegg", ebay: "ebay", mercari: "mercari", aliexpress: "aliexpress", bhphoto: "b&h photo", adorama: "adorama", microcenter: "micro center" };
+const STORE_PRIORITY = ["ebay", "newegg", "amazon", "walmart", "bestbuy", "mercari", "aliexpress", "microcenter", "bhphoto", "adorama"];
+
+function shoppingCall(input, has, q) {
+  if (has.serper) return callSpec("serper", "Google Shopping (Serper)", null, input, { q }, () => searchSerperShopping(input, { q }));
+  if (has.serpapi) return callSpec("serpapi", "Google Shopping (SerpApi)", null, input, { q }, () => searchSerpApi({ ...input, query: q, condition: "any" }));
+  if (has.searchapi) return callSpec("searchapi-gshop", "Google Shopping (SearchAPI)", null, input, { q }, () => searchSearchApiGoogleShopping(input, { q }));
+  return null;
+}
+
+// Every scan is a full ("deep") scan: Google Shopping variants for every
+// condition, a structured eBay source, then targeted queries for any selected
+// store that still has no match. Exhausted providers are skipped, not retried.
 export async function searchMarketplaces(input, { includeOtherMerchants = false } = {}) {
   const started = Date.now();
   const selected = [...new Set((input.marketplaces && input.marketplaces.length ? input.marketplaces : ALL_MARKETPLACES).filter(id => ALL_MARKETPLACES.includes(id)))];
   const has = availableProviders(input);
   const condition = input.condition || "any";
-  const deep = Boolean(input.deepScan);
   const query = String(input.query || "").trim();
   const wants = id => selected.includes(id);
-  const searchInput = { ...input, query, condition };
+  const searchInput = { ...input, query, condition, deepScan: true };
 
-  const round1 = planBroadCalls(searchInput, has, { deep, query, condition });
+  const round1 = shoppingQueries(query, condition).map(q => shoppingCall(searchInput, has, q)).filter(Boolean);
   if (wants("ebay")) {
-    if (has.searchapi) round1.push(callSpec("searchapi-ebay", "eBay (SearchAPI)", ["ebay"], searchInput, { q: query, condition }, () => searchSearchApiEbay(searchInput)));
-    else if (has.ebayApi) round1.push(callSpec("ebay-api", "eBay Browse API", ["ebay"], searchInput, { q: query, condition }, () => searchEbay(searchInput)));
+    if (has.ebayApi) round1.push(callSpec("ebay-api", "eBay Browse API", ["ebay"], searchInput, { q: query, condition }, () => searchEbay(searchInput)));
+    else if (has.serpapi) round1.push(callSpec("serpapi-ebay", "eBay (SerpApi)", ["ebay"], searchInput, { q: query, condition }, () => searchSerpApiEbay(searchInput)));
+    else if (has.searchapi) round1.push(callSpec("searchapi-ebay", "eBay (SearchAPI)", ["ebay"], searchInput, { q: query, condition }, () => searchSearchApiEbay(searchInput)));
   }
   if (wants("bestbuy") && has.bestbuyApi) round1.push(callSpec("bestbuy-api", "Best Buy API", ["bestbuy"], searchInput, { q: query, condition }, () => searchBestBuy(searchInput)));
-  const directPlanned = new Set(round1.flatMap(c => c.marketplaces || []));
-  if (deep && has.searchapi) {
-    for (const [id, engine] of Object.entries(DIRECT_STORE_ENGINES)) {
-      if (wants(id) && !directPlanned.has(id) && engine.conditions.includes(condition)) {
-        round1.push(callSpec("searchapi-" + id, engine.name, [id], searchInput, { q: query, condition }, () => engine.run(searchInput)));
-        directPlanned.add(id);
-      }
-    }
-    for (const id of ["newegg", "mercari", "aliexpress"].filter(wants)) {
-      round1.push(callSpec("searchapi-site-" + id, marketplaceName(id) + " (Google site search)", [id], searchInput, { q: query, condition }, () => searchSearchApiSiteMarketplace(searchInput, id)));
-    }
-  }
 
-  const stats = new Map();
   const settled = await executeCalls(round1);
-  let qualified = qualifyOffers(settled.flatMap(r => r.offers), searchInput, { selected, includeOtherMerchants, stats });
+  let qualified = qualifyOffers(settled.flatMap(r => r.offers), searchInput, { selected, includeOtherMerchants, stats: new Map() });
 
-  // Round 2: a selected store with no qualified listing gets one direct
-  // query when a provider can reach it, instead of silently missing it.
+  // Round 2: stores with no qualified listing yet get a direct store search
+  // (SearchAPI, if it still has credits) or a store-targeted shopping query.
   const round2 = [];
-  const searchApiFailing = settled.some(r => r.error && r.call.id.startsWith("searchapi"));
-  if (has.searchapi && !searchApiFailing && Date.now() - started < 20000) {
+  if (Date.now() - started < 20000) {
     const found = new Set(qualified.items.map(x => x.marketplace));
-    for (const [id, engine] of Object.entries(DIRECT_STORE_ENGINES)) {
-      if (wants(id) && !found.has(id) && !directPlanned.has(id) && engine.conditions.includes(condition)) {
+    const searchApiOk = has.searchapi && !settled.some(r => r.error && r.call.id.startsWith("searchapi"));
+    const missing = STORE_PRIORITY.filter(id => wants(id) && !found.has(id));
+    let targeted = 0;
+    for (const id of missing) {
+      const engine = DIRECT_STORE_ENGINES[id];
+      if (searchApiOk && engine && engine.conditions.includes(condition)) {
         round2.push(callSpec("searchapi-" + id, engine.name, [id], searchInput, { q: query, condition }, () => engine.run(searchInput)));
+      } else if (has.serper && targeted < 3) {
+        const q = [conditionSearchTerm(condition), query, STORE_QUERY_NAMES[id]].filter(Boolean).join(" ");
+        round2.push(callSpec("serper", "Google Shopping (Serper)", [id], searchInput, { q }, () => searchSerperShopping(searchInput, { q })));
+        targeted++;
       }
     }
   }
@@ -936,7 +964,7 @@ export async function searchMarketplaces(input, { includeOtherMerchants = false 
   const providers = summarizeProviders(all, qualified.stats);
   const errors = providers.filter(p => p.status === "error" || p.status === "skipped").map(p => ({ provider: p.name, message: p.message }));
   const market = buildMarket(qualified.items);
-  const ranked = rankDeals(qualified.items, market, input);
+  const ranked = rankDeals(qualified.items, market, { ...input, sortBy: input.sortBy || "lowest" });
   const storeCounts = Object.fromEntries(selected.map(id => [id, ranked.filter(x => x.marketplace === id).length]));
   return {
     items: qualified.items,
@@ -983,12 +1011,14 @@ function summarizeProviders(results, stats) {
 }
 
 function marketplaceCoverage(selected, has, results, storeCounts, condition) {
-  const queried = new Set(results.filter(r => !r.error).flatMap(r => r.call.marketplaces || []));
+  const queried = new Set(results.filter(r => !r.error && r.call.id !== "serper").flatMap(r => r.call.marketplaces || []));
+  const targeted = new Set(results.filter(r => !r.error && r.call.id === "serper").flatMap(r => r.call.marketplaces || []));
   const broad = results.some(r => !r.error && !r.call.marketplaces);
   return selected.map(id => {
     const direct = queried.has(id);
     let note;
     if (direct) note = "Searched directly";
+    else if (targeted.has(id)) note = "Google Shopping + store-targeted query";
     else if (broad) note = "Searched through Google Shopping";
     else note = "Not searched: no working provider";
     if (!direct && id in DIRECT_STORE_ENGINES && !DIRECT_STORE_ENGINES[id].conditions.includes(condition)) note += "; store search has no " + condition + " filter";

@@ -11,8 +11,8 @@ export default async function handler(req,res) {
     partBudget:Number(req.body?.partBudget||0),
     buildBudget:Number(req.body?.buildBudget||0),
     committed:Number(req.body?.committed||0),
-    sortBy:req.body?.sortBy||"best",
-    deepScan:Boolean(req.body?.deepScan),
+    sortBy:req.body?.sortBy||"lowest",
+    deepScan:true,
     providerKeys:{
       SERPER_API_KEY:req.body?.providerKeys?.SERPER_API_KEY||"",
       SEARCHAPI_API_KEY:req.body?.providerKeys?.SEARCHAPI_API_KEY||""

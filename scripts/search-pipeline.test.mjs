@@ -94,7 +94,9 @@ test("Deal Scanner queries Google Shopping, eBay, and direct stores missing from
   try {
     const result = await searchMarketplaces({ query: "RTX 5070", category: "GPU", condition: "any", providerKeys: keys() }, { includeOtherMerchants: true });
     const engines = stub.calls.map(c => c.id);
-    assert.equal(engines.filter(e => e === "serper").length, 2, "base + used Google Shopping queries");
+    const shoppingQs = stub.calls.filter(c => c.id === "serper").map(c => c.q);
+    for (const q of ["RTX 5070", "used RTX 5070", "refurbished RTX 5070"]) assert.ok(shoppingQs.includes(q), q);
+    assert.ok(shoppingQs.some(q => /aliexpress|b&h photo|adorama/.test(q)), "store-targeted query for a store Google missed");
     for (const e of ["ebay_search", "amazon_search", "walmart_search", "bestbuy_search"]) assert.ok(engines.includes(e), e);
     const stores = new Set(result.ranked.map(x => x.marketplace));
     for (const id of ["newegg", "microcenter", "mercari", "ebay", "amazon", "walmart", "bestbuy", "other"]) assert.ok(stores.has(id), id);
@@ -120,24 +122,20 @@ test("no extra direct-store request when Google Shopping already covers that sto
   });
   try {
     const result = await searchPartsSniper({ query: "Ryzen 7 9800X3D", category: "CPU", condition: "new", marketplaces: ["amazon", "walmart", "bestbuy", "ebay"], providerKeys: keys() });
-    assert.deepEqual(stub.calls.map(c => c.id).sort(), ["ebay_search", "serper"]);
+    // Amazon/Walmart/Best Buy were covered by Google Shopping: no direct store calls.
+    assert.ok(!stub.calls.some(c => ["amazon_search", "walmart_search", "bestbuy_search"].includes(c.id)));
+    assert.ok(stub.calls.some(c => c.id === "serper" && c.q === "Ryzen 7 9800X3D ebay"), "eBay gap filled with a targeted query");
     assert.equal(result.ranked.length, 3);
   } finally { stub.restore(); }
 });
 
-test("same Amazon item from Google Shopping and Amazon search is shown once, direct copy kept", async () => {
-  const stub = stubFetch({
-    serper: () => ({ shopping: [{ title: "Samsung 990 PRO 2TB PCIe 4.0 NVMe SSD", source: "Amazon.com", price: "$169.99", link: "https://www.amazon.com/Samsung-990-PRO/dp/B0BHJJ9Y77?tag=x" }] }),
-    ebay_search: () => ({ organic_results: [] }),
-    amazon_search: () => ({ organic_results: [{ title: "SAMSUNG 990 PRO SSD 2TB PCIe 4.0 M.2 2280 Internal Solid State Drive", asin: "B0BHJJ9Y77", extracted_price: 169.99, link: "https://www.amazon.com/dp/B0BHJJ9Y77", delivery: "FREE delivery" }] })
-  });
-  try {
-    const result = await searchPartsSniper({ query: "2TB NVMe SSD", category: "NVMe SSD", condition: "new", marketplaces: ["amazon", "ebay"], deepScan: true, providerKeys: keys() });
-    const amazon = result.ranked.filter(x => x.marketplace === "amazon");
-    assert.equal(amazon.length, 1);
-    assert.equal(amazon[0].provider, "Amazon (SearchAPI)");
-    assert.equal(amazon[0].shippingKnown, true);
-  } finally { stub.restore(); }
+test("same Amazon item from Google Shopping and Amazon search is shown once, direct copy kept", () => {
+  const google = { provider: "Google Shopping (Serper)", marketplace: "amazon", seller: "Amazon.com", title: "Samsung 990 PRO 2TB PCIe 4.0 NVMe SSD", url: "https://www.amazon.com/Samsung-990-PRO/dp/B0BHJJ9Y77?tag=x", itemPrice: 169.99, totalPrice: 169.99, shipping: 0, shippingKnown: false, defaultCondition: "new" };
+  const direct = { ...google, provider: "Amazon (SearchAPI)", seller: "Amazon", title: "SAMSUNG 990 PRO SSD 2TB PCIe 4.0 M.2 2280 Internal Solid State Drive", url: "https://www.amazon.com/dp/B0BHJJ9Y77", shippingKnown: true };
+  const { items } = qualifyOffers([google, direct, { ...google }], { query: "2TB NVMe SSD", category: "NVMe SSD", condition: "new" });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].provider, "Amazon (SearchAPI)");
+  assert.equal(items[0].shippingKnown, true);
 });
 
 test("an out-of-credit provider is reported clearly and stops being called; others still return listings", async () => {
@@ -172,7 +170,7 @@ test("Deal Scanner API returns provider diagnostics when nothing qualifies", asy
     await dealsHandler({ method: "POST", body: { query: "RTX 4090", category: "GPU", condition: "new", providerKeys: keys() } }, { status() { return this; }, json(x) { body = x; return x; } });
     assert.equal(body.available, false);
     const serper = body.providers.find(p => p.name === "Google Shopping (Serper)");
-    assert.equal(serper.dropped.accessory, 1);
+    assert.ok(serper.dropped.accessory >= 1);
   } finally { stub.restore(); }
 });
 
@@ -204,4 +202,41 @@ test("sorting: Lowest Total Price and Best Deal reorder the same loaded results"
   const best = sortDeals(lowest, "best");
   for (let i = 1; i < best.length; i++) assert.ok(best[i - 1].score >= best[i].score);
   assert.equal(sortDeals(ranked, "lowest").length, ranked.length, "re-sorting never drops listings");
+});
+
+test("every scan is deep and never asks eBay for for-parts listings", async () => {
+  const stub = stubFetch({
+    serper: () => ({ shopping: [] }),
+    ebay_search: () => ({ organic_results: [] }),
+    amazon_search: () => ({ organic_results: [] }),
+    walmart_search: () => ({ organic_results: [] }),
+    bestbuy_search: () => ({ organic_results: [] })
+  });
+  try {
+    await searchPartsSniper({ query: "RTX 4080 Super", category: "GPU", condition: "any", deepScan: false, marketplaces: ["ebay", "amazon", "newegg"], providerKeys: keys() });
+    const ebay = stub.calls.find(c => c.id === "ebay_search");
+    assert.ok(ebay.params.condition && !ebay.params.condition.includes("for_parts"), "condition filter excludes for-parts");
+    assert.ok(stub.calls.filter(c => c.id === "serper").length >= 3, "deep scan even when deepScan=false");
+  } finally { stub.restore(); }
+});
+
+test("SerpApi eBay engine requests sellable conditions only", async () => {
+  const before = process.env.SERPAPI_API_KEY;
+  process.env.SERPAPI_API_KEY = "serpapi-test";
+  const stub = stubFetch({
+    serper: () => ({ shopping: [] }),
+    ebay: () => ({ organic_results: [
+      { title: "ASUS TUF RTX 4080 SUPER 16GB", link: "https://www.ebay.com/itm/223344556677", condition: "Pre-Owned", price: { raw: "$849.00", extracted: 849 }, shipping: "Free shipping" }
+    ] })
+  });
+  try {
+    const result = await searchPartsSniper({ query: "RTX 4080 Super", category: "GPU", condition: "any", marketplaces: ["ebay"], providerKeys: { SERPER_API_KEY: "serper-serpapi-test" } });
+    const call = stub.calls.find(c => c.id === "ebay");
+    assert.equal(call.params.LH_ItemCondition, "1000|1500|2000|2010|2020|2030|2500|3000");
+    assert.ok(!call.params.LH_ItemCondition.includes("7000"));
+    const item = result.ranked.find(x => x.provider === "eBay (SerpApi)");
+    assert.equal(item.totalPrice, 849);
+    assert.equal(item.condition, "used");
+    assert.equal(item.shippingKnown, true);
+  } finally { stub.restore(); if (before === undefined) delete process.env.SERPAPI_API_KEY; else process.env.SERPAPI_API_KEY = before; }
 });
