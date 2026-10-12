@@ -156,7 +156,14 @@ export function relevanceScore(title, query, category) {
   if(["gpu","cpu"].includes(cat)){
     const expected=resolveCatalogPart(cat,query);
     const identified=parseListingText(title)[cat];
-    if(expected.item && identified!==expected.canonical)return 0;
+    if(expected.item && identified!==expected.canonical){
+      // Listing titles frequently append VRAM, core counts or board-partner
+      // descriptions. Accept an unambiguous canonical model even when the
+      // strict whole-title parser cannot identify that longer string.
+      const expectedKey=normalizeText(expected.canonical).replace(/[^a-z0-9]/g,"");
+      const titleKey=t.replace(/[^a-z0-9]/g,"");
+      if(identified || !titleKey.includes(expectedKey))return 0;
+    }
     const model=String(query).match(/\b(?:\d{3,5}[a-z]*|[ab]\d{3})\b/i)?.[0];
     if(model && !t.replace(/\s+/g,"").includes(model.toLowerCase()))return 0;
     if(/\b(laptop|notebook|mobile|waterblock|water block|replacement fan|empty box|box only|riser|adapter|for parts|parts only|not working|broken|untested|repair|as is|gaming pc|desktop pc|prebuilt|bundle|motherboard combo)\b/.test(t))return 0;
