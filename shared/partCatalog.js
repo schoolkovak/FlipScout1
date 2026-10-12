@@ -121,6 +121,14 @@ export const PART_GROUPS = [
         cpu("i7-12700K", 409, 12, 20, 5.0, 125, { query: "Intel Core i7-12700K" }),
         cpu("i5-12600K", 289, 10, 16, 4.9, 125, { query: "Intel Core i5-12600K" }),
         cpu("i5-12400F", 167, 6, 12, 4.4, 65, { query: "Intel Core i5-12400F" })
+      ] },
+      { id: "intel11", label: "Intel 10th / 11th Gen", brand: "intel", items: [
+        cpu("i7-11700K", 399, 8, 16, 5.0, 125, { query: "Intel Core i7-11700K" }),
+        cpu("i5-11600K", 262, 6, 12, 4.9, 125, { query: "Intel Core i5-11600K" }),
+        cpu("i5-11400F", 157, 6, 12, 4.4, 65, { query: "Intel Core i5-11400F" }),
+        cpu("i7-10700K", 374, 8, 16, 5.1, 125, { query: "Intel Core i7-10700K" }),
+        cpu("i7-10700", 323, 8, 16, 4.8, 65, { query: "Intel Core i7-10700" }),
+        cpu("i5-10400F", 155, 6, 12, 4.3, 65, { query: "Intel Core i5-10400F" })
       ] }
     ]
   },

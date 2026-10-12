@@ -22,3 +22,5 @@ Restore point: branch `tomato` (commit 56d201c). Say "tomato" to return the site
 ## Flipper Deals
 - New "Flipper Deals" tab: DDR4 8GB sticks (3000MHz+, under $65 per 2×8GB), 500GB NVMe, cases ≤ $52, PSUs (550/650 first, Bronze/Gold first), Ryzen and GPU "appeal per $100".
 - Built only from saved listings, so it costs no credits. New catalog entries feed it: 8GB DDR4 3200, 16GB DDR4 3600, Case group (ATX mid tower, Micro ATX, Mini ITX).
+- Intel 10th / 11th Gen series (i7-11700K, i5-11600K, i5-11400F, i7-10700K, i7-10700, i5-10400F).
+- Matcher test corpus: +23 cases (AM4 CPUs, PSUs, 500GB SSDs, DDR4). Fixed: "PSU extension cable kit for 650W power supply" was shown as a PSU.

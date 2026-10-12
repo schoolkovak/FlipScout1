@@ -445,7 +445,7 @@ export function evaluateListing({ title, query, category, structuredCondition = 
     if (/\b(?:combo|bundle|with cpu|cpu included)\b/.test(t) || cpuContextKeys(t).size) return reject("bundle-or-combo", "motherboard with CPU");
     if (/\b(?:io shield|i o shield|bios chip|cmos battery|standoffs?)\b/.test(t) && !/\bmotherboard\b/.test(t)) return reject("accessory", "motherboard accessory");
   } else if (kind === "psu") {
-    if (/\b(?:sleeved|extension|cable kit|cable set|cables only|cable only|replacement cable|tester|adapter)\b/.test(t) && !/\bpower supply\b/.test(stripHostPhrases(t.replace(/\b(?:cable|adapter)s?\s+for\s+.*$/, "")))) return reject("accessory", "psu cable/adapter");
+    if (/\b(?:sleeved|extension|cable kit|cable set|cables only|cable only|replacement cable|tester|adapter)\b/.test(t) && !/\bpower supply\b/.test(stripHostPhrases(t.replace(/\b(?:cable|adapter)s?(?:\s+(?:kit|set))?\s+for\s+.*$/, "")))) return reject("accessory", "psu cable/adapter");
     const qWatt = q.match(/\b(\d{3,4})w\b/)?.[1];
     if (qWatt) {
       const explicit = new Set([...t.matchAll(/\b(\d{3,4})w\b/g)].map(m => m[1]));
