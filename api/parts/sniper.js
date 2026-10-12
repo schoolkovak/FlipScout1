@@ -1,5 +1,6 @@
 import { searchPartsSniper, providerStatus } from "../_lib/market.js";
 import { SNIPER_CATEGORIES, SNIPER_CONDITIONS, SNIPER_MARKETPLACES } from "../../shared/sniper.js";
+import { sortDeals } from "../../shared/dealSort.js";
 
 const categoryNames=new Set(SNIPER_CATEGORIES.map(x=>x.name));
 const conditionNames=new Set(SNIPER_CONDITIONS.map(x=>x.value));
@@ -38,12 +39,12 @@ export default async function handler(req,res){
   if(!connected){
     return res.status(200).json({
       available:false,
-      message:"Live marketplace providers are not connected yet.",
+      message:"No market data provider is configured. Add SERPER_API_KEY and/or SEARCHAPI_API_KEY to the server environment.",
       sources:providerStatus(providerKeys)
     });
   }
 
-  const deepScan=Boolean(req.body?.deepScan);
+  const deepScan=true; // every scan is a full multi-source scan
   const results=await Promise.all(targets.map(async target=>{
     const searchInput={
       query:target.query,
@@ -52,7 +53,7 @@ export default async function handler(req,res){
       partBudget:target.maxPrice,
       buildBudget:target.buildBudget,
       committed:target.committed,
-      sortBy:"best",
+      sortBy:"lowest",
       deepScan,
       marketplaces,
       providerKeys
@@ -60,7 +61,8 @@ export default async function handler(req,res){
     try{
       const data=await searchPartsSniper(searchInput);
       const affordable=data.ranked.filter(x=>!target.maxPrice || x.totalPrice<=target.maxPrice);
-      const best=(affordable[0]||data.ranked[0]||null);
+      // Best match = highest Best Value score within the price cap.
+      const best=sortDeals(affordable.length?affordable:data.ranked,"best")[0]||null;
       return {
         id:target.id,
         target,
@@ -76,11 +78,15 @@ export default async function handler(req,res){
           byCondition:data.market.byCondition,
           bySource:data.market.bySource,
           shippingKnownPct:data.market.shippingKnownPct,
+          conditionMedians:data.market.conditionMedians,
           confidence:data.market.confidence
         },
         bestDeal:best,
-        results:data.ranked.slice(0,100),
-        errors:data.errors
+        resultCount:data.ranked.length,
+        results:data.ranked.slice(0,200),
+        errors:data.errors,
+        providers:data.providers,
+        coverage:data.coverage
       };
     }catch(error){
       return {

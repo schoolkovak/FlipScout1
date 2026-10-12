@@ -104,7 +104,8 @@ test('Deep Scan uses multiple chosen merchants even when Serper is configured',a
      marketplaces:['amazon','bestbuy','walmart','newegg','ebay','mercari'],
      deepScan:true,providerKeys:{SERPER_API_KEY:'test-serper-deep',SEARCHAPI_API_KEY:'test-api-deep'}
    });
-   for(const engine of ['ebay_search','amazon_search','bestbuy_search','walmart_search','google'])
+   // Serper covered Amazon/Newegg; stores it missed get direct searches.
+   for(const engine of ['ebay_search','bestbuy_search','walmart_search','google.serper.dev'])
      assert.ok(seen.includes(engine),engine);
    assert.ok(result.ranked.length>=2);
  }finally{globalThis.fetch=original;}
