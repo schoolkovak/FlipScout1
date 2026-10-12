@@ -1,24 +1,16 @@
 # FlipScout
 
-FlipScout is a PC-flipping and hardware deal-analysis app built around live comparable listings, sales-backed evidence, part validation, and build-budget fit.
+FlipScout tracks live PC part prices across trusted US stores and marketplaces and surfaces the cheapest real deals.
 
 ## What works now
 
-- Complete-PC analyzer with CPU/GPU typo normalization
-- Unknown/fake CPU or GPU detection: unrecognized parts receive no trusted valuation or normal Flip Score
-- Compatibility checks for CPU socket, RAM generation, and PSU wattage
-- Online likely resale estimate
-- Local likely resale estimate from nearby eBay local-pickup comps when a ZIP is supplied
-- Sales-backed eBay evidence using active listings that report prior units sold
-- Full evidence links and reported sold counts
-- Complete-PC comparable listings
-- Component-level live market checks
-- Parts Deal Scanner for GPUs, CPUs, SSD/NVMe, HDD, RAM, motherboards, PSUs, cases, coolers, fans, networking and complete PCs
-- Outlier removal, title relevance filtering, capacity matching, and Ti/Super/XT/XTX/X3D variant checks
-- Build-budget impact and Deal Score
-- Sort by Best Deal, Lowest Total Price, Most Under Market, Best for Flip, or Best Fit for Budget — re-sorts loaded results instantly without a new search
-- 10-minute server-side market cache to conserve free API credits
-- Automatic GitHub CI checks and Vercel deployment
+- **Browse Parts:** pick a part group (GPU, CPU, RAM, SSD, Motherboard, PSU, Cooling, Monitor) and a series; FlipScout loads a card per model with the cheapest trusted listing, product image, key specs, % vs launch MSRP, and a direct "View on store" button.
+- **Pricing modes:** Cheapest Available / Best Deal / Only New, price range and VRAM filters — all applied to loaded results without re-searching.
+- **See All / search bar:** full multi-store scan for one model or any typed part, sorted by lowest total price with Best value / Most under market re-sorting and condition/store filters.
+- **Deal Hunt:** up to five targets across chosen stores in one scan.
+- **Watchlist:** bookmarked listings and saved searches (stored in the browser).
+- **Trust filters:** only reputable US stores/marketplaces; for-parts, broken, incomplete, accessory, laptop, prebuilt, mismatched-model and scam-priced (<40% of market median) listings are removed.
+- Hot-deals ticker, below-MSRP highlights, and per-device price history sparklines.
 
 ## Marketplace coverage
 

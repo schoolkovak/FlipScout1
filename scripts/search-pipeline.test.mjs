@@ -240,3 +240,22 @@ test("SerpApi eBay engine requests sellable conditions only", async () => {
     assert.equal(item.shippingKnown, true);
   } finally { stub.restore(); if (before === undefined) delete process.env.SERPAPI_API_KEY; else process.env.SERPAPI_API_KEY = before; }
 });
+
+test("unknown web shops and too-good-to-be-true prices are dropped; missing links become store searches", () => {
+  const base = { provider: "Google Shopping (Serper)", shipping: 0, shippingKnown: false, defaultCondition: "new" };
+  const mk = (seller, title, price, url) => ({ ...base, seller, title, itemPrice: price, totalPrice: price, url });
+  const offers = [
+    mk("mafsantander.com", "vga sapphire rx 5700 xt rgb Graphics Card", 54, "https://mafsantander.com/p/1"),
+    mk("resmab.eu", "Graphics Card AMD Radeon RX 5700 XT", 63, "https://resmab.eu/x"),
+    mk("eBay", "XFX Radeon RX 5700 XT Thicc II Ultra 8GB", 160, null),
+    mk("eBay", "Sapphire Pulse RX 5700 XT 8GB", 70, "https://www.ebay.com/itm/111122223333"),
+    ...[170, 175, 180, 185, 190, 199].map((p, i) => mk("Newegg.com", "PowerColor Red Devil RX 5700 XT 8GB " + i, p, "https://www.newegg.com/p/N82E1681413" + i))
+  ];
+  const { items, stats } = qualifyOffers(offers, { query: "RX 5700 XT", category: "GPU", condition: "any" });
+  assert.ok(!items.some(x => /mafsantander|resmab/.test(x.seller)));
+  assert.equal(stats.get("Google Shopping (Serper)").dropped["untrusted-store"], 2);
+  assert.ok(!items.some(x => x.totalPrice === 70), "$70 when the median is ~$180 is dropped");
+  const noLink = items.find(x => x.title.startsWith("XFX"));
+  assert.equal(noLink.linkType, "store-search");
+  assert.match(noLink.url, /^https:\/\/www\.ebay\.com\/sch\/i\.html/);
+});

@@ -23,7 +23,7 @@ const CONDITION_FILTERS=[
   {value:"used",label:"Used"}
 ];
 const conditionGroup=c=>c==="renewed"?"refurbished":c;
-const CONDITION_LABEL={new:"New","open-box":"Open box",refurbished:"Refurbished",renewed:"Renewed",used:"Used",unknown:"Unverified"};
+const CONDITION_LABEL={new:"New","open-box":"Open box",refurbished:"Refurbished",renewed:"Renewed",used:"Used",unknown:"Check condition"};
 
 function storeKey(item){return item.marketplace&&item.marketplace!=="other"?item.marketplace:"other";}
 function storeLabel(id,item){return SNIPER_MARKETPLACES.find(x=>x.id===id)?.name||item?.source||"Other stores";}
@@ -94,7 +94,7 @@ function DealCard({item,rank,watched,onWatch,cheapest}){
     </div>
     {risks.length>0&&<div className="tileRisks">{risks.slice(0,2).map((r,j)=><span key={j}><AlertTriangle size={11}/>{r}</span>)}</div>}
     <div className="tileActions">
-      {item.url?<a className="openBtn" href={item.url} target="_blank" rel="noreferrer">View deal <ExternalLink size={13}/></a>:<span className="mutedText">No link</span>}
+      {item.url?<a className="openBtn" href={item.url} target="_blank" rel="noreferrer">{item.linkType==="store-search"?"Find on "+storeName:item.linkType==="google"?"Search Google Shopping":"View deal"} <ExternalLink size={13}/></a>:<span className="mutedText">No link</span>}
       {onWatch&&<button className={"iconBtn"+(watched?" on":"")} onClick={()=>onWatch(item)} aria-label={watched?"Stop watching":"Watch"}>{watched?<BookmarkCheck size={16}/>:<Bookmark size={16}/>}</button>}
     </div>
   </article>;

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { evaluateListing, normalizeListingText } from "./matching.js";
 import { SNIPER_MARKETPLACES } from "../../shared/sniper.js";
 import { sortDeals } from "../../shared/dealSort.js";
+import { isTrustedMerchant, listingLink } from "./stores.js";
 
 export { relevanceScore } from "./matching.js";
 
@@ -249,6 +250,7 @@ function googleShoppingOffer(x, provider, index) {
     defaultCondition: marketplace ? MARKETPLACE_DEFAULT_CONDITION[marketplace] : "new",
     rating: Number(x.rating || 0) || null,
     reviews: Number(x.ratingCount || x.reviews || 0) || null,
+    image: x.imageUrl || x.thumbnail || x.image || null,
     position: x.position || index + 1
   });
 }
@@ -265,6 +267,39 @@ export async function searchSerperShopping(input, { q, page = 1 } = {}) {
     body: JSON.stringify(body)
   }, [apiKey]);
   return (data.shopping || []).map((x, i) => googleShoppingOffer(x, "Google Shopping (Serper)", i));
+}
+
+// eBay item pages through Serper's web search: real item links, with price
+// and condition read from Google's result snippet. Used when no structured
+// eBay provider (Browse API / SerpApi) is configured.
+function organicPrice(x) {
+  const fields = [x.price, x.priceRange, x.attributes?.Price, x.attributes?.price, ...(x.sitelinks || []).map(l => l.title)];
+  for (const f of fields) { const n = parseMoney(f); if (n > 0) return n; }
+  const m = String(x.snippet || "").match(/(?:^|\s|:)\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d+(?:\.\d{2})?)/);
+  return m ? Number(m[1].replace(/,/g, "")) : null;
+}
+
+export async function searchSerperEbayItems(input) {
+  const apiKey = providerKey("SERPER_API_KEY", input);
+  if (!apiKey) return [];
+  const term = { new: "brand new", used: "pre-owned", "open-box": "open box", refurbished: "refurbished", renewed: "refurbished" }[input.condition] || "";
+  const q = ["site:ebay.com/itm", input.query, term].filter(Boolean).join(" ");
+  const data = await providerFetch("serper", "https://google.serper.dev/search", {
+    method: "POST",
+    headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ q, gl: "us", hl: "en", num: 100 })
+  }, [apiKey]);
+  return (data.organic || []).filter(x => /ebay\.com\/itm\//.test(x.link || "")).map(x => {
+    const snippet = String(x.snippet || "");
+    const cond = snippet.match(/\b(brand new|new \(other\)|new other|open box|pre-owned|preowned|used|certified - refurbished|refurbished|for parts or not working|for parts)\b/i)?.[0] || "";
+    const ship = /free (?:shipping|delivery)/i.test(snippet) ? { shipping: 0, shippingKnown: true } : { shipping: 0, shippingKnown: false };
+    return offer({
+      provider: "eBay (Serper web search)", marketplace: "ebay", seller: "eBay seller",
+      title: String(x.title || "").replace(/\s*[|\-]\s*eBay\s*$/i, "").trim(),
+      url: x.link, itemPrice: organicPrice(x) || 0, ...ship,
+      structuredCondition: cond, defaultCondition: "unknown"
+    });
+  });
 }
 
 async function searchApiRequest(input, engine, params) {
@@ -608,6 +643,7 @@ export function qualifyOffers(rawOffers, input, { selected = null, includeOtherM
       drop(marketplace ? "store-not-selected" : "store-not-in-list", raw.seller);
       continue;
     }
+    if (!isTrustedMerchant(raw.seller, raw.url, marketplace)) { drop("untrusted-store", raw.seller); continue; }
     const verdict = evaluateListing({
       title: raw.title,
       query: input.query,
@@ -644,11 +680,33 @@ export function qualifyOffers(rawOffers, input, { selected = null, includeOtherM
       rating: raw.rating || null,
       reviews: raw.reviews || null,
       freshness: raw.freshness || null,
+      image: raw.image || null,
       relevance: verdict.relevance,
       sourceRiskFlags: riskFlags
     });
   }
-  const { items, duplicates } = dedupe(accepted);
+  const deduped = dedupe(accepted);
+  const duplicates = deduped.duplicates;
+  // Scam guard: with enough comps, a listing under 40% of the median price is
+  // almost always fake, a box, or a bait listing — drop it.
+  const prices = deduped.items.map(x => x.totalPrice).sort((a, b) => a - b);
+  const mid = prices.length >= 6 ? prices[Math.floor(prices.length / 2)] : null;
+  const items = [];
+  for (const x of deduped.items) {
+    if (mid && x.totalPrice < mid * 0.4) {
+      const st = stats.get(x.provider);
+      if (st) {
+        st.dropped["too-good-to-be-true"] = (st.dropped["too-good-to-be-true"] || 0) + 1;
+        if (st.examples.length < 6 && !st.examples.some(e => e.reason === "too-good-to-be-true")) st.examples.push({ reason: "too-good-to-be-true", detail: "median " + mid, title: x.title.slice(0, 140), price: x.totalPrice });
+      }
+      continue;
+    }
+    // Real link when we have one; otherwise a search on that store.
+    const link = listingLink(x.url, x.marketplace, x.title);
+    x.url = link.url;
+    x.linkType = link.linkType;
+    items.push(x);
+  }
   // Listing ids must be unique: the UI keys and re-orders cards by id.
   const usedIds = new Map();
   for (const x of items) {
@@ -662,7 +720,7 @@ export function qualifyOffers(rawOffers, input, { selected = null, includeOtherM
   for (const x of accepted) accByProvider.set(x.provider, (accByProvider.get(x.provider) || 0) + 1);
   for (const [name, s] of stats) {
     s.kept = keptByProvider.get(name) || 0;
-    s.duplicates = (accByProvider.get(name) || 0) - s.kept;
+    s.duplicates = Math.max(0, (accByProvider.get(name) || 0) - s.kept - (s.dropped["too-good-to-be-true"] || 0));
   }
   return { items, stats, duplicates };
 }
@@ -918,7 +976,9 @@ function shoppingCall(input, has, q) {
 // Every scan is a full ("deep") scan: Google Shopping variants for every
 // condition, a structured eBay source, then targeted queries for any selected
 // store that still has no match. Exhausted providers are skipped, not retried.
-export async function searchMarketplaces(input, { includeOtherMerchants = false } = {}) {
+// lite: one Google Shopping query and nothing else — used by the browse grid,
+// which loads a card per model and must stay cheap on credits.
+export async function searchMarketplaces(input, { includeOtherMerchants = false, lite = false } = {}) {
   const started = Date.now();
   const selected = [...new Set((input.marketplaces && input.marketplaces.length ? input.marketplaces : ALL_MARKETPLACES).filter(id => ALL_MARKETPLACES.includes(id)))];
   const has = availableProviders(input);
@@ -927,13 +987,14 @@ export async function searchMarketplaces(input, { includeOtherMerchants = false 
   const wants = id => selected.includes(id);
   const searchInput = { ...input, query, condition, deepScan: true };
 
-  const round1 = shoppingQueries(query, condition).map(q => shoppingCall(searchInput, has, q)).filter(Boolean);
-  if (wants("ebay")) {
+  const round1 = shoppingQueries(query, condition).slice(0, lite ? 1 : 3).map(q => shoppingCall(searchInput, has, q)).filter(Boolean);
+  if (wants("ebay") && !lite) {
     if (has.ebayApi) round1.push(callSpec("ebay-api", "eBay Browse API", ["ebay"], searchInput, { q: query, condition }, () => searchEbay(searchInput)));
     else if (has.serpapi) round1.push(callSpec("serpapi-ebay", "eBay (SerpApi)", ["ebay"], searchInput, { q: query, condition }, () => searchSerpApiEbay(searchInput)));
     else if (has.searchapi) round1.push(callSpec("searchapi-ebay", "eBay (SearchAPI)", ["ebay"], searchInput, { q: query, condition }, () => searchSearchApiEbay(searchInput)));
+    else if (has.serper) round1.push(callSpec("serper-ebay", "eBay (Serper web search)", ["ebay"], searchInput, { q: query, condition }, () => searchSerperEbayItems(searchInput)));
   }
-  if (wants("bestbuy") && has.bestbuyApi) round1.push(callSpec("bestbuy-api", "Best Buy API", ["bestbuy"], searchInput, { q: query, condition }, () => searchBestBuy(searchInput)));
+  if (wants("bestbuy") && has.bestbuyApi && !lite) round1.push(callSpec("bestbuy-api", "Best Buy API", ["bestbuy"], searchInput, { q: query, condition }, () => searchBestBuy(searchInput)));
 
   const settled = await executeCalls(round1);
   let qualified = qualifyOffers(settled.flatMap(r => r.offers), searchInput, { selected, includeOtherMerchants, stats: new Map() });
@@ -941,7 +1002,7 @@ export async function searchMarketplaces(input, { includeOtherMerchants = false 
   // Round 2: stores with no qualified listing yet get a direct store search
   // (SearchAPI, if it still has credits) or a store-targeted shopping query.
   const round2 = [];
-  if (Date.now() - started < 20000) {
+  if (!lite && Date.now() - started < 20000) {
     const found = new Set(qualified.items.map(x => x.marketplace));
     const searchApiOk = has.searchapi && !settled.some(r => r.error && r.call.id.startsWith("searchapi"));
     const missing = STORE_PRIORITY.filter(id => wants(id) && !found.has(id));

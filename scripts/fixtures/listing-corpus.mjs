@@ -132,5 +132,8 @@ export const LISTING_CORPUS = [
   {query:"Basic Tower Air Cooler",category:"CPU Cooler",expect:"keep",title:"Thermalright Peerless Assassin 120 SE CPU Air Cooler, 6 Heat Pipes"},
   {query:"Basic Tower Air Cooler",category:"CPU Cooler",expect:"reject",title:"DeepCool LS720 360mm AIO Liquid Cooler"},
   {query:"360mm AIO",category:"AIO Cooler",expect:"keep",title:"NZXT Kraken 360 RGB AIO Liquid Cooler for 13th and 14th Gen Intel"},
-  {query:"Midrange Tempered Glass RGB Case",category:"Case",expect:"reject",title:"Replacement Tempered Glass Side Panel for Lian Li O11 Dynamic Mid Tower"}
+  {query:"Midrange Tempered Glass RGB Case",category:"Case",expect:"reject",title:"Replacement Tempered Glass Side Panel for Lian Li O11 Dynamic Mid Tower"},
+  // --- GPU model numbers that are also CPU model numbers ---
+  {query:"RX 7600",category:"GPU",expect:"keep",title:"ASUS TUF Gaming Radeon RX 7600 OC 8GB GDDR6 Graphics Card"},
+  {query:"RX 7600",category:"GPU",expect:"reject",title:"Gaming PC AMD Ryzen 5 7600 Radeon RX 7600 16GB DDR5 1TB"}
 ];
