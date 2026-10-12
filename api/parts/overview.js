@@ -49,6 +49,9 @@ export default async function handler(req, res) {
         median: data.market.median,
         image: listings.find(x => x.image)?.image || null,
         listings: pick.map(slim),
+        // What each source returned, so a thin card can be explained.
+        sources: data.providers.map(p => ({ name: p.name, status: p.status, message: p.message, raw: p.raw, kept: p.kept, dropped: p.dropped })),
+        byStore: Object.entries(listings.reduce((m, x) => (m[x.source] = (m[x.source] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1]),
         searchedAt: data.observedAt,
         errors: data.errors
       };

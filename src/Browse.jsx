@@ -23,7 +23,7 @@ const PRICING_MODES=[
 ];
 const USED=new Set(["used","refurbished","renewed","open-box"]);
 const CACHE_MS=15*60*1000;
-const CACHE_VERSION="fs-overview-v2";
+const CACHE_VERSION="fs-overview-v3";
 
 function ago(iso,now){
   if(!iso)return "";
@@ -86,6 +86,8 @@ function ModelCard({item,row,mode,now,loading,onSeeAll,onMode,trend}){
       {more&&<div className="mcMore">
         {(row.listings||[]).slice().sort((a,b)=>a.totalPrice-b.totalPrice).slice(0,10).map(x=><a key={x.id} href={x.url} target="_blank" rel="noreferrer"><span>{x.source}</span><em className={"c-"+x.condition}>{x.condition==="open-box"?"open box":x.condition}</em><b>{money(x.totalPrice,2)}</b></a>)}
         <small>{row.count} valid listings · market median {money(row.median)}</small>
+        {row.byStore?.length>0&&<div className="mcStores">{row.byStore.map(([n,c])=><span key={n}>{n} <b>{c}</b></span>)}</div>}
+        {row.sources?.length>0&&<details className="mcWhy"><summary>What was searched</summary>{row.sources.map(src=><p key={src.name}><b>{src.name}</b> {src.status==="ok"?src.raw+" found → "+src.kept+" kept"+(Object.keys(src.dropped||{}).length?" · "+Object.entries(src.dropped).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([r,n])=>n+" "+r.replace(/-/g," ")).join(", "):""):src.message}</p>)}</details>}
       </div>}
       <a className="mcGo" href={pick.url||undefined} target="_blank" rel="noreferrer"><ExternalLink size={15}/>{linkLabel(pick,item.name)}</a>
     </>:<div className="mcEmpty"><p>{mode==="new"?"No new listing found in this scan.":mode==="used"?"No used listing found in this scan.":"No trusted listing with a real item link in this scan."}</p><button onClick={onSeeAll}><Search size={14}/>Run full scan</button></div>}
@@ -209,7 +211,8 @@ export function guessCategory(q){
   if(/\b(ryzen|core\s?i[3579]|i[3579][-\s]\d|core ultra|threadripper)/.test(s))return "CPU";
   if(/\bddr[345]\b|\bram\b|memory/.test(s))return "RAM / Memory";
   if(/\bnvme\b|\bm\.?2\b/.test(s))return "NVMe SSD";
-  if(/\bssd\b/.test(s))return "SATA SSD";
+  if(/\bsata\b/.test(s)&&/\bssd\b/.test(s))return "SATA SSD";
+  if(/\bssd\b|solid state/.test(s))return "SSD / NVMe";
   if(/\bhdd\b|hard drive/.test(s))return "Hard Drive / HDD";
   if(/\b[abxz]\d{3}[a-z]?\b|motherboard/.test(s))return "Motherboard";
   if(/\b\d{3,4}\s?w\b|\bpsu\b|power supply/.test(s))return "Power Supply / PSU";

@@ -344,3 +344,9 @@ input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible{ou
 .mcCoverage{font-size:11px;color:var(--muted)}
 .mcMore em.c-used,.mcMore em.c-refurbished,.mcMore em.c-open-box{color:var(--lime)}
 .newOnly{font-size:12px;font-weight:700;color:var(--muted);border:1px solid var(--line2);border-radius:9px;padding:9px 12px}
+.mcStores{display:flex;flex-wrap:wrap;gap:5px}
+.mcStores span{font-size:11px;color:var(--muted);background:var(--card);border-radius:999px;padding:2px 8px}
+.mcStores b{color:var(--text)}
+.mcWhy summary{cursor:pointer;font-size:11px;color:var(--green)}
+.mcWhy p{font-size:11px;color:var(--muted);margin:5px 0;line-height:1.4}
+.mcWhy b{color:var(--text)}

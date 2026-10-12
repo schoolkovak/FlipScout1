@@ -112,6 +112,12 @@ export const PART_GROUPS = [
   },
   {
     id: "ssd", label: "SSD", icon: "ssd", series: [
+      { id: "ssd500", label: "500GB SSDs", items: [
+        spec("500GB SSD", "SSD / NVMe", [["Capacity", "500 GB"], ["Type", "NVMe or SATA"]]),
+        spec("500GB NVMe SSD", "NVMe SSD", [["Capacity", "500 GB"], ["Interface", "M.2 NVMe"]]),
+        spec("500GB SATA SSD", "SATA SSD", [["Capacity", "500 GB"], ["Form", "2.5\""]]),
+        spec("1TB SSD", "SSD / NVMe", [["Capacity", "1 TB"], ["Type", "NVMe or SATA"]])
+      ] },
       { id: "nvme", label: "NVMe SSD", items: [
         spec("1TB NVMe SSD", "NVMe SSD", [["Capacity", "1 TB"], ["Interface", "M.2 NVMe"]]),
         spec("2TB NVMe SSD", "NVMe SSD", [["Capacity", "2 TB"], ["Interface", "M.2 NVMe"]]),
@@ -149,6 +155,14 @@ export const PART_GROUPS = [
   },
   {
     id: "psu", label: "PSU", icon: "psu", series: [
+      { id: "watts", label: "By Wattage (all brands)", items: [
+        spec("550W PSU", "Power Supply / PSU", [["Wattage", "550W"], ["Rating", "Any 80+"]]),
+        spec("650W PSU", "Power Supply / PSU", [["Wattage", "650W"], ["Rating", "Any 80+"]]),
+        spec("750W PSU", "Power Supply / PSU", [["Wattage", "750W"], ["Rating", "Any 80+"]]),
+        spec("850W PSU", "Power Supply / PSU", [["Wattage", "850W"], ["Rating", "Any 80+"]]),
+        spec("1000W PSU", "Power Supply / PSU", [["Wattage", "1000W"], ["Rating", "Any 80+"]]),
+        spec("1200W PSU", "Power Supply / PSU", [["Wattage", "1200W"], ["Rating", "Any 80+"]])
+      ] },
       { id: "gold", label: "80+ Gold", items: [
         spec("650W 80+ Gold PSU", "Power Supply / PSU", [["Wattage", "650W"], ["Rating", "80+ Gold"]]),
         spec("750W 80+ Gold PSU", "Power Supply / PSU", [["Wattage", "750W"], ["Rating", "80+ Gold"]]),
