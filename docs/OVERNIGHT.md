@@ -24,3 +24,5 @@ Restore point: branch `tomato` (commit 56d201c). Say "tomato" to return the site
 - Built only from saved listings, so it costs no credits. New catalog entries feed it: 8GB DDR4 3200, 16GB DDR4 3600, Case group (ATX mid tower, Micro ATX, Mini ITX).
 - Intel 10th / 11th Gen series (i7-11700K, i5-11600K, i5-11400F, i7-10700K, i7-10700, i5-10400F).
 - Matcher test corpus: +23 cases (AM4 CPUs, PSUs, 500GB SSDs, DDR4). Fixed: "PSU extension cable kit for 650W power supply" was shown as a PSU.
+- Phones: the Browse sidebar folds into a "Series, models & filters" drawer so price cards come first; fixed browse content overflowing the screen width on phones.
+- Friendlier messages on model pages (credits used up, service slow, nothing matching) instead of raw provider errors.

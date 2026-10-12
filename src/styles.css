@@ -307,7 +307,7 @@ input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible{ou
   .navLinks{margin-left:0;order:3;width:100%;justify-content:space-between}
   .navSearch{order:4;width:100%}
   .livePill{margin-left:auto}
-  .browse{grid-template-columns:1fr}
+  .browse{grid-template-columns:minmax(0,1fr)}
   .sidebar{position:static;max-height:none;grid-template-columns:1fr}
   .seriesList{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
   .pulse{grid-template-columns:1fr 1fr}
@@ -391,3 +391,12 @@ button.mcImage{border:0;width:100%;cursor:pointer;padding:0}
 .navLinks button{white-space:nowrap;padding:9px 10px}
 .navSearch{min-width:0}
 @media (max-width:760px){.navLinks{max-width:100%;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}.navLinks::-webkit-scrollbar{display:none}.flipRow{grid-template-columns:40px 1fr auto}.flipRow>svg{display:none}}
+.drawerBtn{display:none}
+@media(max-width:860px){
+  .drawerBtn{display:flex;align-items:center;gap:8px;width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--line2,#24323a);background:var(--bg2,#0f171c);color:var(--text,#e6f1f5);font-weight:700;text-align:left}
+  .drawerBtn span{font-family:var(--display);color:var(--green)}
+  .drawerBtn small{margin-left:auto;font-weight:400;color:var(--muted);font-size:12px}
+  .drawerBtn svg.flip{transform:rotate(180deg)}
+  .sidebar{display:none}
+  .sidebar.open{display:grid}
+}
