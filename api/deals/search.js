@@ -1,40 +1,61 @@
-import {searchPartsSniper,providerStatus} from "../_lib/market.js";
-import {SNIPER_MARKETPLACES} from "../../shared/sniper.js";
+import { liveSearch, providerStatus } from "../_lib/market.js";
 
 export default async function handler(req,res) {
-  if(req.method!=="POST")return res.status(405).json({error:"POST required"});
-  const query=String(req.body?.query||"").trim().slice(0,160);
-  if(!query)return res.status(400).json({available:false,message:"Choose a part or model."});
-  const minPrice=Math.max(0,Number(req.body?.minPartPrice)||0);
-  const maxPrice=Math.max(0,Number(req.body?.partBudget)||0);
-  if(maxPrice&&minPrice>maxPrice)return res.status(400).json({available:false,message:"Minimum price cannot exceed maximum price."});
-  const providerKeys={
-    SERPER_API_KEY:req.body?.providerKeys?.SERPER_API_KEY||"",
-    SEARCHAPI_API_KEY:req.body?.providerKeys?.SEARCHAPI_API_KEY||""
-  };
-  if(!providerStatus(providerKeys).some(s=>s.status==="Connected")){
-    return res.status(200).json({available:false,message:"Connect a search provider to scan live listings.",sources:providerStatus(providerKeys)});
-  }
+  if (req.method!=="POST") return res.status(405).json({error:"POST required"});
   const input={
-    category:req.body?.category||"GPU",query,
+    category:req.body?.category||"GPU",
+    query:String(req.body?.query||"").trim(),
     condition:req.body?.condition||"any",
-    partBudget:maxPrice,sortBy:"best",
+    partBudget:Number(req.body?.partBudget||0),
+    buildBudget:Number(req.body?.buildBudget||0),
+    committed:Number(req.body?.committed||0),
+    sortBy:req.body?.sortBy||"best",
     deepScan:Boolean(req.body?.deepScan),
-    marketplaces:SNIPER_MARKETPLACES.map(m=>m.id),providerKeys,
-    skipSearchApi:Boolean(req.body?.skipSearchApi)
+    providerKeys:{
+      SERPER_API_KEY:req.body?.providerKeys?.SERPER_API_KEY||"",
+      SEARCHAPI_API_KEY:req.body?.providerKeys?.SEARCHAPI_API_KEY||""
+    }
   };
-  const result=await searchPartsSniper(input);
-  const filtered=result.ranked.filter(item=>item.totalPrice>=minPrice&&(!maxPrice||item.totalPrice<=maxPrice));
-  return res.status(200).json({
-    available:filtered.length>0,
-    message:filtered.length?null:"No relevant listings within the chosen price range. Try expanding the range or enabling Deep Scan.",
-    searchedAt:result.observedAt,cached:result.cached,stale:result.stale,
+  if (!input.query) return res.status(400).json({available:false,message:"Enter a part or model to search."});
+
+  const connected=providerStatus(input.providerKeys).some(x=>x.status==="Connected");
+  if (!connected) {
+    return res.status(200).json({
+      available:false,
+      message:"Live market search is not available yet. Please try again later.",
+      sources:providerStatus(input.providerKeys)
+    });
+  }
+
+  const result=await liveSearch(input);
+  if (!result.market.sampleSize) {
+    return res.status(200).json({
+      available:false,
+      message:"Providers responded, but FlipScout could not find enough relevant comparable listings for this search.",
+      errors:result.errors,
+      sources:providerStatus(input.providerKeys)
+    });
+  }
+
+  res.status(200).json({
+    available:true,
+    searchedAt:result.observedAt,
+    cached:result.cached,
+    stale:result.stale,
     market:{
-      ...result.market,valueLabel:"Observed asking-market median"
+      median:result.market.median,
+      low:result.market.low,
+      high:result.market.high,
+      sampleSize:result.market.sampleSize,
+      rawSampleSize:result.market.rawSampleSize,
+      byCondition:result.market.byCondition,
+      bySource:result.market.bySource,
+      shippingKnownPct:result.market.shippingKnownPct,
+      confidence:result.market.confidence,
+      valueLabel:"Current asking-market value"
     },
-    results:filtered.slice(0,150),
-    sourceCoverage:result.sourceCoverage||[],
-    errors:result.errors||[],
-    sources:providerStatus(providerKeys)
+    results:result.ranked.slice(0,75),
+    errors:result.errors,
+    sources:providerStatus(input.providerKeys)
   });
 }
