@@ -21,15 +21,19 @@ export function GroupIcon({icon,size=16}){const I=GROUP_ICONS[icon]||Layers;retu
 const RANK_MODES=[{value:"cheapest",label:"Cheapest Available"},{value:"best",label:"Best Deal"}];
 const COND_MODES=[{value:"any",label:"Any"},{value:"new",label:"Only New"},{value:"used",label:"Only Used"}];
 const USED=new Set(["used","refurbished","renewed","open-box"]);
-const CACHE_MS=15*60*1000;
-const CACHE_VERSION="fs-overview-v6";
+// Saved browse results stay on screen across visits; fresh data loads quietly
+// in the background (it is read from saved snapshots, so it costs no credits).
+const CACHE_MS=48*3600*1000;
+const CACHE_VERSION="fs-overview-v7";
 
 function ago(iso,now){
   if(!iso)return "";
   const s=Math.max(0,Math.round((now-Date.parse(iso))/1000));
   if(s<60)return s+"s ago";
   const m=Math.floor(s/60);
-  return m<60?m+"m "+String(s%60).padStart(2,"0")+"s ago":Math.floor(m/60)+"h ago";
+  if(m<60)return m+"m ago";
+  const h=Math.floor(m/60);
+  return h<48?h+"h ago":Math.floor(h/24)+"d ago";
 }
 function storeName(x){return x?.source||"store";}
 function pickListing(row,mode={rank:"cheapest",cond:"any"}){
@@ -69,7 +73,7 @@ function ModelCard({item,row,mode,now,loading,onSeeAll,onCond,trend}){
   const image=pick?.image||row?.image;
   if(loading&&!row)return <article className="modelCard loading"><div className="mcHead"><h3>{item.name}</h3></div><div className="mcImage shimmer"></div><i className="sk"></i><i className="sk short"></i><i className="sk"></i></article>;
   return <article className={"modelCard"+(delta!=null&&delta<0?" belowMsrp":"")}>
-    <button className="mcHead" onClick={onSeeAll} title={"See every "+item.name+" listing"}><h3>{item.name}</h3><span className={"stock "+(pick?"in":"out")}>{pick?"IN STOCK":"NO MATCH"}</span></button>
+    <button className="mcHead" onClick={onSeeAll} title={"See every "+item.name+" listing"}><h3>{item.name}</h3><span className={"stock "+(pick?"in":row?.pending?"queued":"out")}>{pick?"IN STOCK":row?.pending?"QUEUED":"NO MATCH"}</span></button>
     <button className="mcImage" onClick={onSeeAll} aria-label={"See every "+item.name+" listing"}>{image?<img src={image} alt="" loading="lazy" referrerPolicy="no-referrer"/>:<GroupIcon icon="gpu" size={56}/>}</button>
     {pick?<>
       <a className="mcTitle" href={pick.url||undefined} target="_blank" rel="noreferrer" title={pick.title}>{pick.title}</a>
@@ -96,7 +100,7 @@ function ModelCard({item,row,mode,now,loading,onSeeAll,onCond,trend}){
         <SourcesWhy row={row}/>
       </div>}
       <a className="mcGo" href={pick.url||undefined} target="_blank" rel="noreferrer"><ExternalLink size={15}/>{linkLabel(pick,item.name)}</a>
-    </>:<div className="mcEmpty"><p>{mode.cond==="new"?"No new listing right now.":mode.cond==="used"?"No used listing right now.":"No real store listing right now."}</p><SourcesWhy row={row}/></div>}
+    </>:row?.pending?<div className="mcEmpty"><p>Prices for this model are collected in the background and will show up after the next update.</p><button className="mcSearchNow" onClick={onSeeAll}><List size={14}/>Search it now</button></div>:<div className="mcEmpty"><p>{mode.cond==="new"?"No new listing right now.":mode.cond==="used"?"No used listing right now.":"No real store listing right now."}</p><SourcesWhy row={row}/></div>}
   </article>;
 }
 
@@ -130,9 +134,10 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
   async function load(force=false){
     const key=CACHE_VERSION+":"+group.id+":"+series.id;
     const cached=!force&&readCache(key);
-    if(cached){setRows(cached.data);setError("");return;}
     const id=++reqId.current;
-    setLoading(true);setError("");setRows({});
+    setError("");
+    if(cached)setRows(cached.data);
+    else{setRows({});setLoading(true);}
     track("browse_series",{group:group.id,series:series.id});
     try{
       const r=await fetch("/api/parts/overview?group="+encodeURIComponent(group.id)+"&series="+encodeURIComponent(series.id),{signal:AbortSignal.timeout(58000)});
@@ -146,7 +151,7 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
         const p=pickListing(next[item.name]);
         if(p)saveMarketSnapshot({category:"browse",query:item.query,condition:"cheapest"},{median:p.totalPrice,low:p.totalPrice,high:p.totalPrice,sampleSize:next[item.name].count});
       }
-    }catch{if(id===reqId.current)setError("Could not reach the live price service. Try again.");}
+    }catch{if(id===reqId.current&&!cached)setError("Could not reach the price service. Try again.");}
     finally{if(id===reqId.current)setLoading(false);}
   }
   useEffect(()=>{load();},[group.id,series.id]);
@@ -203,16 +208,16 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
           <select value={cardSort} onChange={e=>setCardSort(e.target.value)}><option value="catalog">Model tier</option><option value="price">Price: low to high</option><option value="msrp">Biggest discount vs MSRP</option></select>
         </>}
       </section>
-      <p className="sideNote">Every listing links to a real item page on a trusted store or marketplace — eBay, AliExpress and Mercari item pages included for used deals. For-parts, broken, scam-priced and mismatched listings are removed.</p>
+      <p className="sideNote">Every listing links to a real item page on a trusted store. eBay listings come from eBay's official API, so they are live Buy It Now listings. Sold, for-parts, broken, scam-priced and mismatched listings are removed.</p>
     </aside>
 
     <section className="browseMain">
       <h1 className="pageTitle">Track {series.label} {group.label} Prices</h1>
-      <p className="pageSub">New and used prices from Amazon, Best Buy, Newegg, Walmart, eBay, AliExpress, Mercari, Micro Center, B&amp;H and more — the cheapest real listing per model, checked against launch MSRP.</p>
+      <p className="pageSub">New and used prices from Amazon, Best Buy, Newegg, Walmart, eBay, AliExpress, Micro Center, B&amp;H and more — the cheapest real listing per model, checked against launch MSRP.</p>
       <div className="crumbBar">
         <button className="backBtn" onClick={()=>setRoute({page:"browse",group:group.id,series:group.series[0].id})}><ArrowLeft size={15}/>{group.label}</button>
         <div className="crumbs"><span>{group.label}</span><b>›</b><strong>{series.label}</strong><em>{series.items.length} models{loadedAt?" | Last updated "+new Date(loadedAt).toLocaleTimeString():""}</em></div>
-        <span className="autoNote"><RefreshCw size={13}/>Prices refresh automatically every 30 min</span>
+        <span className="autoNote"><RefreshCw size={13}/>Prices update automatically in the background</span>
       </div>
       <DealTicker cards={hot}/>
       {error&&<div className="notice"><Info size={18}/><div><b>{error}</b></div></div>}
@@ -253,14 +258,20 @@ export function ModelPage({providerKeys,route,setRoute,onWatchChange}){
   const [loading,setLoading]=useState(false);
   const [watched,setWatched]=useState(()=>getWatchlist());
 
+  // Last results stay on screen across visits; the refresh reads saved
+  // snapshots (free) and only searches live for models never saved yet.
   async function scan(){
-    setLoading(true);setData(null);
+    const key="fs-model-v1:"+item.name+":"+item.query+":"+condition;
+    const cached=readCache(key);
+    if(cached)setData(cached.data);else{setLoading(true);setData(null);}
     track("full_scan",{query:item.query});
     try{
       const qs=new URLSearchParams({q:item.query,category:item.category,condition,msrp:String(item.msrp||0)});
+      if(item.specs?.length)qs.set("model",item.name);
       const r=await fetch("/api/deals/search?"+qs.toString(),{signal:AbortSignal.timeout(58000)});
-      setData(await r.json());
-    }catch{setData({available:false,message:"Live search backend is unavailable."});}
+      const d=await r.json();
+      if(d.available||!cached){setData(d);if(d.available)writeCache(key,d);}
+    }catch{if(!cached)setData({available:false,message:"Price service is unavailable. Try again in a minute."});}
     finally{setLoading(false);}
   }
   useEffect(()=>{scan();},[item.query,condition]);
@@ -292,6 +303,7 @@ export function ModelPage({providerKeys,route,setRoute,onWatchChange}){
         </div>
       </div>
     </section>
+    {data?.searchedAt&&<p className="snapNote">Prices updated {ago(data.searchedAt,Date.now())}{data.snapshot?" · refreshed automatically in the background":""}</p>}
     {loading&&<ScanSkeleton label={item.name+" — every real listing across trusted stores"}/>}
     {data&&!data.available&&<div className="notice"><Info size={18}/><div><b>No live listings</b><p>{data.message}</p><ProviderNotes providers={data.providers} coverage={data.coverage} errors={data.errors}/></div></div>}
     {data?.available&&<section className="resultsPanel">

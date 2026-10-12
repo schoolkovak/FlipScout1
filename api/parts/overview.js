@@ -1,75 +1,58 @@
 import { searchMarketplaces, providerStatus } from "../_lib/market.js";
 import { findSeries } from "../../shared/partCatalog.js";
+import { readSnapshot, modelPath, ageHours } from "../_lib/snapshots.js";
+import { cardFromResults } from "../_lib/summary.js";
 
-// Browse grid: new + used Google Shopping queries and one eBay/AliExpress/
-// Mercari item-page search per model, returning the
-// cheapest qualified listings so the browser can pick by pricing mode
-// (cheapest / best deal / only new) without another request.
+// Browse grid. GET ?group=&series= reads each model's saved snapshot (built
+// in the background by scripts/build-snapshots.mjs): no credits, instant.
+// Models not saved yet come back as `pending` instead of triggering paid
+// searches. POST (direct API use) still runs light live searches.
 const MAX_ITEMS = 12;
-
-function slim(x) {
-  return {
-    id: x.id, title: x.title, source: x.source, marketplace: x.marketplace, condition: x.condition,
-    totalPrice: x.totalPrice, itemPrice: x.itemPrice, shippingKnown: x.shippingKnown, url: x.url,
-    linkType: x.linkType, image: x.image || null, score: x.score, percentVsMarket: x.percentVsMarket
-  };
-}
+const SNAPSHOT_MAX_AGE_H = 24 * 7;
 
 export default async function handler(req, res) {
-  // GET /api/parts/overview?group=gpu&series=rtx50 is cached at Vercel's edge
-  // for 30 minutes (served stale for up to a day while it refreshes), so a
-  // series page loads instantly and costs credits at most once per 30 min.
   const isGet = req.method === "GET";
   if (!isGet && req.method !== "POST") return res.status(405).json({ error: "GET or POST required" });
+
   if (isGet) {
     const { series } = findSeries(String(req.query?.group || "gpu"), String(req.query?.series || ""));
-    req.body = { items: series.items.map(x => ({ id: x.name, query: x.query, category: x.category, msrp: x.msrp || 0 })) };
+    const items = await Promise.all(series.items.slice(0, MAX_ITEMS).map(async item => {
+      const snap = await readSnapshot(modelPath(item.name));
+      if (!snap?.results?.length || ageHours(snap.searchedAt) > SNAPSHOT_MAX_AGE_H) {
+        return { id: item.name, available: false, pending: true, count: 0, listings: [], searchedAt: snap?.searchedAt || null };
+      }
+      return cardFromResults(item.name, snap.results, {
+        median: snap.market?.median ?? null, searchedAt: snap.searchedAt,
+        sources: (snap.providers || []).map(p => ({ name: p.name, status: p.status, message: p.message, raw: p.raw, kept: p.kept, dropped: p.dropped }))
+      });
+    }));
+    const updated = items.map(x => x.searchedAt).filter(Boolean).sort();
+    res.setHeader?.("Cache-Control", "public, s-maxage=300, stale-while-revalidate=3600");
+    return res.status(200).json({ available: items.some(x => x.available), snapshot: true, searchedAt: updated[updated.length - 1] || null, items });
   }
+
   const providerKeys = {
     SERPER_API_KEY: req.body?.providerKeys?.SERPER_API_KEY || "",
     SEARCHAPI_API_KEY: req.body?.providerKeys?.SEARCHAPI_API_KEY || ""
   };
   if (!providerStatus(providerKeys).some(x => x.status === "Connected")) {
-    return res.status(200).json({ available: false, message: "No market data provider is configured. Add SERPER_API_KEY to the server environment.", items: [] });
+    return res.status(200).json({ available: false, message: "No market data provider is configured.", items: [] });
   }
   const items = (Array.isArray(req.body?.items) ? req.body.items : []).slice(0, MAX_ITEMS)
     .map(x => ({ id: String(x?.id || x?.query || ""), query: String(x?.query || "").trim().slice(0, 120), category: String(x?.category || "GPU"), msrp: Math.max(0, Number(x?.msrp) || 0) }))
     .filter(x => x.query);
   if (!items.length) return res.status(400).json({ available: false, message: "No parts requested.", items: [] });
-
   const results = await Promise.all(items.map(async item => {
     try {
       const data = await searchMarketplaces({ query: item.query, category: item.category, msrp: item.msrp, condition: "any", sortBy: "lowest", providerKeys }, { includeOtherMerchants: true, lite: true });
-      const listings = data.ranked.slice().sort((a, b) => a.totalPrice - b.totalPrice);
-      const isUsed = x => ["used", "refurbished", "renewed", "open-box"].includes(x.condition);
-      const newOnes = listings.filter(x => x.condition === "new");
-      const usedOnes = listings.filter(isUsed);
-      const best = data.ranked.slice().sort((a, b) => b.score - a.score);
-      const pick = [...new Map([...listings.slice(0, 12), ...newOnes.slice(0, 5), ...usedOnes.slice(0, 5), ...best.slice(0, 3)].map(x => [x.id, x])).values()];
-      return {
-        id: item.id,
-        available: listings.length > 0,
-        count: listings.length,
-        stores: new Set(listings.map(x => x.marketplace === "other" ? x.source : x.marketplace)).size,
-        newCount: newOnes.length,
-        usedCount: usedOnes.length,
-        newFrom: newOnes[0]?.totalPrice ?? null,
-        usedFrom: usedOnes[0]?.totalPrice ?? null,
-        median: data.market.median,
-        image: listings.find(x => x.image)?.image || null,
-        listings: pick.map(slim),
-        // What each source returned, so a thin card can be explained.
-        sources: data.providers.map(p => ({ name: p.name, status: p.status, message: p.message, raw: p.raw, kept: p.kept, dropped: p.dropped })),
-        byStore: Object.entries(listings.reduce((m, x) => (m[x.source] = (m[x.source] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1]),
-        searchedAt: data.observedAt,
-        errors: data.errors
-      };
+      return cardFromResults(item.id, data.ranked, {
+        median: data.market.median, searchedAt: data.observedAt, errors: data.errors,
+        sources: data.providers.map(p => ({ name: p.name, status: p.status, message: p.message, raw: p.raw, kept: p.kept, dropped: p.dropped }))
+      });
     } catch (error) {
       return { id: item.id, available: false, count: 0, listings: [], errors: [{ provider: "FlipScout", message: String(error?.message || error).slice(0, 160) }] };
     }
   }));
-  const anyOk = results.some(x => x.available);
-  if (isGet && anyOk) res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
-  else res.setHeader("Cache-Control", "no-store");
-  res.status(200).json({ available: anyOk, searchedAt: new Date().toISOString(), items: results });
+  res.setHeader?.("Cache-Control", "no-store");
+  res.status(200).json({ available: results.some(x => x.available), searchedAt: new Date().toISOString(), items: results });
 }

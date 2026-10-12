@@ -4,6 +4,8 @@ import { SNIPER_MARKETPLACES, allowsUsed } from "../../shared/sniper.js";
 import { sortDeals } from "../../shared/dealSort.js";
 import { isTrustedMerchant, listingLink } from "./stores.js";
 import { verifyListings } from "./verify.js";
+import { chargeSerper, noteResolved } from "./meter.js";
+import { readSnapshot } from "./snapshots.js";
 
 export { relevanceScore } from "./matching.js";
 
@@ -26,9 +28,10 @@ function providerKey(name, input = {}) {
 
 function availableProviders(input = {}) {
   return {
-    serper: Boolean(providerKey("SERPER_API_KEY", input)),
-    searchapi: Boolean(providerKey("SEARCHAPI_API_KEY", input)),
-    serpapi: Boolean(env("SERPAPI_API_KEY")),
+    // input.free: only free sources (official store APIs), no paid credits.
+    serper: !input.free && Boolean(providerKey("SERPER_API_KEY", input)),
+    searchapi: !input.free && Boolean(providerKey("SEARCHAPI_API_KEY", input)),
+    serpapi: !input.free && Boolean(env("SERPAPI_API_KEY")),
     bestbuyApi: Boolean(env("BESTBUY_API_KEY")),
     ebayApi: Boolean(env("EBAY_CLIENT_ID") && env("EBAY_CLIENT_SECRET"))
   };
@@ -150,6 +153,7 @@ async function providerFetch(provider, url, options = {}, secrets = []) {
       await paceHost(host);
       let response;
       try {
+        if (host === "google.serper.dev") { try { chargeSerper(JSON.parse(options.body || "{}")); } catch { chargeSerper({}); } }
         response = await fetch(url, { ...options, signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS) });
       } catch (error) {
         if (error?.name === "TimeoutError" || error?.name === "AbortError") throw new ProviderError("timed out after " + PROVIDER_TIMEOUT_MS / 1000 + "s");
@@ -253,7 +257,10 @@ function offer(base) {
 
 function googleShoppingOffer(x, provider, index) {
   const seller = x.source || x.seller || x.merchant?.name || "";
-  const url = x.link || x.product_link || x.offers_link || null;
+  // Serper often returns no link at all, only Google's productId: keep the
+  // offer as a Google product page so it can be matched to the store's page.
+  const pid = x.productId || x.product_id || null;
+  const url = x.link || x.product_link || x.offers_link || (pid ? "https://www.google.com/shopping/product/" + pid : null);
   const marketplace = marketplaceIdFromResult(seller, url);
   const ship = parseShippingText(x.delivery || x.shipping || x.delivery_return || "");
   return offer({
@@ -341,7 +348,7 @@ export async function searchSerperItemPages(input, { marketplaces = ["ebay", "al
   for (const x of data.organic || []) {
     let u;
     try { u = new URL(x.link); } catch { continue; }
-    const site = table.find(s => s.re && s.re.test(u.hostname) && s.path.test(u.pathname));
+    const site = sites.find(s => s.re && s.re.test(u.hostname) && s.path.test(u.pathname));
     if (!site) continue;
     const snippet = String(x.snippet || "");
     const cond = snippet.match(/\b(brand new|new \(other\)|new other|open box|pre-owned|preowned|used|certified - refurbished|refurbished|for parts or not working|for parts)\b/i)?.[0] || "";
@@ -1080,6 +1087,13 @@ async function resolveOne(input, item) {
   const store = item.marketplace && item.marketplace !== "other" ? marketplaceName(item.marketplace) : item.seller;
   const key = (store + "|" + item.title).toLowerCase();
   if (resolveCache.has(key)) return resolveCache.get(key);
+  // Matches saved by the snapshot builder cost nothing to reuse.
+  const saved = await readSnapshot("links.json");
+  if (saved && Object.prototype.hasOwnProperty.call(saved, key)) {
+    const url = saved[key] || null;
+    resolveCache.set(key, url);
+    return url;
+  }
   const apiKey = providerKey("SERPER_API_KEY", input);
   let found = null;
   try {
@@ -1100,6 +1114,7 @@ async function resolveOne(input, item) {
       break;
     }
   } catch { found = null; }
+  noteResolved(key, found || "");
   resolveCache.set(key, found);
   if (resolveCache.size > 3000) resolveCache.delete(resolveCache.keys().next().value);
   return found;
@@ -1107,7 +1122,10 @@ async function resolveOne(input, item) {
 
 // Resolve Google-linked offers (cheapest first, up to `limit`); drop the rest.
 export async function resolveRealLinks(input, items, stats, limit) {
-  const google = items.filter(x => x.linkType === "google" && x.marketplace !== "mercari").sort((a, b) => a.totalPrice - b.totalPrice);
+  // eBay and Mercari items are one-off listings that sell out; a page found
+  // through Google can't be confirmed live, so only official eBay API
+  // listings are shown for them.
+  const google = items.filter(x => x.linkType === "google" && x.marketplace !== "mercari" && x.marketplace !== "ebay").sort((a, b) => a.totalPrice - b.totalPrice);
   const toResolve = new Set(google.slice(0, limit));
   await Promise.all([...toResolve].map(async x => {
     const url = await resolveOne(input, x);
@@ -1153,13 +1171,17 @@ function shoppingCall(input, has, q) {
   return null;
 }
 
-// Every scan is a full ("deep") scan: Google Shopping variants for every
-// condition, a structured eBay source, then targeted queries for any selected
-// store that still has no match. Exhausted providers are skipped, not retried.
-// lite (browse grid): new + used Google Shopping queries and one item-page
-// search for eBay/AliExpress/Mercari — no store-targeted follow-ups.
-export async function searchMarketplaces(input, { includeOtherMerchants = false, lite = false } = {}) {
+// Modes:
+// - deep (Deal Hunt): Google Shopping variants + page 2, retailer pages,
+//   AliExpress item pages, store-targeted follow-ups, 12 store-page matches.
+// - lite (pages with no saved snapshot yet): new + used Google Shopping and
+//   4 store-page matches.
+// - snapshot (background builder): like lite, with 10 store-page matches.
+// Free official APIs (eBay Browse, Best Buy) run in every mode. eBay pages
+// found through Google are never used: they can't be confirmed still for sale.
+export async function searchMarketplaces(input, { includeOtherMerchants = false, lite = false, snapshot = false } = {}) {
   const started = Date.now();
+  const light = lite || snapshot;
   const selected = [...new Set((input.marketplaces && input.marketplaces.length ? input.marketplaces : ALL_MARKETPLACES).filter(id => ALL_MARKETPLACES.includes(id)))];
   const has = availableProviders(input);
   // PSUs, cooling, monitors, drives etc. are new-only; used listings are only
@@ -1169,30 +1191,20 @@ export async function searchMarketplaces(input, { includeOtherMerchants = false,
   const wants = id => selected.includes(id);
   const searchInput = { ...input, query, condition, deepScan: true };
 
-  const round1 = shoppingQueries(query, condition).slice(0, lite ? 2 : 3).map(q => shoppingCall(searchInput, has, q)).filter(Boolean);
-  const organicOk = !lite; // browse cards stay credit-light: Google Shopping + link resolution only
-  // Mercari is not searched: its pages can't be checked live and are usually sold.
-  const itemSites = ["ebay", "aliexpress"].filter(wants);
-  // Deep (non-lite) scans also read Google Shopping page 2 and run a
-  // separate used-only item-page search, for many more listings per part.
-  if (!lite && has.serper) {
+  const round1 = shoppingQueries(query, condition).slice(0, light ? 2 : 3).map(q => shoppingCall(searchInput, has, q)).filter(Boolean);
+  if (!light && has.serper) {
     const q2 = shoppingQueries(query, condition)[0];
     round1.push(callSpec("serper", "Store price search", null, searchInput, { q: q2, page: 2 }, () => searchSerperShopping(searchInput, { q: q2, page: 2 })));
   }
   const retailSites = ["amazon", "newegg", "bestbuy", "walmart", "microcenter", "bhphoto"].filter(wants);
-  if (organicOk && has.serper && retailSites.length) round1.push(callSpec("serper-retail", "Retailer pages (Serper web search)", retailSites, searchInput, { q: query, condition: "new", sites: retailSites }, () => searchSerperItemPages({ ...searchInput, condition: "new" }, { marketplaces: retailSites, retail: true })));
-  if (organicOk && has.serper && itemSites.length) round1.push(callSpec("serper-items", "Item pages (Serper web search)", itemSites, searchInput, { q: query, condition, sites: itemSites }, () => searchSerperItemPages(searchInput, { marketplaces: itemSites })));
-  if (!lite && has.serper && wants("aliexpress")) round1.push(callSpec("serper-items", "Item pages (Serper web search)", ["aliexpress"], searchInput, { q: query, condition, sites: ["aliexpress"] }, () => searchSerperItemPages(searchInput, { marketplaces: ["aliexpress"] })));
-  if (!lite && has.serper && itemSites.length && condition === "any" && allowsUsed(input.category)) {
-    const usedInput = { ...searchInput, condition: "used" };
-    round1.push(callSpec("serper-items", "Item pages (Serper web search)", itemSites, searchInput, { q: query, condition: "used", sites: itemSites }, () => searchSerperItemPages(usedInput, { marketplaces: itemSites })));
-  }
-  if (wants("ebay") && !lite) {
+  if (!light && has.serper && retailSites.length) round1.push(callSpec("serper-retail", "Retailer pages (Serper web search)", retailSites, searchInput, { q: query, condition: "new", sites: retailSites }, () => searchSerperItemPages({ ...searchInput, condition: "new" }, { marketplaces: retailSites, retail: true })));
+  if (!light && has.serper && wants("aliexpress")) round1.push(callSpec("serper-items", "Item pages (Serper web search)", ["aliexpress"], searchInput, { q: query, condition, sites: ["aliexpress"] }, () => searchSerperItemPages(searchInput, { marketplaces: ["aliexpress"] })));
+  if (wants("ebay")) {
     if (has.ebayApi) round1.push(callSpec("ebay-api", "eBay Browse API", ["ebay"], searchInput, { q: query, condition }, () => searchEbay(searchInput)));
-    else if (has.serpapi) round1.push(callSpec("serpapi-ebay", "eBay (SerpApi)", ["ebay"], searchInput, { q: query, condition }, () => searchSerpApiEbay(searchInput)));
-    else if (has.searchapi) round1.push(callSpec("searchapi-ebay", "eBay (SearchAPI)", ["ebay"], searchInput, { q: query, condition }, () => searchSearchApiEbay(searchInput)));
+    else if (!light && has.serpapi) round1.push(callSpec("serpapi-ebay", "eBay (SerpApi)", ["ebay"], searchInput, { q: query, condition }, () => searchSerpApiEbay(searchInput)));
+    else if (!light && has.searchapi) round1.push(callSpec("searchapi-ebay", "eBay (SearchAPI)", ["ebay"], searchInput, { q: query, condition }, () => searchSearchApiEbay(searchInput)));
   }
-  if (wants("bestbuy") && has.bestbuyApi && !lite) round1.push(callSpec("bestbuy-api", "Best Buy API", ["bestbuy"], searchInput, { q: query, condition }, () => searchBestBuy(searchInput)));
+  if (wants("bestbuy") && has.bestbuyApi) round1.push(callSpec("bestbuy-api", "Best Buy API", ["bestbuy"], searchInput, { q: query, condition }, () => searchBestBuy(searchInput)));
 
   const settled = await executeCalls(round1);
   let qualified = qualifyOffers(settled.flatMap(r => r.offers), searchInput, { selected, includeOtherMerchants, stats: new Map() });
@@ -1200,7 +1212,7 @@ export async function searchMarketplaces(input, { includeOtherMerchants = false,
   // Round 2: stores with no qualified listing yet get a direct store search
   // (SearchAPI, if it still has credits) or a store-targeted shopping query.
   const round2 = [];
-  if (!lite && Date.now() - started < 20000) {
+  if (!light && Date.now() - started < 20000) {
     const found = new Set(qualified.items.map(x => x.marketplace));
     const searchApiOk = has.searchapi && !settled.some(r => r.error && r.call.id.startsWith("searchapi"));
     const missing = STORE_PRIORITY.filter(id => wants(id) && !found.has(id));
@@ -1222,7 +1234,7 @@ export async function searchMarketplaces(input, { includeOtherMerchants = false,
 
   // Only real store listings are shown: resolve Google-linked offers to the
   // store's own item page (Google Shopping stays a background source).
-  if (has.serper) qualified.items = await resolveRealLinks(searchInput, qualified.items, qualified.stats, lite ? 4 : 12);
+  if (has.serper) qualified.items = await resolveRealLinks(searchInput, qualified.items, qualified.stats, snapshot ? 10 : lite ? 4 : 12);
   else qualified.items = qualified.items.filter(x => x.linkType === "listing");
   const providers = summarizeProviders(all, qualified.stats);
   const errors = providers.filter(p => p.status === "error" || p.status === "skipped").map(p => ({ provider: p.name, message: p.message }));

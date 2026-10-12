@@ -7,7 +7,7 @@
     "dev": "concurrently \"vite --host 0.0.0.0\" \"node --watch server/index.js\"",
     "build": "vite build",
     "start": "node server/index.js",
-    "test": "node scripts/smoke-test.mjs && node --test scripts/regression.test.mjs scripts/search-pipeline.test.mjs",
+    "test": "SNAPSHOTS_OFF=1 node scripts/smoke-test.mjs && SNAPSHOTS_OFF=1 node --test scripts/regression.test.mjs scripts/search-pipeline.test.mjs",
     "audit:live": "node scripts/live-audit.mjs"
   },
   "dependencies": {
