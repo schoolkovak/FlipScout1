@@ -38,7 +38,7 @@ export default async function handler(req,res){
   if(!connected){
     return res.status(200).json({
       available:false,
-      message:"Live marketplace providers are not connected yet.",
+      message:"No market data provider is configured. Add SERPER_API_KEY and/or SEARCHAPI_API_KEY to the server environment.",
       sources:providerStatus(providerKeys)
     });
   }
@@ -76,11 +76,15 @@ export default async function handler(req,res){
           byCondition:data.market.byCondition,
           bySource:data.market.bySource,
           shippingKnownPct:data.market.shippingKnownPct,
+          conditionMedians:data.market.conditionMedians,
           confidence:data.market.confidence
         },
         bestDeal:best,
-        results:data.ranked.slice(0,100),
-        errors:data.errors
+        resultCount:data.ranked.length,
+        results:data.ranked.slice(0,200),
+        errors:data.errors,
+        providers:data.providers,
+        coverage:data.coverage
       };
     }catch(error){
       return {

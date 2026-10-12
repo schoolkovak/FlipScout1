@@ -1,792 +1,676 @@
-import { parseListingText } from "../../src/listingParser.js";
 import { createHash } from "node:crypto";
-import { resolveCatalogPart } from "../../shared/catalog.js";
-import { SNIPER_CATEGORIES } from "../../shared/sniper.js";
+import { evaluateListing, normalizeListingText } from "./matching.js";
+import { SNIPER_MARKETPLACES } from "../../shared/sniper.js";
+import { sortDeals } from "../../shared/dealSort.js";
+
+export { relevanceScore } from "./matching.js";
+
 const EBAY_SCOPE = "https://api.ebay.com/oauth/api_scope";
-const searchCache=new Map();
-const CACHE_MS=10*60*1000;
-const inFlight=new Map();
-async function providerFetch(url,options={}){
-  for(let attempt=0;attempt<2;attempt++){
-    const response=await fetch(url,{...options,signal:AbortSignal.timeout(12000)});
-    if(response.status>=500 && attempt===0){await response.body?.cancel();continue;}
-    return response;
-  }
-}
-function safeUrl(value){try{const u=new URL(value);return ["https:","http:"].includes(u.protocol)?u.href:null;}catch{return null;}}
+const CACHE_MS = 10 * 60 * 1000;
+const PROVIDER_TIMEOUT_MS = 10000;
+const ALL_MARKETPLACES = SNIPER_MARKETPLACES.map(x => x.id);
 
-
-const SERVER_PROVIDER_FALLBACKS = {
-  SERPER_API_KEY: "6aa530313ba36ca4fae4987342d8635a84573a8b",
-  SEARCHAPI_API_KEY: "cctTvQ4ecsw4nQLnqTQF1kBd"
-};
-
+// ---------------------------------------------------------------------------
+// Credentials: environment variables (Vercel / local .env) or keys the owner
+// typed into the browser settings panel. Never embedded in source.
+// ---------------------------------------------------------------------------
 function env(name) {
-  const embedded=process.env.VERCEL==="1" ? SERVER_PROVIDER_FALLBACKS[name] : "";
-  return process.env[name] || embedded || "";
+  return process.env[name] || "";
 }
 
-function providerKey(name,input={}) {
+function providerKey(name, input = {}) {
   return input?.providerKeys?.[name] || env(name);
 }
 
-export function providerStatus(providerKeys={}) {
-  const scoped={providerKeys};
-
-  return [
-    {
-      id:"serper",
-      name:"Serper Shopping",
-      status: providerKey("SERPER_API_KEY",scoped) ? "Connected" : "Missing credentials",
-      coverage:"Recommended free starter: 2,500 real-time Google Shopping queries",
-      signupUrl:"https://serper.dev/",
-      freeAllowance:"2,500 free queries"
-    },
-    {
-      id:"searchapi",
-      name:"SearchAPI",
-      status: providerKey("SEARCHAPI_API_KEY",scoped) ? "Connected" : "Missing credentials",
-      coverage:"Direct eBay, Walmart and Best Buy public search results; use sparingly on free credits",
-      signupUrl:"https://www.searchapi.io/",
-      freeAllowance:"100 free requests"
-    },
-    {
-      id:"serpapi",
-      name:"SerpApi Google Shopping",
-      status: env("SERPAPI_API_KEY") ? "Connected" : "Missing credentials",
-      coverage:"Optional Google Shopping provider; 250 free searches/month",
-      signupUrl:"https://serpapi.com/",
-      freeAllowance:"250 searches/month"
-    },
-    {
-      id:"bestbuy",
-      name:"Best Buy",
-      status: env("BESTBUY_API_KEY") ? "Connected" : "Missing credentials",
-      coverage:"Near-real-time new pricing plus official Open Box offers",
-      signupUrl:"https://developer.bestbuy.com/",
-      freeAllowance:"50,000 calls/day if approved"
-    },
-    {
-      id:"ebay",
-      name:"eBay",
-      status: env("EBAY_CLIENT_ID") && env("EBAY_CLIENT_SECRET") ? "Connected" : "Missing credentials / production approval",
-      coverage:"Live new and used asking prices",
-      signupUrl:"https://developer.ebay.com/",
-      freeAllowance:"Developer registration is free; production Buy API approval required"
-    }
-  ];
-}
-
-function parseMoney(text) {
-  if (typeof text === "number") return text;
-  if (!text) return null;
-  const m=String(text).replace(/,/g,"").match(/\$?\s*([0-9]+(?:\.[0-9]+)?)/);
-  return m ? Number(m[1]) : null;
-}
-
-function normalizeCondition(value) {
-  const s=String(value||"").toLowerCase();
-  if (s.includes("renewed")) return "renewed";
-  if (s.includes("refurb")) return "refurbished";
-  if (s.includes("open box") || s.includes("open-box") || s.includes("new opened") || s.includes("like new")) return "open-box";
-  if (s.includes("new")) return "new";
-  if (s.includes("used") || s.includes("pre-owned") || s.includes("preowned") || s.includes("second hand")) return "used";
-  return "unknown";
-}
-
-function conditionMatches(actual,requested){
-  if(requested==="any") return true;
-  if(actual===requested) return true;
-  if(requested==="renewed" && actual==="refurbished") return true;
-  return false;
-}
-
-function conditionSearchTerm(condition){
-  return condition==="open-box"?"open box":condition==="any"?"":condition;
-}
-
-function normalizeText(value) {
-  return String(value||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
-}
-
-function importantTokens(query) {
-  const q=normalizeText(query);
-  const stop=new Set(["ssd","nvme","gpu","cpu","graphics","card","gaming","pc","desktop","new","used","preowned","pre","owned"]);
-  return q.split(" ").filter(t=>t.length>1 && !stop.has(t));
-}
-
-function capacities(text) {
-  const raw=String(text||"").toLowerCase();
-  const values=[];
-  const re=/(\d+(?:\.\d+)?)\s*(tb|gb)\b/g;
-  let m;
-  while((m=re.exec(raw))){
-    const n=Number(m[1]);
-    values.push(m[2]==="tb"?n*1024:n);
-  }
-  return values;
-}
-
-function primaryCapacity(text) {
-  const values=capacities(text);
-  return values.length?Math.max(...values):null;
-}
-
-function variantPenalty(q,t) {
-  let penalty=0;
-  const variants=["ti","super","xt","xtx","x3d"];
-  for(const v of variants){
-    const qHas=new RegExp("\\b"+v+"\\b").test(q) || (v==="x3d"&&q.includes("x3d"));
-    const tHas=new RegExp("\\b"+v+"\\b").test(t) || (v==="x3d"&&t.includes("x3d"));
-    if(qHas!==tHas) penalty+=.22;
-  }
-  return Math.min(.55,penalty);
-}
-
-export function relevanceScore(title, query, category) {
-  const t=normalizeText(title);
-  const q=normalizeText(query);
-  if (!t || !q) return 0;
-  const tokens=importantTokens(q);
-  let matched=0;
-  for (const token of tokens) if (t.includes(token)) matched++;
-  let score=tokens.length ? matched/tokens.length : (t.includes(q)?1:0.5);
-
-  const cat=String(category||"").toLowerCase();
-  if(["gpu","cpu"].includes(cat)){
-    const expected=resolveCatalogPart(cat,query);
-    const identified=parseListingText(title)[cat];
-    if(expected.item && identified!==expected.canonical){
-      // Listing titles frequently append VRAM, core counts or board-partner
-      // descriptions. Accept an unambiguous canonical model even when the
-      // strict whole-title parser cannot identify that longer string.
-      const expectedKey=normalizeText(expected.canonical).replace(/[^a-z0-9]/g,"");
-      const titleKey=t.replace(/[^a-z0-9]/g,"");
-      if(identified || !titleKey.includes(expectedKey))return 0;
-    }
-    const model=String(query).match(/\b(?:\d{3,5}[a-z]*|[ab]\d{3})\b/i)?.[0];
-    if(model && !t.replace(/\s+/g,"").includes(model.toLowerCase()))return 0;
-    if(/\b(laptop|notebook|mobile|waterblock|water block|replacement fan|empty box|box only|riser|adapter|for parts|parts only|not working|broken|untested|repair|as is|gaming pc|desktop pc|prebuilt|bundle|motherboard combo)\b/.test(t))return 0;
-    if(variantPenalty(q,t)>0)return 0;
-    if(cat==="gpu" && expected.item){
-      const caps=capacities(title);
-      if(caps.length && !caps.includes(expected.item.vram))return 0;
-    }
-  }
-  const broken=/\b(for parts|parts only|not working|broken|untested|repair|as is)\b/.test(t);
-  if(broken) score-=.7;
-
-  if (cat==="gpu") {
-    if (/\b(laptop|notebook|gaming pc|desktop pc|prebuilt|complete pc|computer system)\b/.test(t)) score-=.55;
-    if (/\b(water ?block|heatsink|backplate|replacement fan|cooler only|empty box|box only|riser|vertical mount)\b/.test(t)) score-=.7;
-    if (/\b(graphics card|gpu|geforce|radeon|rtx|rx|arc)\b/.test(t)) score+=.15;
-    score-=variantPenalty(q,t);
-  }
-
-  if (cat==="cpu") {
-    if (/\b(laptop|notebook|desktop pc|prebuilt|complete pc|motherboard combo|bundle)\b/.test(t)) score-=.5;
-    if (/\b(processor|cpu|ryzen|intel|core)\b/.test(t)) score+=.12;
-    score-=variantPenalty(q,t);
-  }
-
-  if (cat.includes("ssd") || cat.includes("storage") || cat==="ssd / nvme") {
-    if (/\b(enclosure|adapter|heatsink|cable|duplicator|dock|case only)\b/.test(t)) score-=.65;
-    if (/\b(ssd|nvme|solid state|m 2|m2)\b/.test(t)) score+=.14;
-  }
-
-  if (cat==="ram") {
-    if (/\b(laptop|sodimm|so dimm)\b/.test(t) && !/\b(sodimm|so dimm)\b/.test(q)) score-=.5;
-    if (/\b(memory|ram|ddr4|ddr5)\b/.test(t)) score+=.12;
-  }
-
-  if (cat==="motherboard") {
-    if (/\b(combo|bundle|with cpu|cpu included)\b/.test(t)) score-=.55;
-    if (/\b(motherboard|mainboard|b550|b650|b850|x570|x670|x870|b760|z790|b860|z890)\b/.test(t)) score+=.12;
-  }
-
-  if (cat==="psu") {
-    if (/\b(cable only|replacement cable|extension cable|adapter)\b/.test(t)) score-=.7;
-    if (/\b(power supply|psu|80 plus|atx 3)\b/.test(t)) score+=.12;
-  }
-
-  if (cat==="case") {
-    if (/\b(case fan|fan only|side panel|front panel|replacement panel)\b/.test(t)) score-=.6;
-    if (/\b(pc case|computer case|chassis|mid tower|atx case)\b/.test(t)) score+=.12;
-  }
-
-  if (cat.includes("cooler")) {
-    if (/\b(bracket only|mounting kit|retention kit|replacement fan)\b/.test(t)) score-=.65;
-    if (/\b(cooler|aio|liquid cooling|air cooler|heatsink)\b/.test(t)) score+=.12;
-  }
-
-  if (cat==="complete pc") {
-    const expected=parseListingText(query),actual=parseListingText(title);
-    if((expected.cpu && expected.cpu!==actual.cpu)||(expected.gpu && expected.gpu!==actual.gpu))return 0;
-    if (/\b(gaming pc|gaming desktop|desktop computer|prebuilt|computer)\b/.test(t)) score+=.15;
-    if (/\b(laptop|notebook|parts only|case only)\b/.test(t)) score-=.65;
-  }
-
-  if (["gpu","ram","ram / memory","nvme ssd","sata ssd","ssd / nvme","ssd / storage","storage","hard drive / hdd"].includes(cat)) {
-    const qCap=primaryCapacity(query);
-    const tCap=primaryCapacity(title);
-    if(qCap&&tCap&&Math.abs(qCap-tCap)/qCap>.12) score-=.38;
-  }
-
-  const sniperProfile=SNIPER_CATEGORIES.find(x=>x.name.toLowerCase()===cat);
-  if(sniperProfile){
-    const excluded=(sniperProfile.exclude||[]).some(term=>t.includes(normalizeText(term)));
-    if(excluded) score-=.72;
-    const included=(sniperProfile.include||[]).some(term=>t.includes(normalizeText(term)));
-    if(included) score+=.12;
-  }
-
-  return Math.max(0,Math.min(1,score));
-}
-
-function parseShippingFromSerp(result) {
-  const delivery=result.delivery || result.shipping || "";
-  if (!delivery) return {shipping:0,shippingKnown:false};
-  if (/free/i.test(delivery)) return {shipping:0,shippingKnown:true};
-  const value=parseMoney(delivery);
-  return {shipping:value||0,shippingKnown:value!==null};
-}
-
-export async function searchSerpApi({query,category,condition}) {
-  if (!env("SERPAPI_API_KEY")) return [];
-  const params=new URLSearchParams({
-    engine:"google_shopping",
-    q:query,
-    api_key:env("SERPAPI_API_KEY"),
-    gl:"us",
-    hl:"en"
-  });
-  const response=await providerFetch("https://serpapi.com/search.json?"+params.toString());
-  if (!response.ok) throw new Error("SerpApi returned "+response.status);
-  const data=await response.json();
-  return (data.shopping_results||[]).map((x,index)=>{
-    const itemPrice=Number(x.extracted_price||0);
-    const ship=parseShippingFromSerp(x);
-    const inferredCondition=x.second_hand_condition ? "used" : normalizeCondition(x.condition||"new");
-    return {
-      id:"serp-"+(x.product_id||index)+"-"+itemPrice,
-      source:"Google Shopping",
-      sourceType:"retail-aggregator",
-      title:x.title||"Untitled listing",
-      condition:inferredCondition,
-      itemPrice,
-      shipping:ship.shipping,
-      shippingKnown:ship.shippingKnown,
-      totalPrice:itemPrice+ship.shipping,
-      seller:x.source||"Unknown retailer",
-      url:x.product_link||x.link||null,
-      freshness:null,
-      relevance:relevanceScore(x.title,query,category)
-    };
-  }).filter(x=>x.itemPrice>0 && conditionMatches(x.condition,condition));
-}
-
-
-export async function searchSerperShopping(input) {
-  const {query,category,condition}=input;
-  const apiKey=providerKey("SERPER_API_KEY",input);
-  if (!apiKey) return [];
-  const q=condition==="used" ? "used "+query : condition==="open-box" ? "open box "+query : query;
-  const response=await providerFetch("https://google.serper.dev/shopping",{
-    method:"POST",
-    headers:{
-      "X-API-KEY":apiKey,
-      "Content-Type":"application/json"
-    },
-    body:JSON.stringify({q,gl:"us",hl:"en",num:100})
-  });
-  if(!response.ok) throw new Error("Serper Shopping returned "+response.status);
-  const data=await response.json();
-  return (data.shopping||[]).map((x,index)=>{
-    const itemPrice=parseMoney(x.price);
-    const ship=parseShippingFromSerp({delivery:x.delivery});
-    let inferredCondition=normalizeCondition((x.title||"")+" "+(x.condition||""));
-    let conditionAssumed=false;
-    if(inferredCondition==="unknown" && condition!=="any"){inferredCondition=condition;conditionAssumed=true;}
-    return {
-      id:"serper-"+(x.productId||index)+"-"+itemPrice,
-      source:"Google Shopping",
-      sourceType:"retail-aggregator",
-      title:x.title||"Untitled shopping result",
-      condition:inferredCondition,
-      conditionAssumed,
-      itemPrice:itemPrice||0,
-      shipping:ship.shipping,
-      shippingKnown:ship.shippingKnown,
-      totalPrice:(itemPrice||0)+ship.shipping,
-      seller:x.source||"Unknown merchant",
-      url:x.link||null,
-      freshness:null,
-      relevance:relevanceScore(x.title,query,category)
-    };
-  }).filter(x=>x.itemPrice>0 && conditionMatches(x.condition,condition));
-}
-
-function searchApiCondition(condition){
-  if(condition==="new") return "new";
-  if(condition==="used") return "pre_owned_excellent,used_very_good,used_good,used_acceptable,pre_owned_fair";
-  if(condition==="open-box") return "new_opened,like_new";
-  if(condition==="renewed" || condition==="refurbished") return "certified_refurbished,excellent_refurbished,very_good_refurbished,good_refurbished,seller_refurbished";
-  return null;
-}
-
-async function searchSearchApiEngine(engine,query,extra={},providerKeys={}){
-  const apiKey=providerKeys?.SEARCHAPI_API_KEY || env("SEARCHAPI_API_KEY");
-  if(!apiKey) return null;
-  const params=new URLSearchParams({engine,q:query,api_key:apiKey,...extra});
-  const response=await providerFetch("https://www.searchapi.io/api/v1/search?"+params.toString());
-  if(!response.ok) throw new Error("SearchAPI "+engine+" returned "+response.status);
-  return response.json();
-}
-
-function mapSearchApiEbayResult(x,index,{query,category}) {
-  const itemPrice=Number(x.extracted_price ?? x.extracted_price_range?.from ?? 0);
-  const shippingKnown=x.extracted_shipping!==undefined || /free/i.test(x.shipping||"");
-  const shipping=/free/i.test(x.shipping||"")?0:Number(x.extracted_shipping||0);
+function availableProviders(input = {}) {
   return {
-    id:"searchapi-ebay-"+(x.item_id||index),
-    source:"eBay",
-    sourceType:"marketplace",
-    title:x.title||"Untitled eBay listing",
-    condition:normalizeCondition(x.condition),
-    itemPrice,
-    shipping,
-    shippingKnown,
-    totalPrice:itemPrice+shipping,
-    seller:x.seller?.name||"eBay seller",
-    sellerFeedback:Number(x.seller?.positive_feedback_percent||0)||null,
-    soldCount:Number(x.extracted_items_sold||0)||0,
-    watchers:Number(x.extracted_watching||0)||0,
-    url:x.link||null,
-    freshness:null,
-    relevance:relevanceScore(x.title,query,category)
+    serper: Boolean(providerKey("SERPER_API_KEY", input)),
+    searchapi: Boolean(providerKey("SEARCHAPI_API_KEY", input)),
+    serpapi: Boolean(env("SERPAPI_API_KEY")),
+    bestbuyApi: Boolean(env("BESTBUY_API_KEY")),
+    ebayApi: Boolean(env("EBAY_CLIENT_ID") && env("EBAY_CLIENT_SECRET"))
   };
 }
 
-export async function searchSearchApiEbay(input) {
-  const {query,category,condition,postalCode,localOnly=false,distanceRadius=50,providerKeys={}}=input;
-  const extra={num:"240",sort_by:localOnly?"distance_nearest":"best_match",buying_format:"buy_it_now"};
-  const cond=searchApiCondition(condition);
-  if(cond) extra.condition=cond;
-  if(postalCode){
-    extra.postal_code=String(postalCode);
-    extra.distance_radius=String(distanceRadius||50);
-  }
-  if(localOnly) extra.filters="local_pickup";
-  const data=await searchSearchApiEngine("ebay_search",query,extra,providerKeys);
-  if(!data) return [];
-
-  const raw=[...(data.organic_results||[])];
-  for(const section of (data.sections||[])){
-    if(section?.has_items && Array.isArray(section.results)) raw.push(...section.results);
-  }
-
-  return raw.map((x,index)=>mapSearchApiEbayResult(x,index,{query,category}))
-    .filter(x=>x.itemPrice>0 && conditionMatches(x.condition,condition));
+export function providerStatus(providerKeys = {}) {
+  const has = availableProviders({ providerKeys });
+  return [
+    {
+      id: "serper",
+      name: "Serper Shopping",
+      status: has.serper ? "Connected" : "Missing credentials",
+      coverage: "Google Shopping results: Amazon, Best Buy, Walmart, Newegg, eBay, AliExpress, Mercari, B&H, Adorama, Micro Center and other stores Google lists",
+      signupUrl: "https://serper.dev/",
+      freeAllowance: "2,500 free queries (each 100-result shopping search uses 2)"
+    },
+    {
+      id: "searchapi",
+      name: "SearchAPI",
+      status: has.searchapi ? "Connected" : "Missing credentials",
+      coverage: "Direct eBay, Amazon, Walmart and Best Buy search results",
+      signupUrl: "https://www.searchapi.io/",
+      freeAllowance: "Small free allowance; each direct store search uses 1 request"
+    },
+    {
+      id: "serpapi",
+      name: "SerpApi Google Shopping",
+      status: has.serpapi ? "Connected" : "Missing credentials",
+      coverage: "Optional Google Shopping provider used when Serper and SearchAPI are not configured",
+      signupUrl: "https://serpapi.com/",
+      freeAllowance: "250 searches/month"
+    },
+    {
+      id: "bestbuy",
+      name: "Best Buy",
+      status: has.bestbuyApi ? "Connected" : "Missing credentials",
+      coverage: "Official Best Buy new and Open Box offers",
+      signupUrl: "https://developer.bestbuy.com/",
+      freeAllowance: "50,000 calls/day if approved"
+    },
+    {
+      id: "ebay",
+      name: "eBay",
+      status: has.ebayApi ? "Connected" : "Missing credentials / production approval",
+      coverage: "Official eBay Browse API: live new and used fixed-price listings",
+      signupUrl: "https://developer.ebay.com/",
+      freeAllowance: "Developer registration is free; production Buy API approval required"
+    }
+  ];
 }
 
-export async function searchSearchApiBestBuy(input) {
-  const {query,category,condition,providerKeys={}}=input;
-  const data=await searchSearchApiEngine("bestbuy_search",query,{sort_by:"best_match"},providerKeys);
-  if(!data) return [];
-  const out=[];
-  for(const [index,x] of (data.organic_results||[]).entries()){
-    const itemPrice=Number(x.extracted_price||0);
-    if(itemPrice>0 && (condition==="any"||condition==="new")){
-      out.push({
-        id:"searchapi-bestbuy-new-"+(x.product_id||index),
-        source:"Best Buy",
-        sourceType:"retailer",
-        title:x.title||x.short_title||"Best Buy item",
-        condition:"new",
-        itemPrice,
-        shipping:0,
-        shippingKnown:false,
-        totalPrice:itemPrice,
-        seller:x.seller?.name||"Best Buy",
-        url:x.link||null,
-        freshness:null,
-        relevance:relevanceScore(x.title,query,category)
-      });
-    }
-    if(condition==="any"||condition==="open-box"){
-      for(const [j,offer] of (x.open_box_options||[]).entries()){
-        const openPrice=Number(offer.extracted_price||0);
-        if(!openPrice) continue;
-        out.push({
-          id:"searchapi-bestbuy-open-"+(x.product_id||index)+"-"+j,
-          source:"Best Buy",
-          sourceType:"retailer",
-          title:(x.title||x.short_title||"Best Buy item")+" - Open Box "+(offer.condition||""),
-          condition:"open-box",
-          itemPrice:openPrice,
-          shipping:0,
-          shippingKnown:false,
-          totalPrice:openPrice,
-          seller:"Best Buy",
-          url:offer.link||x.link||null,
-          freshness:null,
-          relevance:relevanceScore(x.title,query,category)
-        });
-      }
-    }
+// ---------------------------------------------------------------------------
+// Provider HTTP: timeouts, per-host concurrency, readable errors, and a short
+// circuit breaker so an exhausted/invalid key is not hammered.
+// ---------------------------------------------------------------------------
+export class ProviderError extends Error {
+  constructor(message, { status = null, quota = false, skipped = false } = {}) {
+    super(message);
+    this.name = "ProviderError";
+    this.status = status;
+    this.quota = quota;
+    this.skipped = skipped;
   }
-  return out;
+}
+
+const hostSlots = new Map();
+async function withHostLimit(host, max, fn) {
+  let slot = hostSlots.get(host);
+  if (!slot) hostSlots.set(host, slot = { active: 0, queue: [] });
+  // A finishing request hands its slot straight to the next waiter.
+  if (slot.active >= max) await new Promise(resolve => slot.queue.push(resolve));
+  else slot.active++;
+  try { return await fn(); }
+  finally {
+    const next = slot.queue.shift();
+    if (next) next();
+    else slot.active--;
+  }
+}
+
+const providerCircuit = new Map();
+
+function redact(text, secrets = []) {
+  let out = String(text || "").replace(/api_key=[^&\s"]+/gi, "api_key=[redacted]").replace(/https?:\/\/\S+/g, "[provider]");
+  for (const secret of secrets) if (secret && secret.length > 6) out = out.split(secret).join("[redacted]");
+  return out.replace(/\s+/g, " ").trim().slice(0, 200);
+}
+
+function providerMessage(text) {
+  try {
+    const data = JSON.parse(text);
+    return String(data.error || data.message || data.detail || data.errors?.[0]?.message || "");
+  } catch { return String(text || "").slice(0, 200); }
+}
+
+async function providerFetch(provider, url, options = {}, secrets = []) {
+  // One circuit per provider credential: a browser-entered key and the
+  // server key fail independently.
+  const circuitId = provider + ":" + createHash("sha256").update(String(secrets[0] || "")).digest("hex").slice(0, 12);
+  const open = providerCircuit.get(circuitId);
+  if (open && open.until > Date.now()) throw new ProviderError(open.message, { quota: true, skipped: true });
+  const host = new URL(url).hostname;
+  return withHostLimit(host, 4, async () => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let response;
+      try {
+        response = await fetch(url, { ...options, signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS) });
+      } catch (error) {
+        if (error?.name === "TimeoutError" || error?.name === "AbortError") throw new ProviderError("timed out after " + PROVIDER_TIMEOUT_MS / 1000 + "s");
+        throw new ProviderError("network error: " + redact(error?.cause?.code || error?.cause?.message || error?.message || error, secrets));
+      }
+      if (response.status >= 500 && attempt === 0) { await response.body?.cancel?.(); continue; }
+      if (!response.ok) {
+        const text = await response.text?.().catch(() => "") || "";
+        const detail = redact(providerMessage(text), secrets);
+        const keyProblem = response.status === 401 || response.status === 403;
+        const quota = keyProblem || response.status === 402 || response.status === 429 || /credit|quota|limit|exceed|plan|balance|subscription/i.test(detail);
+        const message = (keyProblem ? "API key rejected" : quota ? "out of credits or rate-limited" : "request failed") + " (HTTP " + response.status + ")" + (detail ? ": " + detail : "");
+        if (quota) providerCircuit.set(circuitId, { until: Date.now() + (response.status === 429 ? 60 * 1000 : 10 * 60 * 1000), message });
+        throw new ProviderError(message, { status: response.status, quota });
+      }
+      return response.json();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Parsing helpers
+// ---------------------------------------------------------------------------
+function parseMoney(text) {
+  if (typeof text === "number") return Number.isFinite(text) ? text : null;
+  if (!text) return null;
+  const m = String(text).replace(/,/g, "").match(/\$?\s*([0-9]+(?:\.[0-9]+)?)/);
+  return m ? Number(m[1]) : null;
+}
+
+function parseShippingText(text) {
+  const delivery = String(text || "");
+  if (!delivery) return { shipping: 0, shippingKnown: false };
+  if (/free/i.test(delivery)) return { shipping: 0, shippingKnown: true };
+  const value = /\$\s*\d/.test(delivery) ? parseMoney(delivery) : null;
+  return { shipping: value || 0, shippingKnown: value !== null };
+}
+
+function safeUrl(value) {
+  try {
+    const u = new URL(value);
+    return ["https:", "http:"].includes(u.protocol) ? u.href : null;
+  } catch { return null; }
+}
+
+export function marketplaceIdFromResult(seller, url) {
+  const s = String(seller || "").toLowerCase();
+  let host = "";
+  try { host = new URL(url || "").hostname.toLowerCase(); } catch {}
+  if (/(^|\.)google\./.test(host)) host = "";
+  const hay = s + " " + host;
+  if (hay.includes("amazon")) return "amazon";
+  if (hay.includes("bestbuy") || hay.includes("best buy")) return "bestbuy";
+  if (hay.includes("walmart")) return "walmart";
+  if (hay.includes("newegg")) return "newegg";
+  if (hay.includes("ebay")) return "ebay";
+  if (hay.includes("aliexpress") || hay.includes("ali express")) return "aliexpress";
+  if (hay.includes("bhphotovideo") || hay.includes("b&h photo") || hay.includes("b h photo")) return "bhphoto";
+  if (hay.includes("adorama")) return "adorama";
+  if (hay.includes("microcenter") || hay.includes("micro center")) return "microcenter";
+  if (hay.includes("mercari")) return "mercari";
+  return null;
+}
+
+export function marketplaceName(id) {
+  return SNIPER_MARKETPLACES.find(x => x.id === id)?.name || id || "Marketplace";
+}
+
+// What a retailer sells when the listing does not say otherwise.
+const MARKETPLACE_DEFAULT_CONDITION = {
+  amazon: "new", bestbuy: "new", walmart: "new", newegg: "new", aliexpress: "new",
+  bhphoto: "new", adorama: "new", microcenter: "new", mercari: "used", ebay: "unknown"
+};
+
+// Shopping results are new stock by default, so only non-new conditions are
+// added to the query text.
+function conditionSearchTerm(condition) {
+  return condition === "open-box" ? "open box" : condition === "any" || condition === "new" ? "" : condition;
+}
+
+// ---------------------------------------------------------------------------
+// Provider adapters. Each returns raw offers; qualification happens later.
+// ---------------------------------------------------------------------------
+function offer(base) {
+  const itemPrice = Number(base.itemPrice) || 0;
+  const shipping = Number(base.shipping) || 0;
+  return {
+    structuredCondition: "",
+    defaultCondition: "unknown",
+    shippingKnown: false,
+    ...base,
+    itemPrice,
+    shipping,
+    totalPrice: itemPrice + shipping
+  };
+}
+
+function googleShoppingOffer(x, provider, index) {
+  const seller = x.source || x.seller || x.merchant?.name || "";
+  const url = x.link || x.product_link || x.offers_link || null;
+  const marketplace = marketplaceIdFromResult(seller, url);
+  const ship = parseShippingText(x.delivery || x.shipping || x.delivery_return || "");
+  return offer({
+    provider,
+    providerItemId: x.productId || x.product_id || null,
+    marketplace,
+    seller: seller || "Unknown merchant",
+    title: x.title || "",
+    url,
+    itemPrice: parseMoney(x.extracted_price ?? x.price),
+    shipping: ship.shipping,
+    shippingKnown: ship.shippingKnown,
+    structuredCondition: x.condition || x.second_hand_condition || x.secondHandCondition || "",
+    defaultCondition: marketplace ? MARKETPLACE_DEFAULT_CONDITION[marketplace] : "new",
+    rating: Number(x.rating || 0) || null,
+    reviews: Number(x.ratingCount || x.reviews || 0) || null,
+    position: x.position || index + 1
+  });
+}
+
+export async function searchSerperShopping(input, { q, page = 1 } = {}) {
+  const apiKey = providerKey("SERPER_API_KEY", input);
+  if (!apiKey) return [];
+  const query = q || [conditionSearchTerm(input.condition || "any"), input.query].filter(Boolean).join(" ");
+  const body = { q: query, gl: "us", hl: "en", num: 100 };
+  if (page > 1) body.page = page;
+  const data = await providerFetch("serper", "https://google.serper.dev/shopping", {
+    method: "POST",
+    headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  }, [apiKey]);
+  return (data.shopping || []).map((x, i) => googleShoppingOffer(x, "Google Shopping (Serper)", i));
+}
+
+async function searchApiRequest(input, engine, params) {
+  const apiKey = providerKey("SEARCHAPI_API_KEY", input);
+  if (!apiKey) return null;
+  const qs = new URLSearchParams({ engine, api_key: apiKey, ...params });
+  return providerFetch("searchapi", "https://www.searchapi.io/api/v1/search?" + qs.toString(), {}, [apiKey]);
+}
+
+function searchApiEbayCondition(condition) {
+  if (condition === "new") return "new";
+  if (condition === "used") return "pre_owned_excellent,used_very_good,used_good,used_acceptable,pre_owned_fair,like_new";
+  if (condition === "open-box") return "new_opened";
+  if (condition === "renewed" || condition === "refurbished") return "certified_refurbished,excellent_refurbished,very_good_refurbished,good_refurbished,seller_refurbished";
+  return null;
+}
+
+export async function searchSearchApiEbay(input) {
+  const { query, condition = "any", postalCode, localOnly = false, distanceRadius = 50 } = input;
+  const params = { q: query, num: "240", sort_by: localOnly ? "distance_nearest" : "best_match", buying_format: "buy_it_now" };
+  const cond = searchApiEbayCondition(condition);
+  if (cond) params.condition = cond;
+  if (postalCode) { params.postal_code = String(postalCode); params.distance_radius = String(distanceRadius || 50); }
+  if (localOnly) params.filters = "local_pickup";
+  const data = await searchApiRequest(input, "ebay_search", params);
+  if (!data) return [];
+  const raw = [...(data.organic_results || [])];
+  for (const section of data.sections || []) if (section?.has_items && Array.isArray(section.results)) raw.push(...section.results);
+  return raw.map(x => {
+    const range = x.extracted_price === undefined && x.extracted_price_range?.from !== undefined;
+    const freeShip = /free/i.test(x.shipping || "");
+    const shippingKnown = freeShip || (x.extracted_shipping !== undefined && x.extracted_shipping !== null);
+    return offer({
+      provider: "eBay (SearchAPI)",
+      providerItemId: x.item_id || null,
+      marketplace: "ebay",
+      seller: x.seller?.name || "eBay seller",
+      title: x.title || "",
+      url: x.link || null,
+      itemPrice: Number(x.extracted_price ?? x.extracted_price_range?.from ?? 0),
+      shipping: freeShip ? 0 : Number(x.extracted_shipping || 0),
+      shippingKnown,
+      structuredCondition: x.condition || "",
+      defaultCondition: "unknown",
+      priceIsRange: range,
+      sellerFeedback: Number(x.seller?.positive_feedback_percent || 0) || null,
+      soldCount: Number(x.extracted_items_sold || 0) || 0,
+      watchers: Number(x.extracted_watching || 0) || 0
+    });
+  });
+}
+
+export async function searchSearchApiAmazon(input) {
+  const condition = input.condition || "any";
+  const suffix = condition === "renewed" || condition === "refurbished" ? " renewed" : "";
+  const data = await searchApiRequest(input, "amazon_search", { q: input.query + suffix, amazon_domain: "amazon.com" });
+  if (!data) return [];
+  return (data.organic_results || []).map(x => {
+    const ship = parseShippingText(x.delivery?.text || x.delivery || x.shipping || "");
+    return offer({
+      provider: "Amazon (SearchAPI)",
+      providerItemId: x.asin || null,
+      marketplace: "amazon",
+      seller: "Amazon",
+      title: x.title || "",
+      url: x.link || (x.asin ? "https://www.amazon.com/dp/" + x.asin : null),
+      itemPrice: Number(x.extracted_price || parseMoney(x.price) || 0),
+      shipping: ship.shipping,
+      shippingKnown: ship.shippingKnown,
+      defaultCondition: "new",
+      rating: Number(x.rating || 0) || null,
+      reviews: Number(x.reviews || 0) || null
+    });
+  });
 }
 
 export async function searchSearchApiWalmart(input) {
-  const {query,category,condition,providerKeys={}}=input;
-  if(condition==="used"||condition==="open-box") return [];
-  const data=await searchSearchApiEngine("walmart_search",query,{sort_by:"best_match"},providerKeys);
-  if(!data) return [];
-  return (data.organic_results||[]).map((x,index)=>{
-    const itemPrice=Number(x.extracted_price||0);
-    const shippingKnown=Boolean(x.is_free_shipping);
-    return {
-      id:"searchapi-walmart-"+(x.id||index),
-      source:"Walmart",
-      sourceType:"retailer-marketplace",
-      title:x.title||"Walmart item",
-      condition:"new",
-      itemPrice,
-      shipping:0,
-      shippingKnown,
-      totalPrice:itemPrice,
-      seller:x.seller_name||"Walmart",
-      url:x.link||null,
-      freshness:null,
-      relevance:relevanceScore(x.title,query,category)
-    };
-  }).filter(x=>x.itemPrice>0);
+  const condition = input.condition || "any";
+  const suffix = condition === "renewed" || condition === "refurbished" ? " restored" : "";
+  const data = await searchApiRequest(input, "walmart_search", { q: input.query + suffix, sort_by: "best_match" });
+  if (!data) return [];
+  return (data.organic_results || []).map(x => offer({
+    provider: "Walmart (SearchAPI)",
+    providerItemId: x.id || x.product_id || null,
+    marketplace: "walmart",
+    seller: x.seller_name || "Walmart",
+    title: x.title || "",
+    url: x.link || null,
+    itemPrice: Number(x.extracted_price || parseMoney(x.price) || 0),
+    shipping: 0,
+    shippingKnown: Boolean(x.is_free_shipping),
+    structuredCondition: x.condition || "",
+    defaultCondition: "new",
+    rating: Number(x.rating || 0) || null,
+    reviews: Number(x.reviews || 0) || null
+  }));
 }
 
-
-function marketplaceIdFromResult(seller,url){
-  const s=String(seller||"").toLowerCase();
-  let host="";
-  try{host=new URL(url||"").hostname.toLowerCase();}catch{}
-  const hay=s+" "+host;
-  if(hay.includes("amazon")) return "amazon";
-  if(hay.includes("bestbuy") || hay.includes("best buy")) return "bestbuy";
-  if(hay.includes("walmart")) return "walmart";
-  if(hay.includes("newegg")) return "newegg";
-  if(hay.includes("ebay")) return "ebay";
-  if(hay.includes("aliexpress") || hay.includes("ali express")) return "aliexpress";
-  if(hay.includes("bhphotovideo") || hay.includes("b&h photo")) return "bhphoto";
-  if(hay.includes("adorama")) return "adorama";
-  if(hay.includes("microcenter") || hay.includes("micro center")) return "microcenter";
-  if(hay.includes("mercari")) return "mercari";
-  return null;
-}
-
-function marketplaceName(id){
-  return id==="amazon"?"Amazon":id==="bestbuy"?"Best Buy":id==="walmart"?"Walmart":id==="newegg"?"Newegg":id==="ebay"?"eBay":id==="aliexpress"?"AliExpress":id==="bhphoto"?"B&H Photo":id==="adorama"?"Adorama":id==="microcenter"?"Micro Center":id==="mercari"?"Mercari":id||"Marketplace";
-}
-
-export async function searchSerperMarketplaces(input){
-  const {query,category,condition,marketplaces=[]}=input;
-  const apiKey=providerKey("SERPER_API_KEY",input);
-  if(!apiKey) return [];
-  const selected=new Set(marketplaces.length?marketplaces:["amazon","bestbuy","walmart","newegg","ebay","aliexpress","bhphoto","adorama","microcenter","mercari"]);
-  const conditionTerm=conditionSearchTerm(condition);
-  const q=[conditionTerm,query].filter(Boolean).join(" ");
-  const response=await providerFetch("https://google.serper.dev/shopping",{
-    method:"POST",
-    headers:{"X-API-KEY":apiKey,"Content-Type":"application/json"},
-    body:JSON.stringify({q,gl:"us",hl:"en",num:100})
-  });
-  if(!response.ok) throw new Error("Serper Shopping returned "+response.status);
-  const data=await response.json();
-  return (data.shopping||[]).map((x,index)=>{
-    const itemPrice=parseMoney(x.price);
-    const ship=parseShippingFromSerp({delivery:x.delivery,shipping:x.shipping});
-    const marketplace=marketplaceIdFromResult(x.source,x.link);
-    let normalized=normalizeCondition((x.title||"")+" "+(x.condition||""));
-    let conditionAssumed=false;
-    if(normalized==="unknown" && condition!=="any"){normalized=condition;conditionAssumed=true;}
-    return {
-      id:"serper-market-"+(x.productId||index)+"-"+itemPrice,
-      source:marketplaceName(marketplace),
-      provider:"Serper Shopping",
-      marketplace,
-      sourceType:"marketplace-search",
-      title:x.title||"Untitled shopping result",
-      condition:normalized,
-      conditionAssumed,
-      itemPrice:itemPrice||0,
-      shipping:ship.shipping,
-      shippingKnown:ship.shippingKnown,
-      totalPrice:(itemPrice||0)+ship.shipping,
-      seller:x.source||marketplaceName(marketplace),
-      url:x.link||null,
-      freshness:null,
-      relevance:relevanceScore(x.title,query,category)
-    };
-  }).filter(x=>x.marketplace && selected.has(x.marketplace) && x.itemPrice>0 && conditionMatches(x.condition,condition));
-}
-
-export async function searchSearchApiAmazon(input){
-  const {query,category,condition,providerKeys={}}=input;
-  const q=[conditionSearchTerm(condition),query].filter(Boolean).join(" ");
-  const data=await searchSearchApiEngine("amazon_search",q,{amazon_domain:"amazon.com"},providerKeys);
-  if(!data) return [];
-  return (data.organic_results||[]).map((x,index)=>{
-    const itemPrice=Number(x.extracted_price||parseMoney(x.price)||0);
-    const ship=parseShippingFromSerp({delivery:x.delivery,shipping:x.shipping});
-    let normalized=normalizeCondition((x.title||"")+" "+(x.condition||""));
-    let conditionAssumed=false;
-    if(normalized==="unknown" && condition!=="any"){normalized=condition;conditionAssumed=true;}
-    return {
-      id:"searchapi-amazon-"+(x.asin||index),
-      source:"Amazon",
-      provider:"SearchAPI Amazon",
-      marketplace:"amazon",
-      sourceType:"retailer-marketplace",
-      title:x.title||"Amazon item",
-      condition:normalized,
-      conditionAssumed,
-      itemPrice,
-      shipping:ship.shipping,
-      shippingKnown:ship.shippingKnown,
-      totalPrice:itemPrice+ship.shipping,
-      seller:"Amazon",
-      url:x.link||null,
-      rating:Number(x.rating||0)||null,
-      reviews:Number(x.reviews||0)||null,
-      freshness:null,
-      relevance:relevanceScore(x.title,query,category)
-    };
-  }).filter(x=>x.itemPrice>0 && conditionMatches(x.condition,condition));
-}
-
-function structuredGooglePrice(x){
-  const candidates=[
-    x.extracted_price,
-    x.rich_snippet?.top?.detected_extensions?.price,
-    x.rich_snippet?.bottom?.detected_extensions?.price,
-    x.detected_extensions?.price
-  ];
-  for(const value of candidates){
-    const n=typeof value==="number"?value:parseMoney(value);
-    if(Number.isFinite(n)&&n>0)return n;
-  }
-  return null;
-}
-
-export async function searchSearchApiSiteMarketplace(input,marketplace){
-  const {query,category,condition,providerKeys={}}=input;
-  const domains={newegg:"newegg.com",mercari:"mercari.com",bestbuy:"bestbuy.com",walmart:"walmart.com",aliexpress:"aliexpress.us",bhphoto:"bhphotovideo.com",adorama:"adorama.com",microcenter:"microcenter.com"};
-  const domain=domains[marketplace]||null;
-  if(!domain)return [];
-  const q=["site:"+domain,conditionSearchTerm(condition),query].filter(Boolean).join(" ");
-  const data=await searchSearchApiEngine("google",q,{gl:"us",hl:"en",link:"resolved"},providerKeys);
-  if(!data)return [];
-  return (data.organic_results||[]).map((x,index)=>{
-    const itemPrice=structuredGooglePrice(x);
-    let normalized=normalizeCondition((x.title||"")+" "+(x.snippet||""));
-    let conditionAssumed=false;
-    if(normalized==="unknown" && condition!=="any"){normalized=condition;conditionAssumed=true;}
-    return {
-      id:"searchapi-"+marketplace+"-"+index+"-"+itemPrice,
-      source:marketplaceName(marketplace),
-      provider:"SearchAPI Google",
-      marketplace,
-      sourceType:"marketplace-web",
-      title:x.title||marketplaceName(marketplace)+" listing",
-      condition:normalized,
-      conditionAssumed,
-      itemPrice:itemPrice||0,
-      shipping:0,
-      shippingKnown:false,
-      totalPrice:itemPrice||0,
-      seller:marketplaceName(marketplace),
-      url:x.link||null,
-      freshness:x.date||null,
-      relevance:relevanceScore(x.title,query,category)
-    };
-  }).filter(x=>x.itemPrice>0 && conditionMatches(x.condition,condition));
-}
-
-function bestBuySearchTerms(query) {
-  const tokens=normalizeText(query).split(" ").filter(Boolean).slice(0,6);
-  return tokens.map(t=>"search="+encodeURIComponent(t)).join("&");
-}
-
-async function bestBuyOpenBoxForSkus(skus,{query,category}) {
-  if (!skus.length || !env("BESTBUY_API_KEY")) return [];
-  const list=skus.slice(0,100).join(",");
-  const url="https://api.bestbuy.com/beta/products/openBox(sku%20in("+list+"))?apiKey="+encodeURIComponent(env("BESTBUY_API_KEY"));
-  const response=await providerFetch(url);
-  if (!response.ok) throw new Error("Best Buy Open Box returned "+response.status);
-  const data=await response.json();
-  const out=[];
-  for (const product of data.results||[]) {
-    for (let i=0;i<(product.offers||[]).length;i++) {
-      const offer=product.offers[i];
-      const itemPrice=Number(offer.prices?.current||0);
-      if (!itemPrice) continue;
-      out.push({
-        id:"bestbuy-openbox-"+product.sku+"-"+i+"-"+itemPrice,
-        source:"Best Buy",
-        sourceType:"retailer",
-        title:product.names?.title||"Best Buy Open Box item",
-        condition:"open-box",
-        itemPrice,
-        shipping:0,
-        shippingKnown:false,
-        totalPrice:itemPrice,
-        seller:"Best Buy",
-        url:product.links?.web||null,
-        freshness:null,
-        relevance:relevanceScore(product.names?.title,query,category)
-      });
+export async function searchSearchApiBestBuy(input) {
+  const data = await searchApiRequest(input, "bestbuy_search", { q: input.query, sort_by: "best_match" });
+  if (!data) return [];
+  const out = [];
+  for (const x of data.organic_results || []) {
+    const title = x.title || x.short_title || "";
+    out.push(offer({
+      provider: "Best Buy (SearchAPI)", providerItemId: x.product_id || null, marketplace: "bestbuy", seller: x.seller?.name || "Best Buy",
+      title, url: x.link || null, itemPrice: Number(x.extracted_price || 0), defaultCondition: "new"
+    }));
+    for (const ob of x.open_box_options || []) {
+      out.push(offer({
+        provider: "Best Buy (SearchAPI)", providerItemId: x.product_id || null, marketplace: "bestbuy", seller: "Best Buy",
+        title: title + " - Open Box " + (ob.condition || ""), url: ob.link || x.link || null,
+        itemPrice: Number(ob.extracted_price || 0), structuredCondition: "open box"
+      }));
     }
   }
   return out;
 }
 
-export async function searchBestBuy({query,category,condition}) {
-  if (!env("BESTBUY_API_KEY")) return [];
-  const terms=bestBuySearchTerms(query);
-  const searchUrl="https://api.bestbuy.com/v1/products("+terms+"&active=true)?format=json&show=sku,name,salePrice,url,onlineAvailability&sort=salePrice.asc&pageSize=100&apiKey="+encodeURIComponent(env("BESTBUY_API_KEY"));
-  const response=await providerFetch(searchUrl);
-  if (!response.ok) throw new Error("Best Buy Products returned "+response.status);
-  const data=await response.json();
-  const products=data.products||[];
-
-  const newItems=products.map((p,index)=>{
-    const itemPrice=Number(p.salePrice||0);
-    return {
-      id:"bestbuy-new-"+(p.sku||index),
-      source:"Best Buy",
-      sourceType:"retailer",
-      title:p.name||"Best Buy item",
-      condition:"new",
-      itemPrice,
-      shipping:0,
-      shippingKnown:false,
-      totalPrice:itemPrice,
-      seller:"Best Buy",
-      url:p.url||null,
-      freshness:null,
-      relevance:relevanceScore(p.name,query,category)
-    };
-  }).filter(x=>x.itemPrice>0);
-
-  let openBox=[];
-  if (condition==="any" || condition==="open-box") {
-    openBox=await bestBuyOpenBoxForSkus(products.map(p=>p.sku).filter(Boolean),{query,category});
-  }
-
-  if (condition==="new") return newItems;
-  if (condition==="open-box") return openBox;
-  if (condition==="used") return [];
-  return [...newItems,...openBox];
+export async function searchSearchApiGoogleShopping(input, { q } = {}) {
+  const query = q || [conditionSearchTerm(input.condition || "any"), input.query].filter(Boolean).join(" ");
+  const data = await searchApiRequest(input, "google_shopping", { q: query, gl: "us", hl: "en" });
+  if (!data) return [];
+  return [...(data.shopping_results || []), ...(data.inline_shopping_results || [])].map((x, i) => googleShoppingOffer(x, "Google Shopping (SearchAPI)", i));
 }
 
-let ebayTokenCache={token:null,expiresAt:0};
-
-async function getEbayToken() {
-  if (!env("EBAY_CLIENT_ID") || !env("EBAY_CLIENT_SECRET")) return null;
-  if (ebayTokenCache.token && Date.now()<ebayTokenCache.expiresAt-60000) return ebayTokenCache.token;
-  const credentials=Buffer.from(env("EBAY_CLIENT_ID")+":"+env("EBAY_CLIENT_SECRET")).toString("base64");
-  const response=await providerFetch("https://api.ebay.com/identity/v1/oauth2/token",{
-    method:"POST",
-    headers:{
-      "Authorization":"Basic "+credentials,
-      "Content-Type":"application/x-www-form-urlencoded"
-    },
-    body:new URLSearchParams({grant_type:"client_credentials",scope:EBAY_SCOPE})
-  });
-  if (!response.ok) {
-    const body=await response.text();
-    throw new Error("eBay authentication failed ("+response.status+")");
+function structuredGooglePrice(x) {
+  for (const value of [x.extracted_price, x.rich_snippet?.top?.detected_extensions?.price, x.rich_snippet?.bottom?.detected_extensions?.price, x.detected_extensions?.price]) {
+    const n = typeof value === "number" ? value : parseMoney(value);
+    if (Number.isFinite(n) && n > 0) return n;
   }
-  const data=await response.json();
-  ebayTokenCache={token:data.access_token,expiresAt:Date.now()+Number(data.expires_in||7200)*1000};
-  return ebayTokenCache.token;
-}
-
-function ebayConditionFilter(condition) {
-  if (condition==="new") return "conditions:{NEW}";
-  if (condition==="used") return "conditions:{USED}";
   return null;
 }
 
-export async function searchEbay({query,category,condition}) {
-  const token=await getEbayToken();
-  if (!token) return [];
-  const params=new URLSearchParams({q:query,limit:"200"});
-  const cond=ebayConditionFilter(condition);
-  if (cond) params.set("filter",cond);
-  const response=await providerFetch("https://api.ebay.com/buy/browse/v1/item_summary/search?"+params.toString(),{
-    headers:{
-      "Authorization":"Bearer "+token,
-      "X-EBAY-C-MARKETPLACE-ID":"EBAY_US"
+const SITE_DOMAINS = { newegg: "newegg.com", mercari: "mercari.com", aliexpress: "aliexpress.us", bhphoto: "bhphotovideo.com", adorama: "adorama.com", microcenter: "microcenter.com" };
+
+export async function searchSearchApiSiteMarketplace(input, marketplace) {
+  const domain = SITE_DOMAINS[marketplace];
+  if (!domain) return [];
+  const q = ["site:" + domain, conditionSearchTerm(input.condition || "any"), input.query].filter(Boolean).join(" ");
+  const data = await searchApiRequest(input, "google", { q, gl: "us", hl: "en" });
+  if (!data) return [];
+  return (data.organic_results || []).map(x => offer({
+    provider: marketplaceName(marketplace) + " (Google site search)",
+    marketplace,
+    seller: marketplaceName(marketplace),
+    title: x.title || "",
+    url: x.link || null,
+    itemPrice: structuredGooglePrice(x) || 0,
+    structuredCondition: x.snippet && /refurb|open box|used|pre-owned/i.test(x.snippet) ? x.snippet : "",
+    defaultCondition: MARKETPLACE_DEFAULT_CONDITION[marketplace] || "unknown"
+  }));
+}
+
+export async function searchSerpApi(input) {
+  const apiKey = env("SERPAPI_API_KEY");
+  if (!apiKey) return [];
+  const q = [conditionSearchTerm(input.condition || "any"), input.query].filter(Boolean).join(" ");
+  const params = new URLSearchParams({ engine: "google_shopping", q, api_key: apiKey, gl: "us", hl: "en" });
+  const data = await providerFetch("serpapi", "https://serpapi.com/search.json?" + params.toString(), {}, [apiKey]);
+  return (data.shopping_results || []).map((x, i) => googleShoppingOffer(x, "Google Shopping (SerpApi)", i));
+}
+
+async function bestBuyOpenBoxForSkus(skus) {
+  const apiKey = env("BESTBUY_API_KEY");
+  if (!skus.length || !apiKey) return [];
+  const url = "https://api.bestbuy.com/beta/products/openBox(sku%20in(" + skus.slice(0, 100).join(",") + "))?apiKey=" + encodeURIComponent(apiKey);
+  const data = await providerFetch("bestbuy", url, {}, [apiKey]);
+  const out = [];
+  for (const product of data.results || []) {
+    for (const o of product.offers || []) {
+      out.push(offer({
+        provider: "Best Buy API", providerItemId: product.sku, marketplace: "bestbuy", seller: "Best Buy",
+        title: product.names?.title || "", url: product.links?.web || null,
+        itemPrice: Number(o.prices?.current || 0), structuredCondition: "open box " + (o.condition || "")
+      }));
     }
-  });
-  if (!response.ok) {
-    const body=await response.text();
-    throw new Error("eBay Browse failed ("+response.status+"): "+body.slice(0,220));
   }
-  const data=await response.json();
-  return (data.itemSummaries||[]).map((x,index)=>{
-    const itemPrice=Number(x.price?.value||0);
-    const shipValue=x.shippingOptions?.[0]?.shippingCost?.value;
-    const shippingKnown=shipValue!==undefined && shipValue!==null;
-    const shipping=shippingKnown ? Number(shipValue) : 0;
-    return {
-      id:"ebay-"+(x.itemId||index),
-      source:"eBay",
-      sourceType:"marketplace",
-      title:x.title||"Untitled eBay listing",
-      condition:normalizeCondition(x.condition),
-      itemPrice,
-      shipping,
-      shippingKnown,
-      totalPrice:itemPrice+shipping,
-      seller:x.seller?.username||"eBay seller",
-      url:x.itemWebUrl||null,
-      freshness:x.itemCreationDate||null,
-      relevance:relevanceScore(x.title,query,category)
-    };
-  }).filter(x=>x.itemPrice>0 && (condition==="any" || x.condition===condition));
+  return out;
 }
 
-function quantile(sorted,q) {
-  if (!sorted.length) return null;
-  const pos=(sorted.length-1)*q;
-  const base=Math.floor(pos);
-  const rest=pos-base;
-  return sorted[base+1]!==undefined ? sorted[base]+rest*(sorted[base+1]-sorted[base]) : sorted[base];
+export async function searchBestBuy(input) {
+  const apiKey = env("BESTBUY_API_KEY");
+  if (!apiKey) return [];
+  const terms = normalizeListingText(input.query).split(" ").filter(Boolean).slice(0, 6).map(t => "search=" + encodeURIComponent(t)).join("&");
+  const url = "https://api.bestbuy.com/v1/products(" + terms + "&active=true)?format=json&show=sku,name,salePrice,url,onlineAvailability,freeShipping,shippingCost&sort=salePrice.asc&pageSize=100&apiKey=" + encodeURIComponent(apiKey);
+  const data = await providerFetch("bestbuy", url, {}, [apiKey]);
+  const products = data.products || [];
+  const newItems = products.map(p => offer({
+    provider: "Best Buy API", providerItemId: p.sku, marketplace: "bestbuy", seller: "Best Buy",
+    title: p.name || "", url: p.url || null, itemPrice: Number(p.salePrice || 0),
+    shipping: p.freeShipping ? 0 : Number(p.shippingCost || 0), shippingKnown: p.freeShipping === true || Number.isFinite(Number(p.shippingCost)),
+    defaultCondition: "new"
+  }));
+  const condition = input.condition || "any";
+  const openBox = condition === "any" || condition === "open-box" ? await bestBuyOpenBoxForSkus(products.map(p => p.sku).filter(Boolean)) : [];
+  return [...newItems, ...openBox];
 }
 
-function robustFilter(items) {
-  if (items.length<5) return items;
-  const prices=items.map(x=>x.totalPrice).sort((a,b)=>a-b);
-  const q1=quantile(prices,.25);
-  const q3=quantile(prices,.75);
-  const iqr=q3-q1;
-  const low=Math.max(0,q1-1.5*iqr);
-  const high=q3+1.5*iqr;
-  return items.filter(x=>x.totalPrice>=low && x.totalPrice<=high);
+let ebayTokenCache = { token: null, expiresAt: 0 };
+
+async function getEbayToken() {
+  if (!env("EBAY_CLIENT_ID") || !env("EBAY_CLIENT_SECRET")) return null;
+  if (ebayTokenCache.token && Date.now() < ebayTokenCache.expiresAt - 60000) return ebayTokenCache.token;
+  const credentials = Buffer.from(env("EBAY_CLIENT_ID") + ":" + env("EBAY_CLIENT_SECRET")).toString("base64");
+  const data = await providerFetch("ebay", "https://api.ebay.com/identity/v1/oauth2/token", {
+    method: "POST",
+    headers: { "Authorization": "Basic " + credentials, "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "client_credentials", scope: EBAY_SCOPE })
+  }, [env("EBAY_CLIENT_SECRET")]);
+  ebayTokenCache = { token: data.access_token, expiresAt: Date.now() + Number(data.expires_in || 7200) * 1000 };
+  return ebayTokenCache.token;
 }
 
-function median(values) {
-  const a=values.slice().sort((a,b)=>a-b);
-  if (!a.length) return null;
-  const mid=Math.floor(a.length/2);
-  return a.length%2?a[mid]:(a[mid-1]+a[mid])/2;
+export async function searchEbay(input) {
+  const token = await getEbayToken();
+  if (!token) return [];
+  const condition = input.condition || "any";
+  const filters = ["buyingOptions:{FIXED_PRICE}"];
+  if (condition === "new") filters.push("conditions:{NEW}");
+  if (condition === "used") filters.push("conditions:{USED}");
+  const params = new URLSearchParams({ q: input.query, limit: "200", filter: filters.join(",") });
+  const data = await providerFetch("ebay", "https://api.ebay.com/buy/browse/v1/item_summary/search?" + params.toString(), {
+    headers: { "Authorization": "Bearer " + token, "X-EBAY-C-MARKETPLACE-ID": "EBAY_US" }
+  }, [token]);
+  return (data.itemSummaries || []).map(x => {
+    const shipValue = x.shippingOptions?.[0]?.shippingCost?.value;
+    const shippingKnown = shipValue !== undefined && shipValue !== null;
+    return offer({
+      provider: "eBay Browse API", providerItemId: x.itemId || null, marketplace: "ebay", seller: x.seller?.username || "eBay seller",
+      title: x.title || "", url: x.itemWebUrl || null, itemPrice: Number(x.price?.value || 0),
+      shipping: shippingKnown ? Number(shipValue) : 0, shippingKnown,
+      structuredCondition: x.condition || "", sellerFeedback: Number(x.seller?.feedbackPercentage || 0) || null,
+      freshness: x.itemCreationDate || null
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Qualification, de-duplication and diagnostics
+// ---------------------------------------------------------------------------
+export function listingIdentity(x) {
+  let url;
+  try { url = new URL(x.url); } catch { url = null; }
+  const host = url ? url.hostname.replace(/^www\./, "") : "";
+  const path = url ? url.pathname : "";
+  if (host.endsWith("ebay.com")) { const id = path.match(/\/itm\/(?:[^/]+\/)?(\d{9,})/)?.[1]; if (id) return "ebay:" + id; }
+  if (host.endsWith("amazon.com")) { const asin = path.match(/\/(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})/i)?.[1]; if (asin) return "amazon:" + asin.toUpperCase(); }
+  if (host.endsWith("walmart.com")) { const id = path.match(/\/ip\/(?:[^/]+\/)?(\d{5,})/)?.[1]; if (id) return "walmart:" + id; }
+  if (host.endsWith("bestbuy.com")) {
+    const id = url.searchParams.get("skuId") || path.match(/\/(\d{6,8})\.p/)?.[1];
+    if (id) return "bestbuy:" + id + ":" + x.condition + ":" + Math.round(x.itemPrice);
+  }
+  if (host.endsWith("newegg.com")) { const id = url.searchParams.get("Item") || path.match(/\/p\/([A-Z0-9-]+)/i)?.[1]; if (id) return "newegg:" + id.toUpperCase(); }
+  if (host.endsWith("mercari.com")) { const id = path.match(/\/item\/(m\d+)/i)?.[1]; if (id) return "mercari:" + id; }
+  if (host.includes("aliexpress.")) { const id = path.match(/\/item\/(\d+)/)?.[1]; if (id) return "aliexpress:" + id; }
+  if (host && !/(^|\.)google\./.test(host)) return "url:" + host + path.replace(/\/+$/, "");
+  return null;
+}
+
+function titlePriceKey(x) {
+  return (x.marketplace || x.seller || "") + "|" + normalizeListingText(x.title) + "|" + Math.round(x.itemPrice);
+}
+
+// Direct marketplace data (structured condition, shipping, item ids) wins
+// over the same listing seen through Google Shopping.
+function providerPriority(provider) {
+  if (/Google Shopping/.test(provider || "")) return 2;
+  if (/site search/.test(provider || "")) return 3;
+  return 1;
 }
 
 function dedupe(items) {
-  const seen=new Set();
-  return items.filter(x=>{
-    const key=(x.url||"")+"|"+normalizeText(x.title)+"|"+Math.round(x.totalPrice*100);
+  const seenId = new Set();
+  const seenTitle = new Map();
+  const out = [];
+  let duplicates = 0;
+  for (const x of items.slice().sort((a, b) => providerPriority(a.provider) - providerPriority(b.provider))) {
+    const id = listingIdentity(x);
+    const tp = titlePriceKey(x);
+    const sameTitleOtherProvider = seenTitle.has(tp) && seenTitle.get(tp) !== x.provider;
+    if ((id && seenId.has(id)) || sameTitleOtherProvider) { duplicates++; continue; }
+    if (id) seenId.add(id);
+    if (!seenTitle.has(tp)) seenTitle.set(tp, x.provider);
+    out.push(x);
+  }
+  return { items: out, duplicates };
+}
+
+function emptyStats(name) {
+  return { name, status: "ok", raw: 0, priced: 0, kept: 0, duplicates: 0, dropped: {}, examples: [], message: null, cached: false };
+}
+
+// Turn raw provider offers into qualified listings and record, per provider,
+// how many were dropped and why.
+export function qualifyOffers(rawOffers, input, { selected = null, includeOtherMerchants = false, stats = new Map() } = {}) {
+  const selectedSet = selected ? new Set(selected) : null;
+  const accepted = [];
+  for (const raw of rawOffers) {
+    const s = stats.get(raw.provider) || stats.set(raw.provider, emptyStats(raw.provider)).get(raw.provider);
+    s.raw++;
+    const drop = (reason, detail) => {
+      s.dropped[reason] = (s.dropped[reason] || 0) + 1;
+      if (s.examples.length < 6 && !s.examples.some(e => e.reason === reason)) s.examples.push({ reason, detail: detail || null, title: String(raw.title || "").slice(0, 140), price: raw.itemPrice || null });
+    };
+    if (!(raw.itemPrice > 0) || !Number.isFinite(raw.totalPrice)) { drop("no-price"); continue; }
+    s.priced++;
+    const marketplace = raw.marketplace || marketplaceIdFromResult(raw.seller, raw.url);
+    if (selectedSet && !(marketplace ? selectedSet.has(marketplace) : includeOtherMerchants)) {
+      drop(marketplace ? "store-not-selected" : "store-not-in-list", raw.seller);
+      continue;
+    }
+    const verdict = evaluateListing({
+      title: raw.title,
+      query: input.query,
+      category: input.category,
+      structuredCondition: raw.structuredCondition,
+      defaultCondition: raw.defaultCondition,
+      requestedCondition: input.condition || "any"
+    });
+    if (!verdict.ok) { drop(verdict.reason, verdict.detail); continue; }
+    const riskFlags = [];
+    // Named retailers sell new stock unless the listing says otherwise; only
+    // flag the assumption for stores where that is not a safe default.
+    const trustedNewRetailer = marketplace && MARKETPLACE_DEFAULT_CONDITION[marketplace] === "new";
+    if (verdict.conditionAssumed && !trustedNewRetailer) riskFlags.push("Condition not stated by the store; assumed " + verdict.condition + ".");
+    if (raw.priceIsRange) riskFlags.push("Multi-variation listing; the price shown is its lowest option.");
+    accepted.push({
+      id: raw.provider + "|" + (listingIdentity({ ...raw, condition: verdict.condition }) || raw.providerItemId || titlePriceKey(raw)),
+      source: marketplace ? marketplaceName(marketplace) : (raw.seller || "Other store"),
+      marketplace: marketplace || "other",
+      provider: raw.provider,
+      sourceType: marketplace ? "marketplace" : "retailer",
+      title: raw.title,
+      condition: verdict.condition,
+      conditionAssumed: verdict.conditionAssumed,
+      itemPrice: raw.itemPrice,
+      shipping: raw.shipping,
+      shippingKnown: raw.shippingKnown,
+      totalPrice: Math.round(raw.totalPrice * 100) / 100,
+      seller: raw.seller,
+      url: safeUrl(raw.url),
+      sellerFeedback: raw.sellerFeedback || null,
+      soldCount: raw.soldCount || 0,
+      watchers: raw.watchers || 0,
+      rating: raw.rating || null,
+      reviews: raw.reviews || null,
+      freshness: raw.freshness || null,
+      relevance: verdict.relevance,
+      sourceRiskFlags: riskFlags
+    });
+  }
+  const { items, duplicates } = dedupe(accepted);
+  // Listing ids must be unique: the UI keys and re-orders cards by id.
+  const usedIds = new Map();
+  for (const x of items) {
+    const n = usedIds.get(x.id) || 0;
+    usedIds.set(x.id, n + 1);
+    if (n) x.id += "#" + n;
+  }
+  const keptByProvider = new Map();
+  for (const x of items) keptByProvider.set(x.provider, (keptByProvider.get(x.provider) || 0) + 1);
+  const accByProvider = new Map();
+  for (const x of accepted) accByProvider.set(x.provider, (accByProvider.get(x.provider) || 0) + 1);
+  for (const [name, s] of stats) {
+    s.kept = keptByProvider.get(name) || 0;
+    s.duplicates = (accByProvider.get(name) || 0) - s.kept;
+  }
+  return { items, stats, duplicates };
+}
+
+// ---------------------------------------------------------------------------
+// Market statistics and ranking
+// ---------------------------------------------------------------------------
+function quantile(sorted, q) {
+  if (!sorted.length) return null;
+  const pos = (sorted.length - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  return sorted[base + 1] !== undefined ? sorted[base] + rest * (sorted[base + 1] - sorted[base]) : sorted[base];
+}
+
+function robustFilter(items) {
+  if (items.length < 5) return items;
+  const prices = items.map(x => x.totalPrice).sort((a, b) => a - b);
+  const q1 = quantile(prices, .25);
+  const q3 = quantile(prices, .75);
+  const iqr = q3 - q1;
+  return items.filter(x => x.totalPrice >= Math.max(0, q1 - 1.5 * iqr) && x.totalPrice <= q3 + 1.5 * iqr);
+}
+
+function median(values) {
+  const a = values.slice().sort((x, y) => x - y);
+  if (!a.length) return null;
+  const mid = Math.floor(a.length / 2);
+  return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
+}
+
+function conditionGroup(condition) {
+  return condition === "renewed" ? "refurbished" : condition;
+}
+
+function simpleDedupe(items) {
+  const seen = new Set();
+  return items.filter(x => {
+    const key = (listingIdentity(x) || "") + "|" + normalizeListingText(x.title) + "|" + Math.round(x.totalPrice * 100);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -794,311 +678,428 @@ function dedupe(items) {
 }
 
 export function buildMarket(items) {
-  const relevant=dedupe(items).filter(x=>x.relevance>=0.72 && Number.isFinite(x.totalPrice) && x.totalPrice>0);
-  const filtered=robustFilter(relevant);
-  const prices=filtered.map(x=>x.totalPrice);
-  const byCondition={};
-  const bySource={};
+  const relevant = simpleDedupe(items).filter(x => x.relevance >= 0.72 && Number.isFinite(x.totalPrice) && x.totalPrice > 0);
+  const filtered = robustFilter(relevant);
+  const prices = filtered.map(x => x.totalPrice);
+  const byCondition = {};
+  const bySource = {};
+  const groups = {};
   for (const item of filtered) {
-    byCondition[item.condition]=(byCondition[item.condition]||0)+1;
-    bySource[item.source]=(bySource[item.source]||0)+1;
+    byCondition[item.condition] = (byCondition[item.condition] || 0) + 1;
+    bySource[item.source] = (bySource[item.source] || 0) + 1;
+    (groups[conditionGroup(item.condition)] ||= []).push(item.totalPrice);
   }
-  const shippingKnown=filtered.filter(x=>x.shippingKnown).length;
-  const med=median(prices);
+  // Used and new listings price differently; compare like with like when
+  // there are enough comps in that condition.
+  const conditionMedians = {};
+  for (const [group, values] of Object.entries(groups)) if (values.length >= 4) conditionMedians[group] = Math.round(median(values) * 100) / 100;
+  const med = median(prices);
   return {
-    median:med===null?null:Math.round(med*100)/100,
-    low:prices.length?Math.round(quantile(prices,.15)*100)/100:null,
-    high:prices.length?Math.round(quantile(prices,.85)*100)/100:null,
-    sampleSize:filtered.length,
-    rawSampleSize:items.length,
+    median: med === null ? null : Math.round(med * 100) / 100,
+    low: prices.length ? Math.round(quantile(prices.slice().sort((a, b) => a - b), .15) * 100) / 100 : null,
+    high: prices.length ? Math.round(quantile(prices.slice().sort((a, b) => a - b), .85) * 100) / 100 : null,
+    sampleSize: filtered.length,
+    rawSampleSize: items.length,
     byCondition,
     bySource,
-    shippingKnownPct:filtered.length?Math.round(shippingKnown/filtered.length*100):0,
-    confidence:filtered.length>=80?"Very high":filtered.length>=35?"High":filtered.length>=15?"Medium":"Low",
-    comps:filtered
+    conditionMedians,
+    shippingKnownPct: filtered.length ? Math.round(filtered.filter(x => x.shippingKnown).length / filtered.length * 100) : 0,
+    confidence: filtered.length >= 80 ? "Very high" : filtered.length >= 35 ? "High" : filtered.length >= 15 ? "Medium" : "Low",
+    comps: filtered
   };
 }
 
-
-function weightedMedian(items,valueFn,weightFn){
-  if(!items.length) return null;
-  const rows=items.map(x=>({value:valueFn(x),weight:Math.max(1,weightFn(x))}))
-    .filter(x=>Number.isFinite(x.value)&&x.value>0)
-    .sort((a,b)=>a.value-b.value);
-  const total=rows.reduce((s,x)=>s+x.weight,0);
-  let acc=0;
-  for(const row of rows){
-    acc+=row.weight;
-    if(acc>=total/2) return row.value;
+function weightedMedian(items, valueFn, weightFn) {
+  if (!items.length) return null;
+  const rows = items.map(x => ({ value: valueFn(x), weight: Math.max(1, weightFn(x)) }))
+    .filter(x => Number.isFinite(x.value) && x.value > 0)
+    .sort((a, b) => a.value - b.value);
+  const total = rows.reduce((s, x) => s + x.weight, 0);
+  let acc = 0;
+  for (const row of rows) {
+    acc += row.weight;
+    if (acc >= total / 2) return row.value;
   }
-  return rows[rows.length-1]?.value||null;
+  return rows[rows.length - 1]?.value || null;
 }
 
-export function buildSalesEvidence(items){
-  const qualifying=robustFilter(dedupe(items).filter(x=>x.relevance>=0.72 && Number.isFinite(x.totalPrice) && x.totalPrice>0 && Number(x.soldCount||0)>0));
-  const medianPrice=weightedMedian(
-    qualifying,
-    x=>x.totalPrice,
-    x=>Math.min(12,1+Math.log2(1+Number(x.soldCount||0)))
-  );
-  const totalUnits=qualifying.reduce((s,x)=>s+Number(x.soldCount||0),0);
-  const prices=qualifying.map(x=>x.totalPrice).sort((a,b)=>a-b);
+export function buildSalesEvidence(items) {
+  const qualifying = robustFilter(simpleDedupe(items).filter(x => x.relevance >= 0.72 && Number.isFinite(x.totalPrice) && x.totalPrice > 0 && Number(x.soldCount || 0) > 0));
+  const medianPrice = weightedMedian(qualifying, x => x.totalPrice, x => Math.min(12, 1 + Math.log2(1 + Number(x.soldCount || 0))));
+  const totalUnits = qualifying.reduce((s, x) => s + Number(x.soldCount || 0), 0);
+  const prices = qualifying.map(x => x.totalPrice).sort((a, b) => a - b);
   return {
-    median:medianPrice===null?null:Math.round(medianPrice*100)/100,
-    low:prices.length?Math.round(quantile(prices,.20)*100)/100:null,
-    high:prices.length?Math.round(quantile(prices,.80)*100)/100:null,
-    listingCount:qualifying.length,
-    totalReportedUnitsSold:totalUnits,
-    confidence:qualifying.length>=15?"High":qualifying.length>=6?"Medium":qualifying.length>=2?"Low":"Insufficient",
-    listings:qualifying.sort((a,b)=>(b.soldCount||0)-(a.soldCount||0)).slice(0,12),
-    label:"Active asking price with prior units sold (not a completed-sale price)"
+    median: medianPrice === null ? null : Math.round(medianPrice * 100) / 100,
+    low: prices.length ? Math.round(quantile(prices, .20) * 100) / 100 : null,
+    high: prices.length ? Math.round(quantile(prices, .80) * 100) / 100 : null,
+    listingCount: qualifying.length,
+    totalReportedUnitsSold: totalUnits,
+    confidence: qualifying.length >= 15 ? "High" : qualifying.length >= 6 ? "Medium" : qualifying.length >= 2 ? "Low" : "Insufficient",
+    listings: qualifying.sort((a, b) => (b.soldCount || 0) - (a.soldCount || 0)).slice(0, 12),
+    label: "Active asking price with prior units sold (not a completed-sale price)"
   };
-}
-
-export async function searchLocalEbay(input){
-  if(!providerKey("SEARCHAPI_API_KEY",input) || !input.postalCode) return {items:[],market:buildMarket([]),errors:[]};
-  return liveSearch({...input,localOnly:true,distanceRadius:input.distanceRadius||50});
 }
 
 function conditionQuality(condition) {
-  if (condition==="new") return 1;
-  if (condition==="open-box") return .92;
-  if (condition==="renewed") return .88;
-  if (condition==="refurbished") return .84;
-  if (condition==="used") return .78;
+  if (condition === "new") return 1;
+  if (condition === "open-box") return .92;
+  if (condition === "renewed") return .88;
+  if (condition === "refurbished") return .84;
+  if (condition === "used") return .78;
   return .7;
 }
 
-function resaleAppeal(query,title) {
-  const text=normalizeText(query+" "+title);
-  let score=.6;
-  if (/\brtx\s?(40|50)\d{2}\b/.test(text)) score+=.18;
-  if (/\brx\s?(7|8|9)\d{3}\b/.test(text)) score+=.12;
-  if (/\b(2tb|4tb)\b/.test(text) && /\bnvme\b/.test(text)) score+=.08;
-  return Math.min(1,score);
+function resaleAppeal(query, title) {
+  const text = normalizeListingText(query + " " + title);
+  let score = .6;
+  if (/\brtx\s?(40|50)\d{2}/.test(text)) score += .18;
+  if (/\brx\s?(7|8|9)\d{3}/.test(text)) score += .12;
+  if (/\b(2tb|4tb)\b/.test(text) && /\bnvme\b/.test(text)) score += .08;
+  return Math.min(1, score);
 }
 
-export function rankDeals(items,market,{query,partBudget,buildBudget,committed,sortBy="best"}) {
-  const medianValue=market.median||0;
-  const remainingBefore=Math.max(0,Number(buildBudget||0)-Number(committed||0));
-  const maxPart=Number(partBudget||0);
-  const sample=Number(market.sampleSize||0);
-  const evidenceCap=sample>=35?95:sample>=15?88:sample>=8?78:sample>=4?65:50;
+export function rankDeals(items, market, { query, partBudget, buildBudget, committed, sortBy = "best" }) {
+  const overallMedian = market.median || 0;
+  const remainingBefore = Math.max(0, Number(buildBudget || 0) - Number(committed || 0));
+  const maxPart = Number(partBudget || 0);
+  const sample = Number(market.sampleSize || 0);
+  const evidenceCap = sample >= 35 ? 95 : sample >= 15 ? 88 : sample >= 8 ? 78 : sample >= 4 ? 65 : 50;
 
-  // Market comps are robust-trimmed for estimating a representative median.
-  // They must NOT be the only visible offers: doing so hides unusually cheap
-  // valid listings and can turn 30 candidates into a single displayed deal.
-  const scored=dedupe(items).filter(x=>x.relevance>=.72 &&
-    Number.isFinite(x.totalPrice) && x.totalPrice>0).map(item=>{
-    const under=medianValue ? (medianValue-item.totalPrice)/medianValue : 0;
-    const underScore=Math.max(0,Math.min(1,(under+.10)/.35));
-    const budgetScore=maxPart ? Math.max(0,Math.min(1,1-(item.totalPrice/maxPart-0.70))) : .55;
-    const buildFit=remainingBefore ? Math.max(0,Math.min(1,(remainingBefore-item.totalPrice)/Math.max(remainingBefore,.01)+.35)) : .5;
-    const conditionScore=conditionQuality(item.condition);
-    const appeal=resaleAppeal(query,item.title);
-    const shippingScore=item.shippingKnown?1:.45;
-    const relevance=Math.max(0,Math.min(1,Number(item.relevance||0)));
+  // Every qualified listing is ranked; the robust-trimmed comps only set the
+  // market reference, so unusually cheap valid listings stay visible.
+  const scored = simpleDedupe(items).filter(x => Number.isFinite(x.totalPrice) && x.totalPrice > 0).map(item => {
+    const group = conditionGroup(item.condition);
+    const medianValue = market.conditionMedians?.[group] || overallMedian;
+    const under = medianValue ? (medianValue - item.totalPrice) / medianValue : 0;
+    const underScore = Math.max(0, Math.min(1, (under + .10) / .35));
+    const budgetScore = maxPart ? Math.max(0, Math.min(1, 1 - (item.totalPrice / maxPart - 0.70))) : .55;
+    const buildFit = remainingBefore ? Math.max(0, Math.min(1, (remainingBefore - item.totalPrice) / Math.max(remainingBefore, .01) + .35)) : .5;
+    const conditionScore = conditionQuality(item.condition);
+    const appeal = resaleAppeal(query, item.title);
+    const shippingScore = item.shippingKnown ? 1 : .45;
+    const relevance = Math.max(0, Math.min(1, Number(item.relevance || 0)));
 
-    let raw=100*(.36*underScore+.15*budgetScore+.12*buildFit+.09*conditionScore+.10*appeal+.08*shippingScore+.10*relevance);
-    const riskFlags=[];
-
-    if(under>.45){
-      raw-=18;
+    let raw = 100 * (.36 * underScore + .15 * budgetScore + .12 * buildFit + .09 * conditionScore + .10 * appeal + .08 * shippingScore + .10 * relevance);
+    const riskFlags = [...(item.sourceRiskFlags || [])];
+    if (under > .45) {
+      raw -= 18;
       riskFlags.push("Price is >45% below the filtered market median — verify condition, completeness, and seller.");
     }
-    if(!item.shippingKnown){
-      raw-=5;
+    if (!item.shippingKnown) {
+      raw -= 5;
       riskFlags.push("Shipping cost is unknown.");
     }
-    if(relevance<.72){
-      raw-=8;
+    if (relevance < .72) {
+      raw -= 8;
       riskFlags.push("Listing-title match is weaker than ideal.");
     }
-    if(sample<8) riskFlags.push("Market sample is small; score is capped.");
-    if(item.condition==="unknown") riskFlags.push("Condition is not clearly identified.");
+    if (sample < 8) riskFlags.push("Market sample is small; score is capped.");
+    if (item.condition === "unknown") riskFlags.push("Condition is not clearly identified.");
 
-    const itemCap=Math.min(evidenceCap,item.shippingKnown?100:69,under>.45?59:100,relevance<.72?59:100,item.condition==="unknown"?69:100);
-    const score=Math.max(0,Math.min(itemCap,Math.round(raw)));
+    const itemCap = Math.min(evidenceCap, item.shippingKnown ? 100 : 69, under > .45 ? 59 : 100, relevance < .72 ? 59 : 100, item.condition === "unknown" ? 69 : 100);
+    const score = Math.max(0, Math.min(itemCap, Math.round(raw)));
     return {
       ...item,
       score,
-      scoreCap:itemCap,
+      scoreCap: itemCap,
       riskFlags,
-      evidenceSampleSize:sample,
-      percentVsMarket:medianValue?Math.round((medianValue-item.totalPrice)/medianValue*100):0,
-      budgetLeft:remainingBefore-item.totalPrice,
-      withinPartBudget:!maxPart || item.totalPrice<=maxPart
+      evidenceSampleSize: sample,
+      marketReference: medianValue,
+      marketBasis: market.conditionMedians?.[group] ? group + " listings" : "all listings",
+      percentVsMarket: medianValue ? Math.round((medianValue - item.totalPrice) / medianValue * 100) : 0,
+      budgetLeft: remainingBefore - item.totalPrice,
+      withinPartBudget: !maxPart || item.totalPrice <= maxPart
     };
   });
-  const sorts={
-    best:(a,b)=>b.score-a.score,
-    lowest:(a,b)=>a.totalPrice-b.totalPrice,
-    under:(a,b)=>b.percentVsMarket-a.percentVsMarket,
-    flip:(a,b)=>(b.percentVsMarket+b.score/10)-(a.percentVsMarket+a.score/10),
-    budget:(a,b)=>(Number(b.withinPartBudget)-Number(a.withinPartBudget)) || Math.abs(b.budgetLeft)-Math.abs(a.budgetLeft)
-  };
-  return scored.sort(sorts[sortBy]||sorts.best);
+  return sortDeals(scored, sortBy);
 }
 
-function cacheKey(input){
+// ---------------------------------------------------------------------------
+// Provider call cache (raw offers), shared by every search path
+// ---------------------------------------------------------------------------
+const offerCache = new Map();
+const offerInFlight = new Map();
+
+function keyHash(input) {
+  return createHash("sha256").update(JSON.stringify([
+    providerKey("SERPER_API_KEY", input), providerKey("SEARCHAPI_API_KEY", input),
+    env("SERPAPI_API_KEY"), env("BESTBUY_API_KEY"), env("EBAY_CLIENT_ID")
+  ])).digest("hex").slice(0, 16);
+}
+
+async function cachedOffers(cacheKey, fn) {
+  const hit = offerCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < CACHE_MS) return { offers: hit.offers, cached: true };
+  if (!offerInFlight.has(cacheKey)) {
+    offerInFlight.set(cacheKey, (async () => {
+      const offers = await fn();
+      offerCache.set(cacheKey, { at: Date.now(), offers });
+      if (offerCache.size > 500) offerCache.delete(offerCache.keys().next().value);
+      return { offers, cached: false };
+    })().finally(() => offerInFlight.delete(cacheKey)));
+  }
+  return offerInFlight.get(cacheKey);
+}
+
+function callSpec(id, name, marketplaces, input, params, run) {
+  const key = [id, keyHash(input), JSON.stringify(params)].join("|");
+  return { id, name, marketplaces, params, run: () => cachedOffers(key, run) };
+}
+
+async function executeCalls(calls) {
+  return Promise.all(calls.map(async call => {
+    try {
+      const { offers, cached } = await call.run();
+      return { call, offers, cached };
+    } catch (error) {
+      const message = error instanceof ProviderError ? error.message : "failed: " + redact(error?.message || error);
+      return { call, offers: [], error: message, skipped: Boolean(error?.skipped) };
+    }
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Marketplace search used by Deal Scanner and Deal Hunt
+// ---------------------------------------------------------------------------
+const DIRECT_STORE_ENGINES = {
+  amazon: { name: "Amazon (SearchAPI)", run: searchSearchApiAmazon, conditions: ["any", "new", "renewed", "refurbished"] },
+  walmart: { name: "Walmart (SearchAPI)", run: searchSearchApiWalmart, conditions: ["any", "new", "renewed", "refurbished"] },
+  bestbuy: { name: "Best Buy (SearchAPI)", run: searchSearchApiBestBuy, conditions: ["any", "new", "open-box"] }
+};
+
+function planBroadCalls(input, has, { deep, query, condition }) {
+  const calls = [];
+  const conditioned = [conditionSearchTerm(condition), query].filter(Boolean).join(" ");
+  if (has.serper) {
+    calls.push(callSpec("serper", "Google Shopping (Serper)", null, input, { q: conditioned, page: 1 }, () => searchSerperShopping(input, { q: conditioned })));
+    // Google Shopping's default results are mostly new retail stock; a
+    // second "used" query surfaces eBay/Mercari/refurb offers for Any.
+    if (condition === "any") calls.push(callSpec("serper", "Google Shopping (Serper)", null, input, { q: "used " + query, page: 1 }, () => searchSerperShopping(input, { q: "used " + query })));
+    if (deep) calls.push(callSpec("serper", "Google Shopping (Serper)", null, input, { q: conditioned, page: 2 }, () => searchSerperShopping(input, { q: conditioned, page: 2 })));
+  } else if (has.searchapi) {
+    calls.push(callSpec("searchapi-gshop", "Google Shopping (SearchAPI)", null, input, { q: conditioned }, () => searchSearchApiGoogleShopping(input, { q: conditioned })));
+  } else if (has.serpapi) {
+    calls.push(callSpec("serpapi", "Google Shopping (SerpApi)", null, input, { q: conditioned }, () => searchSerpApi(input)));
+  }
+  return calls;
+}
+
+export async function searchMarketplaces(input, { includeOtherMerchants = false } = {}) {
+  const started = Date.now();
+  const selected = [...new Set((input.marketplaces && input.marketplaces.length ? input.marketplaces : ALL_MARKETPLACES).filter(id => ALL_MARKETPLACES.includes(id)))];
+  const has = availableProviders(input);
+  const condition = input.condition || "any";
+  const deep = Boolean(input.deepScan);
+  const query = String(input.query || "").trim();
+  const wants = id => selected.includes(id);
+  const searchInput = { ...input, query, condition };
+
+  const round1 = planBroadCalls(searchInput, has, { deep, query, condition });
+  if (wants("ebay")) {
+    if (has.searchapi) round1.push(callSpec("searchapi-ebay", "eBay (SearchAPI)", ["ebay"], searchInput, { q: query, condition }, () => searchSearchApiEbay(searchInput)));
+    else if (has.ebayApi) round1.push(callSpec("ebay-api", "eBay Browse API", ["ebay"], searchInput, { q: query, condition }, () => searchEbay(searchInput)));
+  }
+  if (wants("bestbuy") && has.bestbuyApi) round1.push(callSpec("bestbuy-api", "Best Buy API", ["bestbuy"], searchInput, { q: query, condition }, () => searchBestBuy(searchInput)));
+  const directPlanned = new Set(round1.flatMap(c => c.marketplaces || []));
+  if (deep && has.searchapi) {
+    for (const [id, engine] of Object.entries(DIRECT_STORE_ENGINES)) {
+      if (wants(id) && !directPlanned.has(id) && engine.conditions.includes(condition)) {
+        round1.push(callSpec("searchapi-" + id, engine.name, [id], searchInput, { q: query, condition }, () => engine.run(searchInput)));
+        directPlanned.add(id);
+      }
+    }
+    for (const id of ["newegg", "mercari", "aliexpress"].filter(wants)) {
+      round1.push(callSpec("searchapi-site-" + id, marketplaceName(id) + " (Google site search)", [id], searchInput, { q: query, condition }, () => searchSearchApiSiteMarketplace(searchInput, id)));
+    }
+  }
+
+  const stats = new Map();
+  const settled = await executeCalls(round1);
+  let qualified = qualifyOffers(settled.flatMap(r => r.offers), searchInput, { selected, includeOtherMerchants, stats });
+
+  // Round 2: a selected store with no qualified listing gets one direct
+  // query when a provider can reach it, instead of silently missing it.
+  const round2 = [];
+  const searchApiFailing = settled.some(r => r.error && r.call.id.startsWith("searchapi"));
+  if (has.searchapi && !searchApiFailing && Date.now() - started < 20000) {
+    const found = new Set(qualified.items.map(x => x.marketplace));
+    for (const [id, engine] of Object.entries(DIRECT_STORE_ENGINES)) {
+      if (wants(id) && !found.has(id) && !directPlanned.has(id) && engine.conditions.includes(condition)) {
+        round2.push(callSpec("searchapi-" + id, engine.name, [id], searchInput, { q: query, condition }, () => engine.run(searchInput)));
+      }
+    }
+  }
+  const settled2 = round2.length ? await executeCalls(round2) : [];
+  const all = [...settled, ...settled2];
+  if (settled2.length) qualified = qualifyOffers(all.flatMap(r => r.offers), searchInput, { selected, includeOtherMerchants, stats: new Map() });
+
+  const providers = summarizeProviders(all, qualified.stats);
+  const errors = providers.filter(p => p.status === "error" || p.status === "skipped").map(p => ({ provider: p.name, message: p.message }));
+  const market = buildMarket(qualified.items);
+  const ranked = rankDeals(qualified.items, market, input);
+  const storeCounts = Object.fromEntries(selected.map(id => [id, ranked.filter(x => x.marketplace === id).length]));
+  return {
+    items: qualified.items,
+    market,
+    ranked,
+    errors,
+    providers,
+    coverage: marketplaceCoverage(selected, has, all, storeCounts, condition),
+    storeCounts,
+    observedAt: new Date().toISOString(),
+    cached: all.length > 0 && all.every(r => r.cached),
+    stale: false
+  };
+}
+
+function summarizeProviders(results, stats) {
+  const byName = new Map();
+  for (const r of results) {
+    const name = r.call.name;
+    const entry = byName.get(name) || { name, calls: 0, cachedCalls: 0, errors: [], skipped: false };
+    entry.calls++;
+    if (r.cached) entry.cachedCalls++;
+    if (r.error) entry.errors.push(r.error);
+    if (r.skipped) entry.skipped = true;
+    byName.set(name, entry);
+  }
+  return [...byName.values()].map(entry => {
+    const s = stats.get(entry.name) || emptyStats(entry.name);
+    const failedAll = entry.errors.length === entry.calls;
+    return {
+      name: entry.name,
+      status: failedAll ? (entry.skipped ? "skipped" : "error") : "ok",
+      message: entry.errors[0] || null,
+      calls: entry.calls,
+      cachedCalls: entry.cachedCalls,
+      raw: s.raw,
+      priced: s.priced,
+      kept: s.kept,
+      duplicates: s.duplicates,
+      dropped: s.dropped,
+      examples: s.examples
+    };
+  });
+}
+
+function marketplaceCoverage(selected, has, results, storeCounts, condition) {
+  const queried = new Set(results.filter(r => !r.error).flatMap(r => r.call.marketplaces || []));
+  const broad = results.some(r => !r.error && !r.call.marketplaces);
+  return selected.map(id => {
+    const direct = queried.has(id);
+    let note;
+    if (direct) note = "Searched directly";
+    else if (broad) note = "Searched through Google Shopping";
+    else note = "Not searched: no working provider";
+    if (!direct && id in DIRECT_STORE_ENGINES && !DIRECT_STORE_ENGINES[id].conditions.includes(condition)) note += "; store search has no " + condition + " filter";
+    if (!direct && ["newegg", "mercari", "aliexpress", "bhphoto", "adorama", "microcenter"].includes(id)) note += " (no public listing API)";
+    return { id, name: marketplaceName(id), listings: storeCounts[id] || 0, direct, note };
+  });
+}
+
+// Deal Hunt entry point (kept for the existing API and tests).
+export async function searchPartsSniper(input) {
+  return searchMarketplaces(input, { includeOtherMerchants: false });
+}
+
+// ---------------------------------------------------------------------------
+// PC analyzer component/complete-PC searches (credit-light provider choice)
+// ---------------------------------------------------------------------------
+const searchCache = new Map();
+const inFlight = new Map();
+
+function cacheKey(input) {
   return [
-    normalizeText(input.query),
-    String(input.postalCode||""),String(input.distanceRadius||50),Boolean(input.localOnly),
-    createHash("sha256").update(JSON.stringify([providerKey("SERPER_API_KEY",input),providerKey("SEARCHAPI_API_KEY",input),env("SERPAPI_API_KEY"),env("BESTBUY_API_KEY"),env("EBAY_CLIENT_ID")])).digest("hex"),
-    String(input.category||"").toLowerCase(),
-    input.condition||"any",
-    input.deepScan?"deep":"fast",
-    input.componentEstimate?"component":"direct",
-    providerKey("SERPER_API_KEY",input)?"serper":"no-serper",
-    providerKey("SEARCHAPI_API_KEY",input)?"searchapi":"no-searchapi"
+    normalizeListingText(input.query),
+    String(input.postalCode || ""), String(input.distanceRadius || 50), Boolean(input.localOnly),
+    keyHash(input),
+    String(input.category || "").toLowerCase(),
+    input.condition || "any",
+    input.deepScan ? "deep" : "fast",
+    input.componentEstimate ? "component" : "direct"
   ].join("|");
 }
 
-function chooseProviders(input){
-  const hasOfficialEbay=Boolean(env("EBAY_CLIENT_ID")&&env("EBAY_CLIENT_SECRET"));
-  const hasSerper=Boolean(providerKey("SERPER_API_KEY",input));
-  const hasSearchApi=Boolean(providerKey("SEARCHAPI_API_KEY",input));
-  const condition=input.condition||"any";
-  const providers=[];
+function chooseProviders(input) {
+  const has = availableProviders(input);
+  const condition = input.condition || "any";
+  const providers = [];
+  if (input.localOnly) return has.searchapi ? [["eBay local (SearchAPI)", () => searchSearchApiEbay(input)]] : [];
 
-  if(input.componentEstimate){
-    const cat=String(input.category||"").toLowerCase();
-    if(condition==="used"&&hasSearchApi&&(cat==="gpu"||cat==="cpu")){
-      providers.push(["SearchAPI eBay",()=>searchSearchApiEbay(input)]);
-      return providers;
-    }
-    if(hasSerper){
-      providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
-      return providers;
-    }
+  if (input.componentEstimate) {
+    const cat = String(input.category || "").toLowerCase();
+    if (condition === "used" && has.searchapi && (cat === "gpu" || cat === "cpu")) return [["eBay (SearchAPI)", () => searchSearchApiEbay(input)]];
+    if (has.serper) return [["Google Shopping (Serper)", () => searchSerperShopping(input)]];
   }
 
-  if(condition==="used" || condition==="renewed" || condition==="refurbished"){
-    if(hasSearchApi) providers.push(["SearchAPI eBay",()=>searchSearchApiEbay(input)]);
-    else if(hasOfficialEbay && condition==="used") providers.push(["eBay",()=>searchEbay(input)]);
-    if(hasSerper) providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
-    else if(!providers.length && env("SERPAPI_API_KEY")) providers.push(["Google Shopping",()=>searchSerpApi(input)]);
+  if (condition === "used" || condition === "renewed" || condition === "refurbished") {
+    if (has.searchapi) providers.push(["eBay (SearchAPI)", () => searchSearchApiEbay(input)]);
+    else if (has.ebayApi && condition === "used") providers.push(["eBay Browse API", () => searchEbay(input)]);
+    if (has.serper) providers.push(["Google Shopping (Serper)", () => searchSerperShopping(input)]);
+    else if (!providers.length && has.serpapi) providers.push(["Google Shopping (SerpApi)", () => searchSerpApi(input)]);
     return providers;
   }
 
-  if(condition==="open-box"){
-    if(hasSearchApi) {
-      providers.push(["SearchAPI Best Buy",()=>searchSearchApiBestBuy(input)]);
-      providers.push(["SearchAPI eBay",()=>searchSearchApiEbay(input)]);
-    } else if(env("BESTBUY_API_KEY")) {
-      providers.push(["Best Buy",()=>searchBestBuy(input)]);
-    } else if(hasOfficialEbay) {
-      providers.push(["eBay",()=>searchEbay(input)]);
-    } else if(hasSerper) {
-      providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
-    }
+  if (condition === "open-box") {
+    if (has.searchapi) {
+      providers.push(["Best Buy (SearchAPI)", () => searchSearchApiBestBuy(input)]);
+      providers.push(["eBay (SearchAPI)", () => searchSearchApiEbay(input)]);
+    } else if (has.bestbuyApi) providers.push(["Best Buy API", () => searchBestBuy(input)]);
+    else if (has.ebayApi) providers.push(["eBay Browse API", () => searchEbay(input)]);
+    else if (has.serper) providers.push(["Google Shopping (Serper)", () => searchSerperShopping(input)]);
     return providers;
   }
 
-  if(hasSerper) providers.push(["Serper Shopping",()=>searchSerperShopping(input)]);
-  else if(env("SERPAPI_API_KEY")) providers.push(["Google Shopping",()=>searchSerpApi(input)]);
-
-  if(input.deepScan&&hasSearchApi){
-    providers.push(["SearchAPI Walmart",()=>searchSearchApiWalmart(input)]);
-    providers.push(["SearchAPI Best Buy",()=>searchSearchApiBestBuy(input)]);
-    if(condition==="any") providers.push(["SearchAPI eBay",()=>searchSearchApiEbay(input)]);
-  } else if(!hasSerper&&!env("SERPAPI_API_KEY")){
-    if(hasSearchApi){
-      providers.push(["SearchAPI Walmart",()=>searchSearchApiWalmart(input)]);
-      providers.push(["SearchAPI Best Buy",()=>searchSearchApiBestBuy(input)]);
-      if(condition==="any") providers.push(["SearchAPI eBay",()=>searchSearchApiEbay(input)]);
-    } else {
-      if(env("BESTBUY_API_KEY")) providers.push(["Best Buy",()=>searchBestBuy(input)]);
-      if(hasOfficialEbay) providers.push(["eBay",()=>searchEbay(input)]);
-    }
+  if (has.serper) providers.push(["Google Shopping (Serper)", () => searchSerperShopping(input)]);
+  else if (has.serpapi) providers.push(["Google Shopping (SerpApi)", () => searchSerpApi(input)]);
+  if ((input.deepScan || (!has.serper && !has.serpapi)) && has.searchapi) {
+    providers.push(["Walmart (SearchAPI)", () => searchSearchApiWalmart(input)]);
+    providers.push(["Best Buy (SearchAPI)", () => searchSearchApiBestBuy(input)]);
+    if (condition === "any") providers.push(["eBay (SearchAPI)", () => searchSearchApiEbay(input)]);
+  } else if (!has.serper && !has.serpapi) {
+    if (has.bestbuyApi) providers.push(["Best Buy API", () => searchBestBuy(input)]);
+    if (has.ebayApi) providers.push(["eBay Browse API", () => searchEbay(input)]);
   }
-
   return providers;
 }
 
-async function fetchMarket(input,key,hit){
-  const providers=input.localOnly?[["Local eBay",()=>searchSearchApiEbay(input)]]:chooseProviders(input);
-  const settled=await Promise.all(providers.map(async([name,run])=>{
-    try{return {items:await run(),name};}
-    catch(error){return {name,error:error.name==="TimeoutError"?"Provider timed out":String(error.message).replace(/https?:\/\/\S+/g,"[provider]")};}
+async function fetchMarket(input, key, hit) {
+  const providers = chooseProviders(input);
+  const settled = await Promise.all(providers.map(async ([name, run]) => {
+    try { return { name, offers: await run() }; }
+    catch (error) { return { name, error: error instanceof ProviderError ? error.message : "failed: " + redact(error?.message || error) }; }
   }));
-  const errors=settled.filter(x=>x.error).map(x=>({provider:x.name,message:x.error}));
-  if(providers.length && errors.length===providers.length && hit && Date.now()-hit.savedAt<60*60*1000)return {...hit.value,errors,stale:true};
-  const items=dedupe(settled.flatMap(x=>x.items||[])).filter(x=>x.relevance>=.72 && Number.isFinite(x.totalPrice) && x.totalPrice>0).map(x=>({...x,url:safeUrl(x.url)}));
-  const value={items,market:buildMarket(items),errors,observedAt:new Date().toISOString(),stale:false};
+  const errors = settled.filter(x => x.error).map(x => ({ provider: x.name, message: x.error }));
+  if (providers.length && errors.length === providers.length && hit && Date.now() - hit.savedAt < 60 * 60 * 1000) return { ...hit.value, errors, stale: true };
+  const { items, stats } = qualifyOffers(settled.flatMap(x => x.offers || []), input, {});
+  const value = { items, market: buildMarket(items), errors, providers: [...stats.values()], observedAt: new Date().toISOString(), stale: false };
   // Short negative cache avoids hammering failed/quota-limited providers.
-  searchCache.set(key,{savedAt:Date.now(),ttl:errors.length?30000:CACHE_MS,value});
-  if(searchCache.size>150)searchCache.delete(searchCache.keys().next().value);
+  searchCache.set(key, { savedAt: Date.now(), ttl: errors.length ? 30000 : CACHE_MS, value });
+  if (searchCache.size > 150) searchCache.delete(searchCache.keys().next().value);
   return value;
 }
 
-export async function liveSearch(input){
-  const key=cacheKey(input);
-  const hit=searchCache.get(key);
+export async function liveSearch(input) {
+  const key = cacheKey(input);
+  const hit = searchCache.get(key);
   let base;
-  const cached=Boolean(hit && Date.now()-hit.savedAt<hit.ttl);
-  if(cached)base=hit.value;
-  else{
-    if(!inFlight.has(key))inFlight.set(key,fetchMarket(input,key,hit).finally(()=>inFlight.delete(key)));
-    base=await inFlight.get(key);
+  const cached = Boolean(hit && Date.now() - hit.savedAt < hit.ttl);
+  if (cached) base = hit.value;
+  else {
+    if (!inFlight.has(key)) inFlight.set(key, fetchMarket(input, key, hit).finally(() => inFlight.delete(key)));
+    base = await inFlight.get(key);
   }
-  return {...base,cached,ranked:rankDeals(base.items,base.market,input)};
+  return { ...base, cached, ranked: rankDeals(base.items, base.market, input) };
 }
 
-export async function searchPartsSniper(input){
-  const selected=[...new Set((input.marketplaces||["amazon","bestbuy","walmart","newegg","ebay","aliexpress","bhphoto","adorama","microcenter","mercari"]).filter(Boolean))];
-  const key="sniper|"+selected.slice().sort().join(",")+"|"+cacheKey(input);
-  const hit=searchCache.get(key);
-  if(hit && Date.now()-hit.savedAt<hit.ttl)return {...hit.value,cached:true};
+export async function searchLocalEbay(input) {
+  if (!providerKey("SEARCHAPI_API_KEY", input) || !input.postalCode) return { items: [], market: buildMarket([]), errors: [] };
+  return liveSearch({ ...input, localOnly: true, distanceRadius: input.distanceRadius || 50 });
+}
 
-  const hasSerper=Boolean(providerKey("SERPER_API_KEY",input));
-  const hasSearchApi=Boolean(providerKey("SEARCHAPI_API_KEY",input));
-  const providers=[];
-
-  if(hasSerper)providers.push(["Retail marketplace search",()=>searchSerperMarketplaces({...input,marketplaces:selected})]);
-
-  if(selected.includes("ebay")&&hasSearchApi){
-    providers.push(["eBay",async()=> (await searchSearchApiEbay(input)).map(x=>({...x,marketplace:"ebay",provider:"SearchAPI eBay"}))]);
-  }
-
-  if(selected.includes("amazon")&&hasSearchApi&&(input.deepScan||!hasSerper)){
-    providers.push(["Amazon",()=>searchSearchApiAmazon(input)]);
-  }
-
-  // Deep scans add direct store searches even if Serper is present.
-  // Limit extra domain requests to avoid a new API-quota flood.
-  if(input.deepScan&&hasSearchApi){
-    if(selected.includes("bestbuy"))providers.push(["Best Buy",()=>searchSearchApiBestBuy(input)]);
-    if(selected.includes("walmart"))providers.push(["Walmart",()=>searchSearchApiWalmart(input)]);
-    for(const marketplace of ["newegg","aliexpress","mercari"].filter(id=>selected.includes(id)).slice(0,3))
-      providers.push([marketplaceName(marketplace),()=>searchSearchApiSiteMarketplace(input,marketplace)]);
-  }else if(!hasSerper&&hasSearchApi){
-    for(const marketplace of ["bestbuy","walmart","newegg","aliexpress","mercari"].filter(id=>selected.includes(id)))
-      providers.push([marketplaceName(marketplace),()=>searchSearchApiSiteMarketplace(input,marketplace)]);
-  }
-
-  const settled=await Promise.all(providers.map(async([name,run])=>{
-    try{return {name,items:await run()};}
-    catch(error){return {name,error:error.name==="TimeoutError"?"Provider timed out":String(error.message||error).replace(/https?:\/\/\S+/g,"[provider]")};}
-  }));
-  const errors=settled.filter(x=>x.error).map(x=>({provider:x.name,message:x.error}));
-  const items=dedupe(settled.flatMap(x=>x.items||[]))
-    .filter(x=>selected.includes(x.marketplace||marketplaceIdFromResult(x.seller,x.url)))
-    .map(x=>{
-      const marketplace=x.marketplace||marketplaceIdFromResult(x.seller,x.url);
-      const extraRisks=[];
-      if(x.conditionAssumed)extraRisks.push("Condition inferred from the requested filter; verify the listing.");
-      return {...x,marketplace,source:marketplaceName(marketplace),url:safeUrl(x.url),sniperRiskFlags:extraRisks};
-    })
-    .filter(x=>x.relevance>=.58 && Number.isFinite(x.totalPrice) && x.totalPrice>0);
-
-  const market=buildMarket(items);
-  const ranked=rankDeals(items,market,input).map(x=>({
-    ...x,
-    riskFlags:[...(x.riskFlags||[]),...(x.sniperRiskFlags||[])]
-  }));
-  const storeCounts=Object.fromEntries(selected.map(id=>[id,ranked.filter(x=>x.marketplace===id).length]));
-  const value={items,market,ranked,errors,storeCounts,observedAt:new Date().toISOString(),stale:false,cached:false};
-  searchCache.set(key,{savedAt:Date.now(),ttl:errors.length?30000:CACHE_MS,value});
-  return value;
+// Account check that does not spend search credits (best effort).
+export async function searchApiAccount(input) {
+  const apiKey = providerKey("SEARCHAPI_API_KEY", input);
+  if (!apiKey) return null;
+  return providerFetch("searchapi-account", "https://www.searchapi.io/api/v1/me?api_key=" + encodeURIComponent(apiKey), {}, [apiKey]);
 }

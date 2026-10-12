@@ -107,3 +107,4 @@ input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible{ou
 .sniperCoverage b{color:var(--cyan,#27d6d7)}
 .sniperCoverage small{margin-left:auto;color:var(--muted,#a0acb0);font-size:11px}
 .sniperShowMore{display:block;margin:15px auto 20px;padding:12px 22px}
+.resultSort{min-width:190px;margin-left:auto}

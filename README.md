@@ -16,9 +16,31 @@ FlipScout is a PC-flipping and hardware deal-analysis app built around live comp
 - Parts Deal Scanner for GPUs, CPUs, SSD/NVMe, HDD, RAM, motherboards, PSUs, cases, coolers, fans, networking and complete PCs
 - Outlier removal, title relevance filtering, capacity matching, and Ti/Super/XT/XTX/X3D variant checks
 - Build-budget impact and Deal Score
-- Sort by Best Deal, Lowest Price, Most Under Market, Best for Flip, or Best Fit for Budget
+- Sort by Best Deal, Lowest Total Price, Most Under Market, Best for Flip, or Best Fit for Budget — re-sorts loaded results instantly without a new search
 - 10-minute server-side market cache to conserve free API credits
 - Automatic GitHub CI checks and Vercel deployment
+
+## Marketplace coverage
+
+FlipScout only uses legitimate provider access. Credentials are read from environment variables (or keys the owner enters in the browser settings panel); none are stored in the code.
+
+| Marketplace | How it is searched | Needs |
+|---|---|---|
+| eBay | Direct eBay search (new, used, open box, refurbished, with item condition) | `SEARCHAPI_API_KEY`, or eBay Browse API credentials |
+| Amazon | Google Shopping; direct Amazon search when Google returns no Amazon match, or on Deep Scan | `SERPER_API_KEY`; `SEARCHAPI_API_KEY` for direct |
+| Walmart | Google Shopping; direct Walmart search when needed / Deep Scan | same as Amazon |
+| Best Buy | Google Shopping; direct Best Buy search incl. Open Box when needed / Deep Scan | same as Amazon, or `BESTBUY_API_KEY` |
+| Newegg, Mercari, AliExpress, B&H, Adorama, Micro Center | Google Shopping only (no public listing API); Deep Scan adds a Google site search for Newegg, Mercari and AliExpress | `SERPER_API_KEY` |
+
+Every search reports, per provider, how many listings came back, how many were kept, and why the rest were filtered (wrong model or VRAM, broken/for parts, accessory, laptop part, condition, duplicate). Open **Sources searched** under the results to see it.
+
+Listings are kept when they are new, open box, refurbished/renewed or used, and rejected when they are for parts/not working, incomplete (box only, missing parts), an accessory, a laptop/mobile part, a prebuilt or combo, or a different model/variant/capacity.
+
+### Credit use per search
+
+- Fast scan: 1–2 Serper shopping queries (2 credits each) + 1 SearchAPI eBay request, plus up to 3 SearchAPI direct-store requests for selected stores Google Shopping did not cover.
+- Deep Scan: adds a second Google Shopping page and direct Amazon, Walmart, Best Buy, Newegg/Mercari/AliExpress searches (up to 7 SearchAPI requests per target).
+- Provider responses are cached for 10 minutes; changing sort order never re-queries. A key that returns an out-of-credit or invalid-key error is paused for 10 minutes (1 minute for rate limits) instead of being retried on every search.
 
 ## Recommended free data setup
 
@@ -75,6 +97,15 @@ The UI says which evidence type was used.
 
 Enter a ZIP code in the PC Analyzer. With SearchAPI configured, FlipScout searches eBay local-pickup listings within the selected radius and produces a local likely-sale range from real nearby asking comps. If there are too few comps, it returns unavailable instead of fabricating a local number.
 
+## Live provider audit
+
+`scripts/live-audit.mjs` runs a fixed set of real searches through the production pipeline and prints, for each provider and store, raw vs. kept listings, drop reasons with example titles, and the cheapest qualified listings with links. It uses real credits.
+
+```bash
+SERPER_API_KEY=... SEARCHAPI_API_KEY=... npm run audit:live            # fast scans
+SERPER_API_KEY=... SEARCHAPI_API_KEY=... npm run audit:live -- --deep  # also Deep Scan
+```
+
 ## Development
 
 ```bash
@@ -88,4 +119,4 @@ Runtime: Node 24
 
 ## Security
 
-Never commit API keys. Store them in Vercel Environment Variables, local environment variables, or GitHub Codespaces secrets.
+Never commit API keys. Store them in Vercel Environment Variables (Production and Preview), local environment variables, or GitHub Codespaces secrets. Without them the live search reports "No market data provider is configured".

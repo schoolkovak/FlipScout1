@@ -19,6 +19,7 @@ import {
   getWatchlist,toggleWatchItem,getSavedSearches,saveSearch,deleteSavedSearch
 } from "./storage";
 import {saveMarketSnapshot} from "./marketHistory";
+import {sortDeals,DEAL_SORT_OPTIONS} from "../shared/dealSort.js";
 
 function money(v){
   if(v===null||v===undefined||Number.isNaN(Number(v))) return "—";
@@ -42,6 +43,20 @@ function SpecDropdown({type,value,onChange}){
     </select>
     <small>{total} matching desktop {type==="gpu"?"GPU":"CPU"} models in catalog</small>
   </div>;
+}
+function ProviderNotes({providers,coverage,errors}){
+  const rows=providers||[];
+  const missing=(coverage||[]).filter(x=>!x.listings);
+  if(!rows.length&&!errors?.length)return null;
+  const problems=rows.filter(x=>x.status!=="ok").length;
+  return <details className="providerDetails">
+    <summary>Sources searched ({rows.length}){problems?" · "+problems+" with problems":""}{missing.length?" · "+missing.length+" store"+(missing.length===1?"":"s")+" with no match":""}</summary>
+    {rows.map((x,i)=><p key={"p"+i}><b>{x.name}</b>: {x.status==="ok"
+      ?<>{x.raw} found → {x.kept} kept{x.duplicates?", "+x.duplicates+" duplicates":""}{Object.keys(x.dropped||{}).length?" · filtered: "+Object.entries(x.dropped).sort((a,b)=>b[1]-a[1]).map(([r,n])=>n+" "+r.replace(/-/g," ")).join(", "):""}</>
+      :x.message}</p>)}
+    {missing.map(x=><p key={"c"+x.id}>{x.name}: no matching listing · {x.note}</p>)}
+    {!rows.length&&errors.map((e,i)=><p key={"e"+i}>{e.provider}: {e.message}</p>)}
+  </details>;
 }
 async function copyText(text){try{await navigator.clipboard.writeText(text);return true;}catch{return false;}}
 
@@ -522,6 +537,7 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
   const [data,setData]=useState(null);
   const [trend,setTrend]=useState(null);
   const [watched,setWatched]=useState(()=>getWatchlist());
+  const sortedResults=useMemo(()=>sortDeals(data?.results||[],sortBy),[data,sortBy]);
 
   function changeCategory(value){
     setCategory(value);
@@ -563,13 +579,13 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
         <label>Max part budget<input type="number" value={partBudget} onChange={e=>setPartBudget(e.target.value)}/></label>
         <label>Total build budget<input type="number" value={buildBudget} onChange={e=>setBuildBudget(e.target.value)}/></label>
         <label>Already committed<input type="number" value={committed} onChange={e=>setCommitted(e.target.value)}/></label>
-        <label>Rank by<select value={sortBy} onChange={e=>setSortBy(e.target.value)}><option value="best">Best Deal</option><option value="lowest">Lowest Price</option><option value="under">Most Under Market</option><option value="flip">Best for Flip</option><option value="budget">Best Fit for Budget</option></select></label>
+        <label>Rank by<select value={sortBy} onChange={e=>setSortBy(e.target.value)}>{DEAL_SORT_OPTIONS.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}</select></label>
       </div>
       <label className="toggleLine"><input type="checkbox" checked={deepScan} onChange={e=>setDeepScan(e.target.checked)}/><span><b>Deep multi-source scan</b><small>Uses additional direct retailer/marketplace sources when configured.</small></span></label>
       <div className="rowActions"><button className="primary large" onClick={scan} disabled={loading}>{loading?<><RefreshCw className="spin" size={18}/>Scanning market...</>:<><Search size={18}/>Find live deals</>}</button><button className="secondary" onClick={saveThisSearch}><Bookmark size={16}/>Save search</button></div>
     </section>
 
-    {data&&!data.available&&<div className="notice"><AlertTriangle size={20}/><div><b>Live provider data unavailable</b><p>{data.message}</p></div></div>}
+    {data&&!data.available&&<div className="notice"><AlertTriangle size={20}/><div><b>Live provider data unavailable</b><p>{data.message}</p><ProviderNotes providers={data.providers} coverage={data.coverage} errors={data.errors}/></div></div>}
     {data?.available&&<>
       {trend&&<div className="trendCard">
         <div><span className="eyebrow">PRICE MEMORY</span><b>{trend.count<2?"First market snapshot saved":(trend.changeSinceLast>=0?"+":"")+trend.changeSinceLast.toFixed(1)+"% vs last scan"}</b><small>{trend.count} snapshot{trend.count===1?"":"s"} stored on this device</small></div>
@@ -580,7 +596,8 @@ function DealScanner({providerKeys,onWatchChange,onSearchSaved}){
         <div><span>Relevant comps</span><strong>{data.market.sampleSize}</strong><small>{data.market.rawSampleSize} raw listings checked · {Object.keys(data.market.bySource||{}).length} source{Object.keys(data.market.bySource||{}).length===1?"":"s"}</small></div>
         <div><span>Confidence</span><strong>{data.market.confidence}</strong><small>{data.market.shippingKnownPct}% with known shipping</small></div>
       </div>
-      <div className="dealList">{(data.results||[]).map((x,i)=><article className="dealCard" key={x.id||i}>
+      <ProviderNotes providers={data.providers} coverage={data.coverage} errors={data.errors}/>
+      <div className="dealList">{sortedResults.map((x,i)=><article className="dealCard" key={x.id||i}>
         <div className="dealTop"><div><div className="dealBadges"><span className="source">{x.source}</span>{x.soldCount>0&&<span className="soldChip">{x.soldCount}+ sold</span>}</div><h3>{x.title}</h3></div><div className="dealScore"><b>{x.score}</b><small>cap {x.scoreCap||100}</small></div></div>
         <div className="dealPriceRow"><strong>{x.shippingKnown?money(x.totalPrice):money(x.itemPrice)}</strong><span>{x.shippingKnown?"delivered":"shipping unknown"}</span></div>
         <div className="dealMeta"><span>{x.condition} · {x.seller}</span><span className={x.percentVsMarket>=10?"goodText":x.percentVsMarket<0?"badText":""}>{x.percentVsMarket>=0?x.percentVsMarket+"% under market":Math.abs(x.percentVsMarket)+"% over market"}</span><span>Build left {money(x.budgetLeft)}{!x.shippingKnown?" before shipping":""}</span><span>{x.withinPartBudget?(x.shippingKnown?"Fits part budget":"Check shipping for budget"):"Over part budget"}</span></div>
@@ -603,6 +620,8 @@ function PartsSniper({providerKeys,onWatchChange}){
   const [error,setError]=useState("");
   const [watched,setWatched]=useState(()=>getWatchlist());
   const [resultPages,setResultPages]=useState({});
+  const [sortBy,setSortBy]=useState("best");
+  const sortedGroups=useMemo(()=>(data?.results||[]).map(group=>({...group,results:sortDeals(group.results,sortBy)})),[data,sortBy]);
 
   function updateTarget(id,key,value){
     setTargets(rows=>rows.map(x=>x.id===id?{...x,[key]:value}:x));
@@ -698,8 +717,8 @@ function PartsSniper({providerKeys,onWatchChange}){
     </section>
 
     {data?.available&&<section className="sniperResults">
-      <div className="sniperResultsHead"><div><span className="eyebrow">LIVE RESULTS</span><h2>{data.successfulTargets}/{data.targetCount} targets found qualifying listings</h2><p>Scanned {data.marketplaces.map(id=>SNIPER_MARKETPLACES.find(x=>x.id===id)?.name||id).join(", ")}.</p></div><div className="scanTime">{new Date(data.searchedAt).toLocaleTimeString()}</div></div>
-      {(data.results||[]).map(group=><section className="panel sniperTargetResults" key={group.id}>
+      <div className="sniperResultsHead"><div><span className="eyebrow">LIVE RESULTS</span><h2>{data.successfulTargets}/{data.targetCount} targets found qualifying listings</h2><p>Scanned {data.marketplaces.map(id=>SNIPER_MARKETPLACES.find(x=>x.id===id)?.name||id).join(", ")}.</p></div><label className="resultSort">Sort results<select value={sortBy} onChange={e=>{setSortBy(e.target.value);setResultPages({});}}>{DEAL_SORT_OPTIONS.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}</select></label><div className="scanTime">{new Date(data.searchedAt).toLocaleTimeString()}</div></div>
+      {sortedGroups.map(group=><section className="panel sniperTargetResults" key={group.id}>
         <div className="targetResultHeader">
           <div><span className="eyebrow">{group.target.category}</span><h3>{group.target.query}</h3><p>{SNIPER_CONDITIONS.find(x=>x.value===group.target.condition)?.label||group.target.condition}{group.target.maxPrice>0?" · max "+money(group.target.maxPrice):" · no price cap"}</p></div>
           {group.available?<div className="marketMini"><span>Market median</span><b>{money(group.market.median)}</b><small>{group.market.sampleSize} comps · {group.market.confidence}</small></div>:<div className="marketMini weak"><span>Evidence</span><b>Too thin</b><small>No trustworthy market range</small></div>}
@@ -728,7 +747,7 @@ function PartsSniper({providerKeys,onWatchChange}){
   <button className="secondary sniperShowMore" onClick={()=>setResultPages(p=>({...p,[group.id]:(p[group.id]||0)+1}))}>
     Show 12 more listings ({group.results.length-((resultPages[group.id]||0)+1)*12} remaining)
   </button>}
-  {group.errors?.length>0&&<details className="providerDetails"><summary>Provider notes ({group.errors.length})</summary>{group.errors.map((e,i)=><p key={i}>{e.provider}: {e.message}</p>)}</details>}
+  <ProviderNotes providers={group.providers} coverage={group.coverage} errors={group.errors}/>
       </section>)}
     </section>}
   </div>;

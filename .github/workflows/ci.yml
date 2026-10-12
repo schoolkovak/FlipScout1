@@ -24,6 +24,7 @@ jobs:
       - name: Check server/API syntax
         run: |
           node --check api/_lib/market.js
+          node --check api/_lib/matching.js
           node --check api/deals/search.js
           node --check api/market/pc.js
           node --check api/parts/sniper.js
@@ -32,6 +33,7 @@ jobs:
           node --check server/index.js
           node --check shared/catalog.js
           node --check shared/sniper.js
+          node --check shared/dealSort.js
 
       - name: Run FlipScout smoke tests
         run: npm test
