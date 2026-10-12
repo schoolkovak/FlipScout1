@@ -29,12 +29,14 @@ const FREE_STALE_H = 2.5;
 const RUN_LIMIT_MS = Number(args["time-limit"] ?? 20 * 60 * 1000);
 
 // Parts a gaming-PC flipper buys and sells most: refreshed first.
+// (Flipper Deals sections are built from these too.)
 const PRIORITY = [
-  "GTX 1660 Super", "GTX 1660 Ti", "GTX 1660", "RTX 3060 12GB", "RTX 3060 Ti", "RTX 3070", "RTX 2060", "RTX 2060 Super",
-  "RTX 2070 Super", "GTX 1070", "GTX 1080", "RX 580 8GB", "RX 5700 XT", "RX 6600", "RX 6700 XT", "RTX 3080 10GB",
-  "RTX 4060", "RTX 5070", "Ryzen 5 3600", "Ryzen 5 5600", "Ryzen 5 5600X", "Ryzen 5 2600", "Ryzen 5 3500X",
-  "Ryzen 7 5700X", "Ryzen 7 5800X3D", "16GB DDR4 3200", "32GB DDR4 3200", "500GB NVMe SSD", "1TB NVMe SSD",
-  "B550 AM4 motherboard", "B450 AM4 motherboard", "650W 80+ Gold PSU", "550W PSU", "750W 80+ Gold PSU"
+  "GTX 1660 Super", "GTX 1660 Ti", "RTX 3060 12GB", "16GB DDR4 3200", "500GB NVMe SSD", "Ryzen 5 3600", "650W PSU",
+  "ATX mid tower PC case", "RTX 3060 Ti", "RTX 3070", "RTX 2060", "Ryzen 5 2600", "Ryzen 5 5600", "8GB DDR4 3200",
+  "650W 80+ Gold PSU", "550W PSU", "GTX 1660", "RX 6600", "RX 580 8GB", "RX 5700 XT", "Ryzen 5 3500X", "Ryzen 5 5600X",
+  "Micro ATX PC case", "16GB DDR4 3600", "RTX 2060 Super", "RTX 2070 Super", "GTX 1070", "GTX 1080", "RX 6700 XT",
+  "RTX 3080 10GB", "RTX 4060", "Ryzen 7 5700X", "Ryzen 7 5800X3D", "750W 80+ Gold PSU", "500GB SSD",
+  "B550 AM4 motherboard", "B450 AM4 motherboard", "32GB DDR4 3200", "1TB NVMe SSD", "RTX 5070"
 ];
 
 const readJson = (p, d) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return d; } };

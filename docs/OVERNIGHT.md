@@ -18,3 +18,7 @@ Restore point: branch `tomato` (commit 56d201c). Say "tomato" to return the site
 - Models that haven't been saved yet show "QUEUED" with a "Search it now" button (one light search, cached 12 h).
 - Browse and model pages keep your last results on screen across visits and refresh quietly in the background.
 - eBay items found through Google are no longer shown: eBay blocks server checks (HTTP 403), so their status and price can't be confirmed. eBay listings come only from the official API.
+
+## Flipper Deals
+- New "Flipper Deals" tab: DDR4 8GB sticks (3000MHz+, under $65 per 2×8GB), 500GB NVMe, cases ≤ $52, PSUs (550/650 first, Bronze/Gold first), Ryzen and GPU "appeal per $100".
+- Built only from saved listings, so it costs no credits. New catalog entries feed it: 8GB DDR4 3200, 16GB DDR4 3600, Case group (ATX mid tower, Micro ATX, Mini ITX).

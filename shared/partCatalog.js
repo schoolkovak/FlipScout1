@@ -134,6 +134,8 @@ export const PART_GROUPS = [
         spec("48GB DDR5 6000", "RAM / Memory", [["Kit", "2×24 GB"], ["Speed", "6000 MT/s"]])
       ] },
       { id: "ddr4", label: "DDR4 Desktop", items: [
+        spec("8GB DDR4 3200", "RAM / Memory", [["Kit", "1×8 GB"], ["Speed", "3200 MT/s"]]),
+        spec("16GB DDR4 3600", "RAM / Memory", [["Kit", "2×8 GB"], ["Speed", "3600 MT/s"]]),
         spec("16GB DDR4 3200", "RAM / Memory", [["Kit", "2×8 GB"], ["Speed", "3200 MT/s"]]),
         spec("32GB DDR4 3200", "RAM / Memory", [["Kit", "2×16 GB"], ["Speed", "3200 MT/s"]]),
         spec("32GB DDR4 3600", "RAM / Memory", [["Kit", "2×16 GB"], ["Speed", "3600 MT/s"]]),
@@ -214,6 +216,15 @@ export const PART_GROUPS = [
         spec("dual tower CPU air cooler", "CPU Air Cooler", [["Type", "Dual tower"]]),
         spec("CPU air cooler", "CPU Air Cooler", [["Type", "Tower air"]]),
         spec("120mm ARGB fan 3 pack", "Case Fans", [["Size", "120 mm"], ["Pack", "3"]])
+      ] }
+    ]
+  },
+  {
+    id: "case", label: "Case", icon: "case", series: [
+      { id: "budget", label: "Budget Cases", items: [
+        spec("ATX mid tower PC case", "PC Case", [["Form", "ATX mid tower"]]),
+        spec("Micro ATX PC case", "PC Case", [["Form", "Micro ATX"]]),
+        spec("Mini ITX PC case", "PC Case", [["Form", "Mini ITX"]])
       ] }
     ]
   },

@@ -1,15 +1,10 @@
-// Flipper Deals: a few cheap, broad searches per section, filtered to the
-// listings a PC flipper actually wants, with real store links only.
-import { searchSerperShopping, qualifyOffers, resolveRealLinks } from "./market.js";
-import { normalizeListingText, gpuModelKeys, cpuModelKeys } from "./matching.js";
+// Flipper Deals: built entirely from saved listings (see snapshots.js), so
+// the page costs no API credits. Each section filters/ranks the saved
+// listings of a few catalog models the way a PC flipper shops.
+import { normalizeListingText } from "./matching.js";
+import { readSnapshot, modelPath } from "./snapshots.js";
+import { PART_GROUPS } from "../../shared/partCatalog.js";
 import { GPUS, CPUS } from "../../shared/catalog.js";
-
-const RESOLVE_LIMIT = 12;
-
-async function shopping(input, queries) {
-  const settled = await Promise.all(queries.map(q => searchSerperShopping(input, { q }).then(offers => ({ offers }), error => ({ offers: [], error: String(error?.message || error) }))));
-  return { offers: settled.flatMap(r => r.offers), errors: settled.filter(r => r.error).map(r => r.error) };
-}
 
 function slim(x, extra = {}) {
   return {
@@ -40,113 +35,101 @@ export function ddr4StickInfo(title) {
   return { sticks, speed };
 }
 
-export async function huntDdr4(input) {
-  const { offers, errors } = await shopping(input, ["8GB DDR4 3200 desktop RAM", "16GB (2x8GB) DDR4 3200 desktop memory", "lot 8GB DDR4 3200 desktop RAM used"]);
-  const stats = new Map();
-  const { items } = qualifyOffers(offers, { query: "DDR4", category: "RAM / Memory", condition: "any" }, { stats });
-  const priced = items.map(x => ({ x, info: ddr4StickInfo(x.title) })).filter(r => r.info)
-    .map(r => ({ ...r, perPair: Math.round(r.x.totalPrice / r.info.sticks * 2 * 100) / 100 }))
-    .filter(r => r.perPair < 65 && r.perPair > 8)
-    .sort((a, b) => a.perPair - b.perPair);
-  const keep = new Set(priced.map(r => r.x));
-  const real = await resolveRealLinks(input, items.filter(x => keep.has(x)), stats, RESOLVE_LIMIT);
-  const realSet = new Set(real);
-  return { listings: priced.filter(r => realSet.has(r.x)).map(r => slim(r.x, { sticks: r.info.sticks, speed: r.info.speed, perPair: r.perPair })), errors };
-}
-
-// ---- Generic hunts --------------------------------------------------------
-async function huntSimple(input, groups, { maxPrice = Infinity, condition = "any", sort } = {}) {
-  const stats = new Map();
-  let all = [];
-  const errors = [];
-  for (const g of groups) {
-    const r = await shopping(input, g.queries);
-    errors.push(...r.errors);
-    const { items } = qualifyOffers(r.offers, { query: g.match, category: g.category, condition }, { stats });
-    all.push(...items.map(x => Object.assign(x, { tag: g.tag || null })));
-  }
-  const seen = new Set();
-  all = all.filter(x => x.totalPrice <= maxPrice && !seen.has(x.id) && seen.add(x.id));
-  all.sort(sort || ((a, b) => a.totalPrice - b.totalPrice));
-  const real = await resolveRealLinks(input, all.slice(0, RESOLVE_LIMIT * 2), stats, RESOLVE_LIMIT);
-  return { listings: real.map(x => slim(x, { tag: x.tag })), errors };
-}
-
-export const huntNvme500 = input => huntSimple(input, [{ queries: ["500GB NVMe SSD M.2", "512GB NVMe M.2 SSD"], match: "500GB NVMe SSD", category: "NVMe SSD" }]);
-
-export const huntCases = input => huntSimple(input, [{ queries: ["ATX mid tower PC case with fans", "micro ATX PC case"], match: "PC case", category: "PC Case" }], { maxPrice: 52, condition: "new" });
-
 export function psuRating(title) {
   const t = normalizeListingText(title);
   return ["titanium", "platinum", "gold", "silver", "bronze"].find(r => t.includes(r)) || null;
 }
-export const huntPsus = async input => {
-  const r = await huntSimple(input, [
-    { queries: ["650W 80+ Bronze power supply", "650W 80+ Gold power supply"], match: "650W PSU", category: "Power Supply / PSU", tag: "650W" },
-    { queries: ["550W 80+ Bronze power supply"], match: "550W PSU", category: "Power Supply / PSU", tag: "550W" },
-    { queries: ["750W 80+ Gold power supply"], match: "750W PSU", category: "Power Supply / PSU", tag: "750W" }
-  ], { condition: "new" });
-  // Prefer Bronze/Gold; unrated or White units go last.
-  const rank = x => ({ gold: 0, bronze: 0, platinum: 1, titanium: 1, silver: 2 }[psuRating(x.title)] ?? 3);
-  r.listings = r.listings.map(x => ({ ...x, rating: psuRating(x.title) })).sort((a, b) => rank(a) - rank(b) || a.totalPrice - b.totalPrice);
-  return r;
-};
 
-// ---- Appeal per dollar ----------------------------------------------------
-function gpuModelFor(title) {
-  const t = normalizeListingText(title);
-  const keys = [...gpuModelKeys(t)];
-  if (keys.length !== 1) return null;
-  const vram = Number(t.replace(/\bo?(\d{1,2})g\b/g, "$1gb").match(/\b(\d{1,2})gb\b/)?.[1]) || null;
-  const candidates = GPUS.filter(g => gpuModelKeys(normalizeListingText(g.name)).has(keys[0]) && g.appeal);
-  if (!candidates.length) return null;
-  if (candidates.length > 1 && !vram) return null; // 3060 8GB vs 12GB etc. must be stated
-  return candidates.find(g => !vram || g.vram === vram) || null;
-}
-function cpuModelFor(title) {
-  const t = normalizeListingText(title);
-  if (!/\b(?:ryzen|amd)\b/.test(t)) return null;
-  const keys = [...cpuModelKeys(t)];
-  if (keys.length !== 1) return null;
-  return CPUS.find(c => /^Ryzen/.test(c.name) && c.appeal && [...cpuModelKeys(normalizeListingText(c.name))][0] === keys[0]) || null;
+async function saved(names, read = readSnapshot) {
+  const snaps = await Promise.all(names.map(async name => ({ name, snap: await read(modelPath(name)) })));
+  const have = snaps.filter(x => x.snap?.results?.length);
+  const times = have.map(x => x.snap.searchedAt).filter(Boolean).sort();
+  return {
+    rows: have.flatMap(x => x.snap.results.map(r => ({ ...r, model: x.name }))),
+    perModel: have,
+    missing: snaps.filter(x => !x.snap?.results?.length).map(x => x.name),
+    searchedAt: times[times.length - 1] || null
+  };
 }
 
-async function huntAppeal(input, queries, category, modelFor) {
-  const { offers, errors } = await shopping(input, queries);
-  const byModel = new Map();
-  for (const o of offers) {
-    const model = modelFor(o.title);
-    if (!model) continue;
-    if (!byModel.has(model.name)) byModel.set(model.name, { model, offers: [] });
-    byModel.get(model.name).offers.push(o);
+function uniqueById(rows) {
+  const seen = new Set();
+  return rows.filter(x => { const k = x.url || x.id; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+// ---- DDR4: 8GB sticks >= 3000MHz, under $65 per pair ----------------------
+async function ddr4(read) {
+  const s = await saved(["8GB DDR4 3200", "16GB DDR4 3200", "16GB DDR4 3600"], read);
+  const listings = uniqueById(s.rows).map(x => ({ x, info: ddr4StickInfo(x.title) })).filter(r => r.info)
+    .map(r => ({ ...slim(r.x), sticks: r.info.sticks, speed: r.info.speed, perPair: Math.round(r.x.totalPrice / r.info.sticks * 2 * 100) / 100 }))
+    .filter(x => x.perPair > 8 && x.perPair < 65)
+    .sort((a, b) => a.perPair - b.perPair);
+  return { ...s, listings };
+}
+
+// ---- 500GB NVMe ----------------------------------------------------------
+async function nvme500(read) {
+  const s = await saved(["500GB NVMe SSD", "500GB SSD"], read);
+  const listings = uniqueById(s.rows).filter(x => { const t = normalizeListingText(x.title); return /\b(nvme|m 2|m2|pcie)\b/.test(t) && /\b(500|512)\s?gb\b/.test(t); })
+    .map(x => slim(x)).sort((a, b) => a.totalPrice - b.totalPrice);
+  return { ...s, listings };
+}
+
+// ---- Cases under $52 -------------------------------------------------------
+async function cases(read) {
+  const s = await saved(["ATX mid tower PC case", "Micro ATX PC case", "Mini ITX PC case"], read);
+  const listings = uniqueById(s.rows).filter(x => x.totalPrice <= 52 && x.condition === "new")
+    .filter(x => !/\b(cooler|aio|power supply|psu|motherboard|graphics card|cable|stand|dust filter|replacement|bracket)\b/i.test(x.title))
+    .map(x => slim(x)).sort((a, b) => a.totalPrice - b.totalPrice);
+  return { ...s, listings };
+}
+
+// ---- PSUs: 650W / 550W (sometimes 750W), Bronze or Gold first --------------
+async function psus(read) {
+  const s = await saved(["650W 80+ Gold PSU", "650W PSU", "550W PSU", "750W 80+ Gold PSU", "750W PSU"], read);
+  const watts = x => Number(normalizeListingText(x.title).match(/\b(\d{3,4})\s?w\b/)?.[1]) || null;
+  const rank = x => ({ gold: 0, bronze: 0, platinum: 1, titanium: 1, silver: 2 }[x.rating] ?? 3);
+  const wRank = w => ({ 650: 0, 550: 0, 750: 1 }[w] ?? 2);
+  const listings = uniqueById(s.rows).map(x => ({ ...slim(x), watts: watts(x), rating: psuRating(x.title) }))
+    .filter(x => [550, 650, 750].includes(x.watts))
+    .map(x => ({ ...x, tag: x.watts + "W" + (x.rating ? " " + x.rating[0].toUpperCase() + x.rating.slice(1) : "") }))
+    .sort((a, b) => rank(a) - rank(b) || wRank(a.watts) - wRank(b.watts) || a.totalPrice - b.totalPrice);
+  return { ...s, listings };
+}
+
+// ---- Appeal per dollar (buyer appeal score from shared/catalog.js) ---------
+function catalogNames(groupId, test) {
+  const g = PART_GROUPS.find(x => x.id === groupId);
+  return [...new Set(g.series.flatMap(x => x.items.map(i => i.name)))].filter(test);
+}
+async function appeal(read, names, table) {
+  const s = await saved(names, read);
+  const rows = [];
+  for (const { name, snap } of s.perModel) {
+    const meta = table.find(x => x.name === name);
+    if (!meta?.appeal) continue;
+    // Cheapest two real listings per model, ignoring bait far under typical used price.
+    const ok = snap.results.filter(x => !(meta.fallbackUsed && x.totalPrice < meta.fallbackUsed * 0.4)).sort((a, b) => a.totalPrice - b.totalPrice).slice(0, 2);
+    for (const x of ok) rows.push({ ...slim(x), model: name, appeal: meta.appeal, appealPer100: Math.round(meta.appeal / x.totalPrice * 10000) / 100 });
   }
-  const stats = new Map();
-  let ranked = [];
-  for (const { model, offers: group } of byModel.values()) {
-    const { items } = qualifyOffers(group, { query: model.name, category, condition: "any" }, { stats });
-    for (const x of items) {
-      // Ignore bait prices far under the typical used price for that model.
-      if (model.fallbackUsed && x.totalPrice < model.fallbackUsed * 0.4) continue;
-      ranked.push(Object.assign(x, { model: model.name, appeal: model.appeal, appealPer100: Math.round(model.appeal / x.totalPrice * 10000) / 100 }));
-    }
-  }
-  ranked.sort((a, b) => b.appealPer100 - a.appealPer100);
-  // Keep the best listing per model, then resolve real links for the top ones.
-  const bestPer = new Map();
-  for (const x of ranked) if (!bestPer.has(x.model) || bestPer.get(x.model).length < 2) bestPer.set(x.model, [...(bestPer.get(x.model) || []), x]);
-  const shortlist = [...bestPer.values()].flat().sort((a, b) => b.appealPer100 - a.appealPer100).slice(0, RESOLVE_LIMIT * 2);
-  const real = await resolveRealLinks(input, shortlist, stats, RESOLVE_LIMIT);
-  return { listings: real.sort((a, b) => b.appealPer100 - a.appealPer100).map(x => slim(x, { model: x.model, appeal: x.appeal, appealPer100: x.appealPer100 })), errors };
+  rows.sort((a, b) => b.appealPer100 - a.appealPer100);
+  return { ...s, listings: rows };
 }
-
-export const huntRyzen = input => huntAppeal(input, ["used AMD Ryzen 5 desktop processor", "used AMD Ryzen 7 desktop processor", "AMD Ryzen 5 3600 2600 3500X processor", "AMD Ryzen 5 5600 5500 processor"], "CPU", cpuModelFor);
-export const huntGpuValue = input => huntAppeal(input, ["used graphics card RTX 3060 3070 2060", "used graphics card RX 6600 6700 XT 580", "used GTX 1660 1070 1080 graphics card", "used RTX 4060 4070 graphics card"], "GPU", gpuModelFor);
+const ryzen = read => appeal(read, catalogNames("cpu", n => /^Ryzen/.test(n)), CPUS);
+const gpus = read => appeal(read, catalogNames("gpu", () => true), GPUS);
 
 export const FLIPPER_SECTIONS = {
-  ddr4: { title: "DDR4 bulk 8GB sticks", run: huntDdr4, ttl: 10800 },
-  nvme500: { title: "500GB NVMe SSDs", run: huntNvme500, ttl: 10800 },
-  cases: { title: "PC cases under $52", run: huntCases, ttl: 10800 },
-  psu: { title: "PSUs 550–750W Bronze/Gold", run: huntPsus, ttl: 10800 },
-  ryzen: { title: "Ryzen CPUs — appeal per $", run: huntRyzen, ttl: 21600 },
-  gpu: { title: "GPUs — appeal per $", run: huntGpuValue, ttl: 21600 }
+  ddr4: { title: "DDR4 bulk 8GB sticks", run: ddr4 },
+  nvme500: { title: "500GB NVMe SSDs", run: nvme500 },
+  cases: { title: "PC cases under $52", run: cases },
+  psu: { title: "PSUs 550–750W Bronze/Gold", run: psus },
+  ryzen: { title: "Ryzen CPUs — appeal per $", run: ryzen },
+  gpu: { title: "GPUs — appeal per $", run: gpus }
 };
+
+export async function flipperSection(id, read) {
+  const section = FLIPPER_SECTIONS[id];
+  if (!section) return null;
+  const r = await section.run(read);
+  return { id, title: section.title, listings: r.listings.slice(0, 60), count: r.listings.length, searchedAt: r.searchedAt, missing: r.missing };
+}

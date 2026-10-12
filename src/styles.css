@@ -372,3 +372,22 @@ button.mcImage{border:0;width:100%;cursor:pointer;padding:0}
 .mcSearchNow{margin-top:10px;display:inline-flex;align-items:center;gap:6px;background:transparent;border:1px solid var(--line,#24323a);color:var(--green);border-radius:6px;padding:7px 12px;font-weight:600;cursor:pointer}
 .mcSearchNow:hover{border-color:var(--green)}
 .snapNote{font-size:12px;color:var(--muted,#8aa0ad);margin:6px 0 0}
+.flipPage{max-width:1280px;margin:0 auto}
+.flipGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px;margin-top:18px}
+@media (max-width:520px){.flipGrid{grid-template-columns:1fr}}
+.flipSection h3{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.flipSection h3 small{margin-left:auto;font-size:12px;font-weight:400;color:var(--muted,#8aa0ad)}
+.flipBlurb{font-size:13px;color:var(--muted,#8aa0ad);margin:4px 0 10px}
+.flipList{display:flex;flex-direction:column;gap:6px}
+.flipRow{display:grid;grid-template-columns:44px 1fr auto 16px;gap:10px;align-items:center;padding:8px;border:1px solid var(--line,#1d2a31);border-radius:8px;color:inherit;text-decoration:none}
+.flipRow:hover{border-color:var(--green)}
+.flipRow img,.flipRow .imgPh{width:44px;height:44px;object-fit:contain;background:#fff1;border-radius:6px;display:block}
+.flipMain{min-width:0;display:flex;flex-direction:column;gap:2px}
+.flipMain b{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.flipMain span{font-size:12px;color:var(--muted,#8aa0ad)}
+.flipMain .flipTag{color:var(--green)}
+.flipRow .priceTotal span{display:none}
+.flipMore{margin-top:10px}
+.navLinks button{white-space:nowrap;padding:9px 10px}
+.navSearch{min-width:0}
+@media (max-width:760px){.navLinks{max-width:100%;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}.navLinks::-webkit-scrollbar{display:none}.flipRow{grid-template-columns:40px 1fr auto}.flipRow>svg{display:none}}
