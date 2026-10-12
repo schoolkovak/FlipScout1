@@ -241,7 +241,7 @@ test("SerpApi eBay engine requests sellable conditions only", async () => {
   } finally { stub.restore(); if (before === undefined) delete process.env.SERPAPI_API_KEY; else process.env.SERPAPI_API_KEY = before; }
 });
 
-test("unknown web shops and too-good-to-be-true prices are dropped; missing links become store searches", () => {
+test("unknown web shops, too-good-to-be-true prices and listings without a real item link are dropped", () => {
   const base = { provider: "Google Shopping (Serper)", shipping: 0, shippingKnown: false, defaultCondition: "new" };
   const mk = (seller, title, price, url) => ({ ...base, seller, title, itemPrice: price, totalPrice: price, url });
   const offers = [
@@ -255,7 +255,47 @@ test("unknown web shops and too-good-to-be-true prices are dropped; missing link
   assert.ok(!items.some(x => /mafsantander|resmab/.test(x.seller)));
   assert.equal(stats.get("Google Shopping (Serper)").dropped["untrusted-store"], 2);
   assert.ok(!items.some(x => x.totalPrice === 70), "$70 when the median is ~$180 is dropped");
-  const noLink = items.find(x => x.title.startsWith("XFX"));
-  assert.equal(noLink.linkType, "store-search");
-  assert.match(noLink.url, /^https:\/\/www\.ebay\.com\/sch\/i\.html/);
+  assert.ok(!items.some(x => x.title.startsWith("XFX")), "no link -> not shown");
+  assert.equal(stats.get("Google Shopping (Serper)").dropped["no-direct-link"], 1);
+  assert.ok(items.every(x => x.linkType === "listing" && !/google\.|\/sch\/|search/.test(x.url)));
+});
+
+test("item-page search covers eBay, AliExpress and Mercari in one query and keeps only item pages", async () => {
+  const stub = stubFetch({
+    serper: ({ q, body }) => body.q.startsWith("(site:") ? { organic: [
+      { title: "Sapphire Pulse RX 7800 XT 16GB GDDR6 Used | eBay", link: "https://www.ebay.com/itm/334455667788", snippet: "Pre-Owned · $389.99 · Free shipping" },
+      { title: "AMD Radeon RX 7800 XT 16GB Graphics Card - AliExpress", link: "https://www.aliexpress.us/item/3256807000000001.html", snippet: "US $402.15 · 4.6 stars" },
+      { title: "XFX RX 7800 XT 16GB - Mercari", link: "https://www.mercari.com/us/item/m12345678901/", snippet: "$360 · Good condition" },
+      { title: "rx 7800 xt for sale | eBay", link: "https://www.ebay.com/sch/i.html?_nkw=rx+7800+xt", snippet: "$400" }
+    ] } : { shopping: [] }
+  });
+  try {
+    const result = await searchPartsSniper({ query: "RX 7800 XT", category: "GPU", condition: "any", marketplaces: ["ebay", "aliexpress", "mercari"], providerKeys: keys() });
+    const organicCalls = stub.calls.filter(c => c.id === "serper" && c.body.q.startsWith("(site:"));
+    assert.equal(organicCalls.length, 1);
+    assert.match(organicCalls[0].body.q, /site:ebay\.com\/itm OR site:aliexpress\.us\/item OR site:aliexpress\.com\/item OR site:mercari\.com\/us\/item/);
+    const byStore = Object.fromEntries(result.ranked.map(x => [x.marketplace, x]));
+    assert.equal(byStore.ebay.totalPrice, 389.99);
+    assert.equal(byStore.ebay.condition, "used");
+    assert.equal(byStore.aliexpress.totalPrice, 402.15);
+    assert.equal(byStore.mercari.condition, "used");
+    assert.equal(result.ranked.length, 3, "the eBay search-results page is not a listing");
+  } finally { stub.restore(); }
+});
+
+test("PSUs, cooling and monitors are new-only: no used queries, no used listings", async () => {
+  const stub = stubFetch({
+    serper: ({ body }) => body.q.startsWith("(site:") ? { organic: [
+      { title: "Corsair RM850x 850W 80+ Gold PSU | eBay", link: "https://www.ebay.com/itm/998877665544", snippet: "Pre-Owned · $70.00" }
+    ] } : { shopping: [
+      { title: "Corsair RM850x 850W 80 PLUS Gold Fully Modular Power Supply", source: "Newegg.com", price: "$129.99", link: "https://www.newegg.com/p/N82E16817139326" },
+      { title: "Corsair RM850x 850W 80 PLUS Gold Power Supply - Used", source: "Amazon.com", price: "$95.00", link: "https://www.amazon.com/dp/B0AAAABBBB" }
+    ] }
+  });
+  try {
+    const result = await searchPartsSniper({ query: "850W 80+ Gold PSU", category: "Power Supply / PSU", condition: "any", marketplaces: ["newegg", "amazon", "ebay"], providerKeys: keys() });
+    assert.ok(!stub.calls.some(c => c.id === "serper" && /^(used|refurbished) /.test(c.body.q)), "no used/refurbished shopping queries");
+    assert.ok(result.ranked.length >= 1);
+    assert.ok(result.ranked.every(x => x.condition === "new"));
+  } finally { stub.restore(); }
 });

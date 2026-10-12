@@ -1,5 +1,5 @@
 import { searchPartsSniper, providerStatus } from "../_lib/market.js";
-import { SNIPER_CATEGORIES, SNIPER_CONDITIONS, SNIPER_MARKETPLACES } from "../../shared/sniper.js";
+import { SNIPER_CATEGORIES, SNIPER_CONDITIONS, SNIPER_MARKETPLACES, allowsUsed } from "../../shared/sniper.js";
 import { sortDeals } from "../../shared/dealSort.js";
 
 const categoryNames=new Set(SNIPER_CATEGORIES.map(x=>x.name));
@@ -9,7 +9,7 @@ const marketplaceIds=new Set(SNIPER_MARKETPLACES.map(x=>x.id));
 function cleanTarget(raw,index){
   const category=categoryNames.has(raw?.category)?raw.category:"GPU";
   const query=String(raw?.query||"").trim().slice(0,160);
-  const condition=conditionNames.has(raw?.condition)?raw.condition:"any";
+  const condition=!allowsUsed(category)?"new":conditionNames.has(raw?.condition)?raw.condition:"any";
   const maxPrice=Math.max(0,Math.min(100000,Number(raw?.maxPrice||0)||0));
   const buildBudget=Math.max(0,Math.min(250000,Number(raw?.buildBudget||0)||0));
   const committed=Math.max(0,Math.min(250000,Number(raw?.committed||0)||0));

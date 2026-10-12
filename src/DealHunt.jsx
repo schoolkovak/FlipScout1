@@ -1,7 +1,7 @@
 import React,{useMemo,useState} from "react";
 import {AlertTriangle,RefreshCw,Target,Trash2,Sparkles} from "lucide-react";
 import {track} from "@vercel/analytics";
-import {SNIPER_CATEGORIES,SNIPER_MARKETPLACES,SNIPER_CONDITIONS,groupedSniperCategories} from "../shared/sniper.js";
+import {SNIPER_CATEGORIES,SNIPER_MARKETPLACES,SNIPER_CONDITIONS,groupedSniperCategories,allowsUsed} from "../shared/sniper.js";
 import {getWatchlist,toggleWatchItem} from "./storage";
 import DealResults,{MarketPulse,ProviderNotes,ScanSkeleton,money} from "./DealResults.jsx";
 
@@ -75,7 +75,7 @@ export default function DealHunt({providerKeys,onWatchChange}){
           <span className="targetNum">{index+1}</span>
           <label className="targetQuery"><span>Part / model</span><input value={target.query} onChange={e=>updateTarget(target.id,"query",e.target.value)} placeholder="e.g. RTX 5070 Ti 16GB"/></label>
           <label><span>Category</span><select value={target.category} onChange={e=>changeCategory(target.id,e.target.value)}>{Object.entries(categoryGroups).map(([group,items])=><optgroup label={group} key={group}>{items.map(item=><option key={item.name} value={item.name}>{item.name}</option>)}</optgroup>)}</select></label>
-          <label><span>Condition</span><select value={target.condition} onChange={e=>updateTarget(target.id,"condition",e.target.value)}>{SNIPER_CONDITIONS.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}</select></label>
+          <label><span>Condition</span>{allowsUsed(target.category)?<select value={target.condition} onChange={e=>updateTarget(target.id,"condition",e.target.value)}>{SNIPER_CONDITIONS.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}</select>:<select value="new" disabled><option value="new">New only</option></select>}</label>
           <label><span>Max price</span><input type="number" min="0" value={target.maxPrice} onChange={e=>updateTarget(target.id,"maxPrice",e.target.value)} placeholder="0 = no cap"/></label>
           <button className="iconBtn" disabled={targets.length===1} onClick={()=>removeTarget(target.id)} aria-label={"Remove target "+(index+1)}><Trash2 size={16}/></button>
         </div>)}

@@ -2,7 +2,7 @@ import React,{useEffect,useMemo,useRef,useState} from "react";
 import {Cpu,MemoryStick,HardDrive,CircuitBoard,Plug,Fan,Monitor,ArrowLeft,ExternalLink,RefreshCw,ChevronDown,List,Info,Flame,Bookmark,Search,Zap,TrendingDown,Filter,DollarSign,Layers} from "lucide-react";
 import {track} from "@vercel/analytics";
 import {PART_GROUPS,findSeries} from "../shared/partCatalog.js";
-import {SNIPER_CONDITIONS} from "../shared/sniper.js";
+import {SNIPER_CONDITIONS,allowsUsed} from "../shared/sniper.js";
 import {getWatchlist,toggleWatchItem,saveSearch} from "./storage";
 import {saveMarketSnapshot,getMarketTrend} from "./marketHistory";
 import DealResults,{MarketPulse,ProviderNotes,ScanSkeleton,money} from "./DealResults.jsx";
@@ -18,9 +18,12 @@ export function GroupIcon({icon,size=16}){const I=GROUP_ICONS[icon]||Layers;retu
 const PRICING_MODES=[
   {value:"cheapest",label:"Cheapest Available"},
   {value:"best",label:"Best Deal"},
-  {value:"new",label:"Only New"}
+  {value:"new",label:"Only New"},
+  {value:"used",label:"Only Used"}
 ];
+const USED=new Set(["used","refurbished","renewed","open-box"]);
 const CACHE_MS=15*60*1000;
+const CACHE_VERSION="fs-overview-v2";
 
 function ago(iso,now){
   if(!iso)return "";
@@ -34,16 +37,12 @@ function pickListing(row,mode){
   const list=row?.listings||[];
   if(!list.length)return null;
   if(mode==="new")return list.filter(x=>x.condition==="new").sort((a,b)=>a.totalPrice-b.totalPrice)[0]||null;
+  if(mode==="used")return list.filter(x=>USED.has(x.condition)).sort((a,b)=>a.totalPrice-b.totalPrice)[0]||null;
   if(mode==="best")return list.slice().sort((a,b)=>(b.score||0)-(a.score||0)||a.totalPrice-b.totalPrice)[0];
   return list.slice().sort((a,b)=>a.totalPrice-b.totalPrice)[0];
 }
 function vsMsrp(price,msrp){return msrp&&price?Math.round((price-msrp)/msrp*1000)/10:null;}
-function linkLabel(item,name){
-  if(!item?.url)return "No link";
-  if(item.linkType==="listing")return "View "+name+" on "+storeName(item);
-  if(item.linkType==="store-search")return "Find "+name+" on "+storeName(item);
-  return "Find "+name+" on Google Shopping";
-}
+function linkLabel(item,name){return "View "+name+" on "+storeName(item);}
 
 function readCache(key){try{const v=JSON.parse(localStorage.getItem(key)||"null");return v&&Date.now()-v.at<CACHE_MS?v:null;}catch{return null;}}
 function writeCache(key,data){try{localStorage.setItem(key,JSON.stringify({at:Date.now(),data}));}catch{}}
@@ -56,7 +55,8 @@ function Spark({series}){
   return <svg className={"spark "+(down?"down":"up")} width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-label="Your price history"><polyline points={pts.map(p=>p.join(",")).join(" ")} fill="none" strokeWidth="1.6"/></svg>;
 }
 
-function ModelCard({item,row,mode,now,loading,onSeeAll,trend}){
+function ModelCard({item,row,mode,now,loading,onSeeAll,onMode,trend}){
+  const usedOk=allowsUsed(item.category);
   const [more,setMore]=useState(false);
   const pick=pickListing(row,mode);
   const delta=vsMsrp(pick?.totalPrice,item.msrp);
@@ -73,17 +73,22 @@ function ModelCard({item,row,mode,now,loading,onSeeAll,trend}){
         {pick.condition!=="new"&&<span className={"condBadge c-"+pick.condition}>{pick.condition==="open-box"?"OPEN BOX":String(pick.condition).toUpperCase()}</span>}
         {delta!=null&&<em className={delta<0?"under":"over"}>{delta>0?"+":""}{delta}% MSRP</em>}
       </div>
-      <div className="mcMeta"><span>Updated {ago(row?.searchedAt,now)}</span>{item.msrp?<span>(MSRP: {money(item.msrp,2)})</span>:<span>{row.count} listings</span>}<Spark series={trend}/></div>
+      {usedOk&&<div className="mcSplit">
+        <button className={mode==="new"?"on":""} disabled={!row.newFrom} onClick={()=>onMode("new")}><span>New from</span><b>{money(row.newFrom,0)}</b></button>
+        <button className={mode==="used"?"on":""} disabled={!row.usedFrom} onClick={()=>onMode("used")}><span>Used from</span><b className="usedText">{money(row.usedFrom,0)}</b></button>
+      </div>}
+      <div className="mcMeta"><span>Updated {ago(row?.searchedAt,now)}</span>{item.msrp?<span>(MSRP: {money(item.msrp,2)})</span>:null}<Spark series={trend}/></div>
+      <div className="mcCoverage">Lowest of {row.count} listing{row.count===1?"":"s"} · {row.stores} store{row.stores===1?"":"s"}{usedOk?" · "+row.usedCount+" used":" · new only"}</div>
       <div className="mcBtns">
         <button onClick={onSeeAll}><List size={14}/>See All</button>
         <button onClick={()=>setMore(m=>!m)}>{more?"Less":"More Info"}<ChevronDown size={14} className={more?"flip":""}/></button>
       </div>
       {more&&<div className="mcMore">
-        {(row.listings||[]).slice().sort((a,b)=>a.totalPrice-b.totalPrice).slice(0,5).map(x=><a key={x.id} href={x.url||undefined} target="_blank" rel="noreferrer"><span>{x.source}</span><em>{x.condition}</em><b>{money(x.totalPrice,2)}</b></a>)}
+        {(row.listings||[]).slice().sort((a,b)=>a.totalPrice-b.totalPrice).slice(0,10).map(x=><a key={x.id} href={x.url} target="_blank" rel="noreferrer"><span>{x.source}</span><em className={"c-"+x.condition}>{x.condition==="open-box"?"open box":x.condition}</em><b>{money(x.totalPrice,2)}</b></a>)}
         <small>{row.count} valid listings · market median {money(row.median)}</small>
       </div>}
       <a className="mcGo" href={pick.url||undefined} target="_blank" rel="noreferrer"><ExternalLink size={15}/>{linkLabel(pick,item.name)}</a>
-    </>:<div className="mcEmpty"><p>{mode==="new"?"No new listing found in this quick scan.":"No trusted listing in this quick scan."}</p><button onClick={onSeeAll}><Search size={14}/>Run full scan</button></div>}
+    </>:<div className="mcEmpty"><p>{mode==="new"?"No new listing found in this scan.":mode==="used"?"No used listing found in this scan.":"No trusted listing with a real item link in this scan."}</p><button onClick={onSeeAll}><Search size={14}/>Run full scan</button></div>}
   </article>;
 }
 
@@ -113,7 +118,7 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
   useEffect(()=>{const t=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(t);},[]);
 
   async function load(force=false){
-    const key="fs-overview-v1:"+group.id+":"+series.id;
+    const key=CACHE_VERSION+":"+group.id+":"+series.id;
     const cached=!force&&readCache(key);
     if(cached){setRows(cached.data);setError("");return;}
     const id=++reqId.current;
@@ -149,6 +154,8 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
   const hot=cards.filter(c=>c.pick&&c.delta!=null).sort((a,b)=>a.delta-b.delta).slice(0,6);
   const loadedAt=Object.values(rows).map(x=>x.searchedAt).filter(Boolean).sort().at(-1);
   const toggle=k=>setOpen(o=>({...o,[k]:!o[k]}));
+  const usedGroup=allowsUsed(series.items[0]?.category);
+  useEffect(()=>{if(!usedGroup&&(mode==="used"||mode==="new"))setMode("cheapest");},[usedGroup]);
 
   return <div className="browse">
     <aside className="sidebar">
@@ -162,7 +169,7 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
         <button className="sideHead" onClick={()=>toggle("price")}><DollarSign size={15}/>Price<ChevronDown size={15} className={open.price?"flip":""}/></button>
         {open.price&&<><small className="sideLabel">Price Range</small><div className="rangeRow"><input inputMode="numeric" placeholder="Min" value={minPrice} onChange={e=>setMinPrice(e.target.value.replace(/[^\d.]/g,""))}/><input inputMode="numeric" placeholder="Max" value={maxPrice} onChange={e=>setMaxPrice(e.target.value.replace(/[^\d.]/g,""))}/></div>
         <small className="sideLabel">Pricing Modes <span title="Which listing each card shows. Switching never re-searches."><Info size={12}/></span></small>
-        <div className="modeRow">{PRICING_MODES.map(m=><button key={m.value} className={mode===m.value?"on":""} onClick={()=>setMode(m.value)}>{m.label}</button>)}</div></>}
+        <div className="modeRow">{PRICING_MODES.filter(m=>usedGroup||(m.value!=="used"&&m.value!=="new")).map(m=><button key={m.value} className={mode===m.value?"on":""} onClick={()=>setMode(m.value)}>{m.label}</button>)}</div></>}
       </section>
       <section className="sideBox">
         <button className="sideHead" onClick={()=>toggle("filters")}><Filter size={15}/>Filters<ChevronDown size={15} className={open.filters?"flip":""}/></button>
@@ -172,12 +179,12 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
           <select value={cardSort} onChange={e=>setCardSort(e.target.value)}><option value="catalog">Model tier</option><option value="price">Price: low to high</option><option value="msrp">Biggest discount vs MSRP</option></select>
         </>}
       </section>
-      <p className="sideNote">Only trusted US stores and marketplaces. For-parts, broken, scam-priced and mismatched listings are removed automatically.</p>
+      <p className="sideNote">Every listing links to a real item page on a trusted store or marketplace — eBay, AliExpress and Mercari item pages included for used deals. For-parts, broken, scam-priced and mismatched listings are removed.</p>
     </aside>
 
     <section className="browseMain">
       <h1 className="pageTitle">Track {series.label} {group.label} Prices</h1>
-      <p className="pageSub">Live prices from Amazon, Best Buy, Newegg, Walmart, eBay, Micro Center, B&amp;H and more — cheapest trusted listing per model, checked against launch MSRP.</p>
+      <p className="pageSub">New and used prices from Amazon, Best Buy, Newegg, Walmart, eBay, AliExpress, Mercari, Micro Center, B&amp;H and more — the cheapest real listing per model, checked against launch MSRP.</p>
       <div className="crumbBar">
         <button className="backBtn" onClick={()=>setRoute({page:"browse",group:group.id,series:group.series[0].id})}><ArrowLeft size={15}/>{group.label}</button>
         <div className="crumbs"><span>{group.label}</span><b>›</b><strong>{series.label}</strong><em>{series.items.length} models{loadedAt?" | Last updated "+new Date(loadedAt).toLocaleTimeString():""}</em></div>
@@ -187,6 +194,7 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
       {error&&<div className="notice"><Info size={18}/><div><b>{error}</b></div></div>}
       <div className="modelGrid">
         {cards.map(c=><ModelCard key={c.item.name} item={c.item} row={c.row} mode={mode} now={now} loading={loading}
+          onMode={setMode}
           trend={getMarketTrend({category:"browse",query:c.item.query,condition:"cheapest"})?.series}
           onSeeAll={()=>setRoute({page:"model",group:group.id,series:series.id,model:c.item.name})}/>)}
       </div>
@@ -248,7 +256,7 @@ export function ModelPage({providerKeys,route,setRoute,onWatchChange}){
       <div className="heroRight">
         {cheapest!=null&&<div className="heroPrice"><small>Lowest trusted price</small><strong>{money(cheapest,2)}</strong>{delta!=null&&<em className={delta<0?"under":"over"}>{delta>0?"+":""}{delta}% vs MSRP</em>}</div>}
         <div className="heroControls">
-          <select value={condition} onChange={e=>setCondition(e.target.value)} aria-label="Condition">{SNIPER_CONDITIONS.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}</select>
+          {allowsUsed(item.category)?<select value={condition} onChange={e=>setCondition(e.target.value)} aria-label="Condition">{SNIPER_CONDITIONS.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}</select>:<span className="newOnly">New only</span>}
           <button className="ghostBtn" onClick={()=>{saveSearch({category:item.category,query:item.query,condition,sortBy:"lowest"});onWatchChange?.();}}><Bookmark size={14}/>Save</button>
           <button className="ghostBtn" onClick={scan} disabled={loading}><RefreshCw size={14} className={loading?"spin":""}/>Rescan</button>
         </div>

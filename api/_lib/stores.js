@@ -34,31 +34,23 @@ export function isTrustedMerchant(seller, url, marketplace) {
   return TRUSTED_OTHER.some(t => s.includes(" " + t + " "));
 }
 
-const SEARCH_URLS = {
-  ebay: q => "https://www.ebay.com/sch/i.html?LH_BIN=1&_nkw=" + q,
-  amazon: q => "https://www.amazon.com/s?k=" + q,
-  bestbuy: q => "https://www.bestbuy.com/site/searchpage.jsp?st=" + q,
-  walmart: q => "https://www.walmart.com/search?q=" + q,
-  newegg: q => "https://www.newegg.com/p/pl?d=" + q,
-  mercari: q => "https://www.mercari.com/search/?keyword=" + q,
-  aliexpress: q => "https://www.aliexpress.us/w/wholesale-" + q + ".html",
-  bhphoto: q => "https://www.bhphotovideo.com/c/search?q=" + q,
-  adorama: q => "https://www.adorama.com/l/?searchinfo=" + q,
-  microcenter: q => "https://www.microcenter.com/search/search_results.aspx?Ntt=" + q
-};
+// Google wraps many shopping links in redirects; unwrap to the store page.
+function unwrapGoogle(u) {
+  if (!/(^|\.)google\./.test(u.hostname)) return u;
+  const target = u.searchParams.get("url") || u.searchParams.get("q") || u.searchParams.get("adurl");
+  try { return target ? new URL(target) : u; } catch { return u; }
+}
 
-// A direct listing link when we have one; otherwise a search for the exact
-// title on that store (flagged so the UI says "Find on eBay", not "View").
-export function listingLink(url, marketplace, title) {
+// Only real listings: returns the direct item/product page on the store, or
+// null. Search-result pages and Google Shopping pages are not listings.
+export function listingLink(url) {
   let parsed = null;
-  try { parsed = new URL(url); } catch {}
-  if (parsed && ["http:", "https:"].includes(parsed.protocol) && !/(^|\.)google\./.test(parsed.hostname)) {
-    return { url: parsed.href, linkType: "listing" };
-  }
-  const q = encodeURIComponent(String(title || "").replace(/\s+/g, " ").trim().slice(0, 120));
-  if (!q) return { url: null, linkType: "none" };
-  const build = SEARCH_URLS[marketplace];
-  if (build) return { url: build(q), linkType: "store-search" };
-  if (parsed && /(^|\.)google\./.test(parsed.hostname)) return { url: parsed.href, linkType: "google" };
-  return { url: "https://www.google.com/search?tbm=shop&q=" + q, linkType: "google" };
+  try { parsed = unwrapGoogle(new URL(url)); } catch {}
+  if (!parsed || !["http:", "https:"].includes(parsed.protocol)) return { url: null, linkType: "none" };
+  const host = parsed.hostname.toLowerCase();
+  const path = parsed.pathname.toLowerCase();
+  if (/(^|\.)google\./.test(host)) return { url: null, linkType: "none" };
+  const isSearch = /\/(sch|search|s|w)(\/|$)|searchpage|search_results|\/pl$|\/l\/?$/.test(path) || /[?&](k|_nkw|st|keyword|ntt|searchinfo|d)=/.test(parsed.search) && !/\/(dp|itm|ip|p|item|site|product)\//.test(path);
+  if (isSearch) return { url: null, linkType: "none" };
+  return { url: parsed.href, linkType: "listing" };
 }
