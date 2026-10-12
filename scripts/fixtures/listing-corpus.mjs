@@ -133,6 +133,33 @@ export const LISTING_CORPUS = [
   {query:"Basic Tower Air Cooler",category:"CPU Cooler",expect:"reject",title:"DeepCool LS720 360mm AIO Liquid Cooler"},
   {query:"360mm AIO",category:"AIO Cooler",expect:"keep",title:"NZXT Kraken 360 RGB AIO Liquid Cooler for 13th and 14th Gen Intel"},
   {query:"Midrange Tempered Glass RGB Case",category:"Case",expect:"reject",title:"Replacement Tempered Glass Side Panel for Lian Li O11 Dynamic Mid Tower"},
+  // --- AM4 CPUs (flipper staples) ---
+  {query:"Ryzen 5 3600",category:"CPU",expect:"keep",title:"AMD Ryzen 5 3600 6-Core 12-Thread Unlocked Desktop Processor with Wraith Stealth Cooler"},
+  {query:"Ryzen 5 3600",category:"CPU",expect:"keep",title:"AMD Ryzen 5 3600 CPU Processor AM4 Used Tested"},
+  {query:"Ryzen 5 3600",category:"CPU",expect:"reject",title:"AMD Ryzen 5 3600X 6-Core Desktop Processor"},
+  {query:"Ryzen 5 3600",category:"CPU",expect:"reject",title:"AMD Ryzen 5 3600 + MSI B450 Tomahawk Motherboard Combo"},
+  {query:"Ryzen 5 2600",category:"CPU",expect:"keep",title:"AMD Ryzen 5 2600 Processor with Wraith Stealth Cooler - YD2600BBAFBOX"},
+  {query:"Ryzen 5 2600",category:"CPU",expect:"reject",title:"AMD Ryzen 5 2600X Six Core Processor"},
+  {query:"Ryzen 5 5600",category:"CPU",expect:"keep",title:"AMD Ryzen 5 5600 6-Core, 12-Thread Unlocked Desktop Processor with Wraith Stealth Cooler"},
+  {query:"Ryzen 5 5600",category:"CPU",expect:"reject",title:"AMD Ryzen 5 5600G 6-Core Desktop Processor with Radeon Graphics"},
+  {query:"Ryzen 7 5800X3D",category:"CPU",expect:"keep",title:"AMD Ryzen 7 5800X3D 8-core, 16-Thread Desktop Processor with AMD 3D V-Cache Technology"},
+  {query:"Ryzen 7 5800X3D",category:"CPU",expect:"reject",title:"AMD Ryzen 7 5800X 8-core, 16-Thread Unlocked Desktop Processor"},
+  // --- PSUs ---
+  {query:"650W PSU",category:"Power Supply / PSU",expect:"keep",title:"EVGA 650 BR, 80+ BRONZE 650W, 3 Year Warranty, Power Supply 100-BR-0650-K1"},
+  {query:"650W PSU",category:"Power Supply / PSU",expect:"keep",title:"Corsair CX650 650 Watt 80 Plus Bronze ATX Power Supply"},
+  {query:"650W PSU",category:"Power Supply / PSU",expect:"reject",title:"Corsair RM850x 850W 80 Plus Gold Fully Modular Power Supply"},
+  {query:"650W PSU",category:"Power Supply / PSU",expect:"reject",title:"Sleeved PSU Extension Cable Kit for 650W Power Supply"},
+  {query:"750W 80+ Gold PSU",category:"Power Supply / PSU",expect:"keep",title:"Corsair RM750e Fully Modular Low-Noise ATX Power Supply - 750 Watt 80 Plus Gold"},
+  // --- 500GB SSDs ---
+  {query:"500GB NVMe SSD",category:"NVMe SSD",expect:"keep",title:"Samsung 970 EVO Plus 500GB NVMe M.2 Internal SSD"},
+  {query:"500GB NVMe SSD",category:"NVMe SSD",expect:"keep",title:"WD_BLACK SN770 500GB NVMe Internal Gaming SSD Solid State Drive - Gen4 PCIe, M.2 2280"},
+  {query:"500GB NVMe SSD",category:"NVMe SSD",expect:"reject",title:"Samsung 870 EVO 500GB 2.5 Inch SATA III Internal SSD"},
+  {query:"500GB NVMe SSD",category:"NVMe SSD",expect:"reject",title:"Samsung 990 PRO 1TB NVMe M.2 SSD"},
+  {query:"500GB NVMe SSD",category:"NVMe SSD",expect:"reject",title:"M.2 NVMe SSD Enclosure Adapter USB 3.2 for 500GB 1TB 2TB"},
+  // --- DDR4 ---
+  {query:"16GB DDR4 3200",category:"RAM / Memory",expect:"keep",title:"Corsair Vengeance LPX 16GB (2x8GB) DDR4 3200MHz C16 Desktop Memory"},
+  {query:"16GB DDR4 3200",category:"RAM / Memory",expect:"reject",title:"Crucial 16GB DDR4 3200MHz SODIMM Laptop Memory"},
+  {query:"16GB DDR4 3200",category:"RAM / Memory",expect:"reject",title:"Corsair Vengeance 16GB (2x8GB) DDR5 5600MHz Desktop Memory"},
   // --- GPU model numbers that are also CPU model numbers ---
   {query:"RX 7600",category:"GPU",expect:"keep",title:"ASUS TUF Gaming Radeon RX 7600 OC 8GB GDDR6 Graphics Card"},
   {query:"RX 7600",category:"GPU",expect:"reject",title:"Gaming PC AMD Ryzen 5 7600 Radeon RX 7600 16GB DDR5 1TB"}
