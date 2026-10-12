@@ -155,7 +155,7 @@ function systemSignal(kind, t, host) {
   const strong = host.match(STRONG_SYSTEM_RE);
   if (strong) return strong[0];
   if (kind === "gpu" || kind === "ram" || ["nvme", "ssd", "sata", "hdd"].includes(kind)) {
-    if (cpuModelKeys(t).size) return "listing also names a CPU";
+    if (cpuContextKeys(t).size) return "listing also names a CPU";
   }
   if (kind === "cpu" || kind === "ram" || ["nvme", "ssd", "sata", "hdd"].includes(kind)) {
     if (gpuPrefixedKeys(t).size) return "listing also names a GPU";
@@ -260,6 +260,13 @@ for (const cpu of CPUS) {
 // catalog does not list them (e.g. "Ryzen 5 5600X3D"), so they are never
 // mistaken for the searched model.
 const CPU_CONTEXT_RE = /\b(?:ryzen\s+(?:threadripper\s+)?(?:pro\s+)?[3579]|i[3579]|core\s+ultra\s+[3579](?:\s+processor)?|core\s+i[3579]\s+processor|athlon(?:\s+gold|\s+silver)?)\s+(\d{3,5}[a-z0-9]*)(?=\s|$)/g;
+
+// Only CPU numbers written next to a CPU family name ("Ryzen 5 7600",
+// "i7 14700K"). Used to spot prebuilts/combos, where a bare "7600" would
+// wrongly match an RX 7600 graphics card.
+function cpuContextKeys(normTitle) {
+  return new Set([...stripCpuNoise(normTitle).matchAll(CPU_CONTEXT_RE)].map(m => m[1]));
+}
 
 export function cpuModelKeys(normTitle) {
   const s = stripCpuNoise(normTitle);
@@ -435,7 +442,7 @@ export function evaluateListing({ title, query, category, structuredCondition = 
     const tSock = new Set([...t.matchAll(/\b(am4|am5|lga\s*\d{4})\b/g)].map(m => m[1].replace(/\s/g, "")));
     if (qSock && tSock.size && !tSock.has(qSock)) return reject("socket-mismatch", [...tSock][0]);
     if (qSock) { consumed.add(qSock); consumed.add("lga"); consumed.add(qSock.replace("lga", "")); }
-    if (/\b(?:combo|bundle|with cpu|cpu included)\b/.test(t) || cpuModelKeys(t).size) return reject("bundle-or-combo", "motherboard with CPU");
+    if (/\b(?:combo|bundle|with cpu|cpu included)\b/.test(t) || cpuContextKeys(t).size) return reject("bundle-or-combo", "motherboard with CPU");
     if (/\b(?:io shield|i o shield|bios chip|cmos battery|standoffs?)\b/.test(t) && !/\bmotherboard\b/.test(t)) return reject("accessory", "motherboard accessory");
   } else if (kind === "psu") {
     if (/\b(?:sleeved|extension|cable kit|cable set|cables only|cable only|replacement cable|tester|adapter)\b/.test(t) && !/\bpower supply\b/.test(stripHostPhrases(t.replace(/\b(?:cable|adapter)s?\s+for\s+.*$/, "")))) return reject("accessory", "psu cable/adapter");
