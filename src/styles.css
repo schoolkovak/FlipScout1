@@ -594,3 +594,23 @@ html,body,.appShell{background:#0b0c14!important}
 @media (max-width:1129px) and (min-width:760px){.fsProducts{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
 @media (max-width:759px){.fsDealLayout{display:block!important}.fsSidebar{position:static!important;max-height:none!important;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.fsDealTitle{min-height:145px!important}.fsHeaderStat{display:none}}
 @media (max-width:520px){.fsSidebar{grid-template-columns:1fr!important}.fsProducts{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important}.fsProductVisual{height:120px!important;margin:0 7px!important}.fsProductHeading>b{font-size:12px!important}.fsProductInfo h3{font-size:10px!important}.fsPrice strong{font-size:16px!important}}
+
+/* Accessible neutral typography: no Impact, Arial Black, faux sci-fi or
+   oversized condensed display fonts. */
+:root,html,body,button,input,select,textarea{
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif!important;
+  font-synthesis:none;
+}
+.fsDealTitle h1,.fsDealTitle h2,.fsProductHeading>b,
+.sniperHero h2,.proHero h2,.heroCopy h1,.discoveryHeader h2,
+.sectionHeading h2,.sectionHeading h3{
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif!important;
+  font-stretch:normal!important;
+  letter-spacing:-.025em!important;
+}
+.fsDealTitle h1{font-size:clamp(22px,2.2vw,31px)!important;font-weight:800!important}
+.fsDealTitle h2{font-weight:650!important}
+.fsProductHeading>b{font-weight:800!important}
+.fsHourlyLabel{color:#b5dcd9;font-size:11px;font-weight:700;
+  padding:8px 11px;border:1px solid #2c5655;background:#0c2527;border-radius:4px}
+.fsManualWatch .fsHourlyLabel{display:inline-flex;align-items:center}

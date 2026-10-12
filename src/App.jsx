@@ -521,12 +521,12 @@ function DealScanner({providerKeys,onSearchSaved}){
   const [merchantFilter,setMerchantFilter]=useState("all");
   const [page,setPage]=useState(0);
   const [loading,setLoading]=useState(false);
-  const [autoRefresh,setAutoRefresh]=useState(false);
+  const [autoRefresh,setAutoRefresh]=useState(true);
   const [searchApiUntil,setSearchApiUntil]=useState(()=>{
     try{return Number(localStorage.getItem("flipscout-searchapi-cooldown-v1")||0)}
     catch{return 0}
   });
-  const [refreshMinutes,setRefreshMinutes]=useState(10);
+
   const [error,setError]=useState("");
   const [data,setData]=useState(null);
   const [trend,setTrend]=useState(null);
@@ -572,7 +572,7 @@ function DealScanner({providerKeys,onSearchSaved}){
         setTrend(saveMarketSnapshot({category,query,condition},result.market));
       }else{
         const providerErrors=(result.errors||[]).filter(x=>x.message);
-        setError(result.message||providerErrors[0]?.message||"No priced, usable listings returned. Check Source Details.");
+        setError(providerErrors.length?providerErrors[0].provider+": "+providerErrors[0].message:result.message||"No priced, usable listings returned. Check Source Details.");
       }
       if(result.errors?.some(x=>/searchapi/i.test(x.provider||"")&&/429|quota|rate.limit/i.test(x.message||""))){
         const until=Date.now()+6*60*60*1000;
@@ -589,9 +589,9 @@ function DealScanner({providerKeys,onSearchSaved}){
     if(!autoRefresh)return;
     const timer=window.setInterval(()=>{
       if(document.visibilityState==="visible")scanRef.current?.(true);
-    },refreshMinutes*60*1000);
+    },60*60*1000);
     return()=>window.clearInterval(timer);
-  },[autoRefresh,refreshMinutes]);
+  },[autoRefresh]);
   function saveThisSearch(){
     saveSearch({category,query,condition,minPartPrice,partBudget,sortBy,deepScan});
     onSearchSaved?.();
@@ -632,11 +632,8 @@ function DealScanner({providerKeys,onSearchSaved}){
         <button className="secondary" onClick={saveThisSearch}><Bookmark size={15}/>Save search</button>
       </div>
       <div className="fsManualWatch">
-        <label><input type="checkbox" checked={autoRefresh} onChange={e=>setAutoRefresh(e.target.checked)}/> Watch this search while open</label>
-        <select value={refreshMinutes} onChange={e=>setRefreshMinutes(Number(e.target.value))} aria-label="Auto-refresh interval">
-          <option value={10}>Every 10 minutes</option><option value={5}>Every 5 minutes (high API usage)</option>
-          <option value={30}>Every 30 minutes</option>
-        </select>
+        <span className="fsHourlyLabel">Automatic hourly refresh while this tab is open{autoRefresh?"":" · paused because a search provider hit its rate limit"}</span>
+        <span className="fsHourlyLabel">Refresh every hour while open</span>
         <small>{data?.searchedAt?"Last scan "+new Date(data.searchedAt).toLocaleTimeString():"Not scanned yet"}</small>
       </div>
       {error&&<div className="fsMarketWarning" role="alert">{error}</div>}
