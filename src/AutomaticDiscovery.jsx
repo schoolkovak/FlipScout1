@@ -102,7 +102,7 @@ export default function AutomaticDiscovery({providerKeys,onOpenScanner}){
   const [sort,setSort]=useState("best");
   const [limit,setLimit]=useState(24);
   const [auto,setAuto]=useState(true);
-  const [speed,setSpeed]=useState(10);
+
   const [searchApiUntil,setSearchApiUntil]=useState(readProviderCooldown);
   const [brand,setBrand]=useState("all");
   const [minVram,setMinVram]=useState("");
@@ -226,9 +226,11 @@ export default function AutomaticDiscovery({providerKeys,onOpenScanner}){
   useEffect(()=>{scanRef.current?.("GPU",false)},[]);
   useEffect(()=>{
     if(!auto)return;
-    const timer=window.setInterval(()=>scanRef.current?.(null,false),speed*60*1000);
+    const timer=window.setInterval(()=>{
+      if(document.visibilityState==="visible")scanRef.current?.(null,false);
+    },60*60*1000);
     return ()=>window.clearInterval(timer);
-  },[auto,speed]);
+  },[auto]);
 
   function choosePart(next){
     setPart(next);setSeries("All");setModel("all");setBrand("all");setLimit(24);
@@ -275,7 +277,7 @@ export default function AutomaticDiscovery({providerKeys,onOpenScanner}){
   ).size}));
   const latest=Object.values(catalog).map(row=>row.checkedAt).sort().at(-1);
   const scannedAll=TARGETS.filter(t=>catalog[t.id]).length;
-  const pageStatus=busy?"SEARCHING":auto?"AUTO WATCH ON":"PAUSED";
+  const pageStatus=busy?"SEARCHING":auto?"HOURLY AUTO-SCAN ON":"PAUSED";
 
   return <div className="fsDealLayout">
     <aside className="fsSidebar" aria-label="PC parts and deal filters">
@@ -370,10 +372,7 @@ export default function AutomaticDiscovery({providerKeys,onOpenScanner}){
         <div className="fsScanLive"><span className={"fsPulse "+(auto?"enabled":"")}></span>
           <div><b>{pageStatus}</b><small>{scannedAll}/{TARGETS.length} model searches checked · Last {timestamp(latest)}</small></div></div>
         <button className="fsSmallButton" onClick={()=>setAuto(a=>!a)}>{auto?"PAUSE":"RESUME"}</button>
-        <select aria-label="Automatic refresh interval" value={speed} onChange={e=>setSpeed(Number(e.target.value))}>
-          <option value={10}>Auto: 10 min</option><option value={5}>Auto: 5 min (high usage)</option>
-          <option value={30}>Auto: 30 min</option>
-        </select>
+        <span className="fsHourlyLabel">Auto refresh · every hour</span>
         <button className="fsScanButton" disabled={busy} onClick={()=>scanRef.current?.(part==="All"?null:part,true)}>
           {busy?"SCANNING…":part==="All"?"SCAN NEXT MODELS":"DEEP SCAN "+part}
         </button>
@@ -396,7 +395,7 @@ export default function AutomaticDiscovery({providerKeys,onOpenScanner}){
       </div>
       {message&&<div className="fsMarketWarning" role="status">{message}</div>}
       {queued&&<div className="fsMarketWarning">Queued: {queued}. The current scan must finish first.</div>}
-      <p className="fsMarketNote">Auto-watch refreshes a small rotating batch while this tab is visible; it cannot refresh hundreds of models every five minutes within free API limits. Store availability depends on provider access. Sorting, retailer filters, manufacturer and price controls rearrange existing offers without new searches.</p>
+      <p className="fsMarketNote">Auto-watch checks a rotating batch automatically once per hour while the tab is open and visible. It does not continuously scan when the browser is closed. Store availability depends on provider access. Sorting, retailer filters, manufacturer and price controls rearrange existing offers without new searches.</p>
       {shown.length?
         <div className="fsProducts">{shown.map(item=><ItemCard key={item.url} item={item}/>)}</div>:
         <div className="fsNoDeals">
