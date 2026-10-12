@@ -29,3 +29,5 @@ Restore point: branch `tomato` (commit 56d201c). Say "tomato" to return the site
 - Background refresh now runs hourly (GitHub was skipping the 3-hourly schedule); it still only spends credits on stale models within the daily cap, and skips publishing when nothing changed.
 - The `data` branch now tells Vercel not to deploy it (each data update was creating a failed Vercel deployment).
 - Model pages show the lowest-price history from saved updates (no extra searches).
+- Deal Hunt: targets matching a model saved in the last 24 h are answered from saved listings (0 credits); live targets get a 45 s budget each and a slow one returns a message instead of breaking the whole hunt.
+- Note: GitHub has not fired the scheduled listing refresh yet (workflow is active; manual runs work). If it still hasn't by tomorrow, run "Refresh listings" from the Actions tab or see the summary for options.

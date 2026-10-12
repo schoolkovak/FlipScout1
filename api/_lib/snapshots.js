@@ -28,3 +28,4 @@ export async function readSnapshot(path, { fetchImpl = fetch, timeoutMs = 3500 }
 }
 
 export const ageHours = iso => iso ? (Date.now() - Date.parse(iso)) / 3600000 : Infinity;
+export function clearSnapshotCache() { cache.clear(); }

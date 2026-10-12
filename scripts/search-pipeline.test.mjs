@@ -423,6 +423,7 @@ test("eBay live check: sold, removed, for-parts and auction-only pages are hidde
 test("pages read saved snapshots: no paid search, pending models never trigger one", async () => {
   const { default: overview } = await import("../api/parts/overview.js");
   const { default: deals } = await import("../api/deals/search.js");
+  (await import("../api/_lib/snapshots.js")).clearSnapshotCache();
   const original = globalThis.fetch;
   const fetched = [];
   const listing = (p, cond) => ({ id: "s|" + p, title: "MSI GeForce GTX 1660 Super 6GB", source: "Newegg", marketplace: "newegg", condition: cond, totalPrice: p, itemPrice: p, shipping: 0, shippingKnown: true, url: "https://www.newegg.com/p/N82E1" + p, linkType: "listing", provider: "Store price search", score: 50 });
@@ -478,4 +479,32 @@ test("Flipper Deals sections are computed from saved listings", async () => {
   assert.deepEqual(cs.listings.map(x => x.totalPrice), [49.99], "under $52, no accessories");
   const cpu = await flipperSection("ryzen", read);
   assert.equal(cpu.listings[0].model, "Ryzen 5 3600", "cheap popular Ryzen ranks first on appeal per dollar");
+});
+
+test("Deal Hunt answers catalog targets from saved listings without a paid search", async () => {
+  const { default: sniper } = await import("../api/parts/sniper.js");
+  (await import("../api/_lib/snapshots.js")).clearSnapshotCache();
+  const original = globalThis.fetch;
+  const L = (p, cond, mp = "newegg") => ({ id: mp + p, title: "MSI GeForce GTX 1660 Super Ventus XS 6GB", source: mp, marketplace: mp, condition: cond, totalPrice: p, itemPrice: p, shipping: 0, shippingKnown: true, url: "https://www." + mp + ".com/p/" + p, linkType: "listing", relevance: 1 });
+  const fetched = [];
+  globalThis.fetch = async url => {
+    fetched.push(String(url));
+    if (/models\/gtx-1660-super\.json$/.test(url)) return { ok: true, json: async () => ({ searchedAt: new Date().toISOString(), results: [L(150, "used"), L(199, "new"), L(120, "used", "aliexpress")] }) };
+    throw new Error("paid search attempted: " + url);
+  };
+  const prev = process.env.SNAPSHOTS_OFF;
+  delete process.env.SNAPSHOTS_OFF;
+  try {
+    let body;
+    await sniper({ method: "POST", body: { targets: [{ query: "gtx 1660 super", category: "GPU", condition: "used" }], marketplaces: ["newegg", "ebay"], providerKeys: keys() } },
+      { status() { return this; }, json(x) { body = x; return x; } });
+    const r = body.results[0];
+    assert.equal(r.available, true);
+    assert.deepEqual(r.results.map(x => x.totalPrice), [150], "used only, selected stores only");
+    assert.match(r.providers[0].name, /Saved listings/);
+    assert.ok(fetched.every(u => /raw\.githubusercontent\.com/.test(u)));
+  } finally {
+    globalThis.fetch = original;
+    if (prev !== undefined) process.env.SNAPSHOTS_OFF = prev;
+  }
 });
