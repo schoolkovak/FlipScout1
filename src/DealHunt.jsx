@@ -66,7 +66,7 @@ export default function DealHunt({providerKeys,onWatchChange}){
 
   return <div className="pageStack">
     <section className="searchDock hunt">
-      <div className="dockHead"><span className="eyebrow">DEAL HUNT</span><h2>Hunt up to five parts <em>across ten stores</em> at once.</h2><p>Deep scan on every target: store price search (2 pages, new + used), retailer product pages, AliExpress item pages and eBay's official API when connected. Results load once — sort and filter them instantly.</p></div>
+      <div className="dockHead"><span className="eyebrow">DEAL HUNT</span><h2>Hunt up to five parts <em>across ten stores</em> at once.</h2><p>Targets that match a saved model load instantly from saved listings (no credits). Anything else gets a deep scan: store price search (2 pages, new + used), retailer product pages, AliExpress item pages and eBay's official API when connected. Results load once — sort and filter them instantly.</p></div>
       <div className="storeToggles">
         {SNIPER_MARKETPLACES.map(m=><button key={m.id} className={"storeToggle store-"+m.id+(marketplaces.includes(m.id)?" on":"")} onClick={()=>toggleMarketplace(m.id)} aria-pressed={marketplaces.includes(m.id)}><i></i>{m.name}</button>)}
       </div>
