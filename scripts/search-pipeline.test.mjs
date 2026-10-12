@@ -452,3 +452,30 @@ test("pages read saved snapshots: no paid search, pending models never trigger o
     if (prev !== undefined) process.env.SNAPSHOTS_OFF = prev;
   }
 });
+
+test("Flipper Deals sections are computed from saved listings", async () => {
+  const { flipperSection, ddr4StickInfo } = await import("../api/_lib/flipper.js");
+  assert.deepEqual(ddr4StickInfo("G.Skill Ripjaws V 16GB (2x8GB) DDR4 3600 CL16"), { sticks: 2, speed: "3600" });
+  assert.deepEqual(ddr4StickInfo("Lot of 4 Corsair Vengeance 8GB DDR4 3200MHz Desktop RAM"), { sticks: 4, speed: "3200" });
+  assert.equal(ddr4StickInfo("Kingston 8GB DDR4 2666 Desktop"), null, "slower than 3000MHz");
+  assert.equal(ddr4StickInfo("Crucial 32GB (2x16GB) DDR4 3200"), null, "not 8GB sticks");
+  const L = (title, p, extra = {}) => ({ id: title, title, totalPrice: p, itemPrice: p, condition: "new", url: "https://www.newegg.com/p/" + encodeURIComponent(title), source: "Newegg", marketplace: "newegg", ...extra });
+  const files = {
+    "models/8gb-ddr4-3200.json": [L("Lot of 4 Corsair 8GB DDR4 3200MHz Desktop RAM", 80, { condition: "used" }), L("HyperX 8GB DDR4 2666", 12)],
+    "models/16gb-ddr4-3200.json": [L("G.Skill 16GB (2x8GB) DDR4 3200", 39.99), L("Corsair 16GB (2x8GB) DDR4 3200 RGB", 70)],
+    "models/650w-psu.json": [L("EVGA 650 BR 650W 80+ Bronze Power Supply", 59.99), L("Generic 650W Power Supply", 30)],
+    "models/750w-80-gold-psu.json": [L("Corsair RM750e 750W 80+ Gold", 89.99)],
+    "models/atx-mid-tower-pc-case.json": [L("Montech AIR 100 ATX Mid Tower Case", 49.99), L("Lian Li Lancool 216 ATX Case", 99.99), L("AIO liquid cooler bracket for PC case", 15)],
+    "models/ryzen-5-3600.json": [L("AMD Ryzen 5 3600 Processor", 60, { condition: "used" })],
+    "models/ryzen-7-5800x3d.json": [L("AMD Ryzen 7 5800X3D", 250)]
+  };
+  const read = async path => files[path] ? { searchedAt: new Date().toISOString(), results: files[path] } : null;
+  const ram = await flipperSection("ddr4", read);
+  assert.deepEqual(ram.listings.map(x => [x.perPair, x.sticks]), [[39.99, 2], [40, 4]], "per-pair price, < $65, 3000MHz+");
+  const psu = await flipperSection("psu", read);
+  assert.deepEqual(psu.listings.map(x => x.tag), ["650W Bronze", "750W Gold", "650W"], "Bronze/Gold first, 650/550 before 750");
+  const cs = await flipperSection("cases", read);
+  assert.deepEqual(cs.listings.map(x => x.totalPrice), [49.99], "under $52, no accessories");
+  const cpu = await flipperSection("ryzen", read);
+  assert.equal(cpu.listings[0].model, "Ryzen 5 3600", "cheap popular Ryzen ranks first on appeal per dollar");
+});

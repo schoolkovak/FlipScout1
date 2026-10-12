@@ -1,5 +1,5 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
-import {Cpu,MemoryStick,HardDrive,CircuitBoard,Plug,Fan,Monitor,ArrowLeft,ExternalLink,RefreshCw,ChevronDown,List,Info,Flame,Bookmark,Search,Zap,TrendingDown,Filter,DollarSign,Layers} from "lucide-react";
+import {Box,Cpu,MemoryStick,HardDrive,CircuitBoard,Plug,Fan,Monitor,ArrowLeft,ExternalLink,RefreshCw,ChevronDown,List,Info,Flame,Bookmark,Search,Zap,TrendingDown,Filter,DollarSign,Layers} from "lucide-react";
 import {track} from "@vercel/analytics";
 import {PART_GROUPS,findSeries,findCatalogModel,normalizePartQuery} from "../shared/partCatalog.js";
 import {SNIPER_CONDITIONS,allowsUsed} from "../shared/sniper.js";
@@ -14,7 +14,7 @@ export function GpuIcon({size=16}){
     <rect x="2" y="6" width="20" height="11" rx="2"/><circle cx="8" cy="11.5" r="2.5"/><circle cx="16" cy="11.5" r="2.5"/><path d="M5 17v2M9 17v2M2 9H1M2 13H1"/>
   </svg>;
 }
-const GROUP_ICONS={gpu:GpuIcon,cpu:Cpu,ram:MemoryStick,ssd:HardDrive,board:CircuitBoard,psu:Plug,fan:Fan,monitor:Monitor};
+const GROUP_ICONS={case:Box,gpu:GpuIcon,cpu:Cpu,ram:MemoryStick,ssd:HardDrive,board:CircuitBoard,psu:Plug,fan:Fan,monitor:Monitor};
 export function GroupIcon({icon,size=16}){const I=GROUP_ICONS[icon]||Layers;return <I size={size}/>;}
 
 // Two independent choices: which listing to feature, and which condition.

@@ -1,10 +1,11 @@
 import React,{useEffect,useState} from "react";
-import {Search,Target,Bookmark,ExternalLink,Trash2,Radar,Eye} from "lucide-react";
+import {Search,Target,Bookmark,ExternalLink,Trash2,Radar,Eye,DollarSign} from "lucide-react";
 import {track} from "@vercel/analytics";
 import {PART_GROUPS,findCatalogModel,normalizePartQuery} from "../shared/partCatalog.js";
 import {getWatchlist,toggleWatchItem,getSavedSearches,deleteSavedSearch} from "./storage";
 import {BrowsePage,ModelPage,CategoryPills} from "./Browse.jsx";
 import DealHunt from "./DealHunt.jsx";
+import Flipper from "./Flipper.jsx";
 import {money} from "./DealResults.jsx";
 import {STATE_TAX,loadTaxState,saveTaxState,finalPrice} from "./pricing.js";
 import {TaxContext} from "./taxContext.js";
@@ -38,7 +39,7 @@ function Logo(){
 function TopNav({route,go,watchCount,taxState,setTaxState}){
   const [q,setQ]=useState("");
   function submit(e){e.preventDefault();const query=q.trim();if(!query)return;track("nav_search",{query});const hit=findCatalogModel(query);if(hit)go({page:"model",group:hit.group.id,series:hit.series.id,model:hit.item.name});else go({page:"model",query:normalizePartQuery(query)});}
-  const links=[["browse","Browse Parts",Radar],["hunt","Deal Hunt",Target],["watch","Watchlist",Eye]];
+  const links=[["browse","Browse Parts",Radar],["flip","Flipper Deals",DollarSign],["hunt","Deal Hunt",Target],["watch","Watchlist",Eye]];
   return <nav className="topNav">
     <button className="brand" onClick={()=>go({page:"browse",group:"gpu"})}><Logo/><span>FlipScout</span></button>
     <div className="navLinks">{links.map(([id,label,Icon])=><button key={id} className={(route.page===id||(id==="browse"&&route.page==="model"))?"on":""} onClick={()=>go({page:id,group:route.group})}><Icon size={15}/>{label}{id==="watch"&&watchCount>0&&<em>{watchCount}</em>}</button>)}</div>
@@ -114,6 +115,7 @@ export default function App(){
     <main className="mainWrap">
       {route.page==="browse"&&<BrowsePage providerKeys={providerKeys} groupId={route.group} seriesId={route.series} setRoute={go}/>}
       {route.page==="model"&&<ModelPage key={route.model+route.query} providerKeys={providerKeys} route={route} setRoute={go} onWatchChange={bump}/>}
+      {route.page==="flip"&&<Flipper/>}
       {route.page==="hunt"&&<DealHunt providerKeys={providerKeys} onWatchChange={bump}/>}
       {route.page==="watch"&&<Watchlist refresh={refresh} onChange={bump} go={go}/>}
     </main>
