@@ -1,4 +1,5 @@
 import { searchMarketplaces, providerStatus } from "../_lib/market.js";
+import { findSeries } from "../../shared/partCatalog.js";
 
 // Browse grid: new + used Google Shopping queries and one eBay/AliExpress/
 // Mercari item-page search per model, returning the
@@ -15,7 +16,15 @@ function slim(x) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "POST required" });
+  // GET /api/parts/overview?group=gpu&series=rtx50 is cached at Vercel's edge
+  // for 30 minutes (served stale for up to a day while it refreshes), so a
+  // series page loads instantly and costs credits at most once per 30 min.
+  const isGet = req.method === "GET";
+  if (!isGet && req.method !== "POST") return res.status(405).json({ error: "GET or POST required" });
+  if (isGet) {
+    const { series } = findSeries(String(req.query?.group || "gpu"), String(req.query?.series || ""));
+    req.body = { items: series.items.map(x => ({ id: x.name, query: x.query, category: x.category, msrp: x.msrp || 0 })) };
+  }
   const providerKeys = {
     SERPER_API_KEY: req.body?.providerKeys?.SERPER_API_KEY || "",
     SEARCHAPI_API_KEY: req.body?.providerKeys?.SEARCHAPI_API_KEY || ""
@@ -59,5 +68,8 @@ export default async function handler(req, res) {
       return { id: item.id, available: false, count: 0, listings: [], errors: [{ provider: "FlipScout", message: String(error?.message || error).slice(0, 160) }] };
     }
   }));
-  res.status(200).json({ available: results.some(x => x.available), searchedAt: new Date().toISOString(), items: results });
+  const anyOk = results.some(x => x.available);
+  if (isGet && anyOk) res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+  else res.setHeader("Cache-Control", "no-store");
+  res.status(200).json({ available: anyOk, searchedAt: new Date().toISOString(), items: results });
 }

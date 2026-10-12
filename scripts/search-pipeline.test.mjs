@@ -149,7 +149,7 @@ test("an out-of-credit provider is reported clearly and stops being called; othe
     assert.equal(first.ranked.length, 1);
     const ebay = first.providers.find(p => p.name === "eBay (SearchAPI)");
     assert.equal(ebay.status, "error");
-    assert.match(ebay.message, /out of credits or rate-limited \(HTTP 429\)/);
+    assert.match(ebay.message, /out of credits \(HTTP 429\)/);
     assert.ok(!ebay.message.includes(providerKeys.SEARCHAPI_API_KEY), "API key never echoed");
     const before = stub.calls.filter(c => c.id === "ebay_search").length;
     await searchPartsSniper({ query: "1000W Gold PSU", category: "Power Supply / PSU", condition: "new", marketplaces: ["newegg", "ebay"], providerKeys });
@@ -369,4 +369,19 @@ test("'Ultra 7 265KF ... RTX 5090' prebuilt is not shown as a GPU", () => {
   const r = evaluateListing({ title: "ArsenalPC - Ultra 7 265KF - RTX 5090 - 2TB NVMe SSD - 64GB DDR5 Memory", query: "RTX 5090", category: "GPU" });
   assert.equal(r.ok, false);
   assert.equal(r.reason, "complete-system");
+});
+
+test("Serper per-second rate limit (429) is retried, not treated as out of credits", async () => {
+  let n = 0;
+  const stub = stubFetch({
+    serper: ({ path }) => {
+      if (path === "/shopping" && n++ === 0) return { status: 429, body: { message: "Rate limit exceeded. You are allowed to submit up to 5 requests per second to this API." } };
+      return path === "/shopping" ? { shopping: [{ title: "Corsair RM650e 650W 80 PLUS Gold Power Supply", source: "Newegg.com", price: "$79.99", link: "https://www.newegg.com/p/N82E16817139313" }] } : { organic: [] };
+    }
+  });
+  try {
+    const result = await searchPartsSniper({ query: "650W PSU", category: "Power Supply / PSU", condition: "new", marketplaces: ["newegg"], providerKeys: keys() });
+    assert.equal(result.ranked.length, 1);
+    assert.ok(!result.providers.some(p => p.status !== "ok"));
+  } finally { stub.restore(); }
 });

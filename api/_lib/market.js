@@ -123,6 +123,20 @@ function providerMessage(text) {
   } catch { return String(text || "").slice(0, 200); }
 }
 
+// Serper's free plan allows 5 requests/second: space request starts per host
+// so a page of searches never trips the limit.
+const HOST_MIN_INTERVAL_MS = { "google.serper.dev": 230 };
+const hostNextStart = new Map();
+async function paceHost(host) {
+  const gap = HOST_MIN_INTERVAL_MS[host];
+  if (!gap) return;
+  const now = Date.now();
+  const at = Math.max(now, hostNextStart.get(host) || 0);
+  hostNextStart.set(host, at + gap);
+  if (at > now) await new Promise(r => setTimeout(r, at - now));
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 async function providerFetch(provider, url, options = {}, secrets = []) {
   // One circuit per provider credential: a browser-entered key and the
   // server key fail independently.
@@ -130,8 +144,9 @@ async function providerFetch(provider, url, options = {}, secrets = []) {
   const open = providerCircuit.get(circuitId);
   if (open && open.until > Date.now()) throw new ProviderError(open.message, { quota: true, skipped: true });
   const host = new URL(url).hostname;
-  return withHostLimit(host, 8, async () => {
-    for (let attempt = 0; attempt < 2; attempt++) {
+  return withHostLimit(host, 5, async () => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await paceHost(host);
       let response;
       try {
         response = await fetch(url, { ...options, signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS) });
@@ -143,16 +158,18 @@ async function providerFetch(provider, url, options = {}, secrets = []) {
       if (!response.ok) {
         const text = await response.text?.().catch(() => "") || "";
         const detail = redact(providerMessage(text), secrets);
+        // Per-second rate limit: wait and retry, never pause the provider.
+        if (response.status === 429 && /per second|rate limit/i.test(detail) && attempt < 3) { await sleep(700 * (attempt + 1)); continue; }
         const keyProblem = response.status === 401 || response.status === 403;
-        // Only real credit/key problems pause a provider. A 400 such as "num
-        // over the limit" must not lock out every other search.
-        const quota = keyProblem || response.status === 402 || response.status === 429 || /not enough credits|out of (?:credits|searches)|credits? (?:exhausted|depleted)|quota exceeded|insufficient (?:credits|balance)/i.test(detail);
-        const message = (keyProblem ? "API key rejected" : quota ? "out of credits or rate-limited" : "request failed") + " (HTTP " + response.status + ")" + (detail ? ": " + detail : "");
-        if (quota) providerCircuit.set(circuitId, { until: Date.now() + (response.status === 429 ? 60 * 1000 : 10 * 60 * 1000), message });
+        // Only real credit/key problems pause a provider.
+        const quota = keyProblem || response.status === 402 || /not enough credits|out of (?:credits|searches)|credits? (?:exhausted|depleted)|quota exceeded|insufficient (?:credits|balance)/i.test(detail);
+        const message = (keyProblem ? "API key rejected" : quota ? "out of credits" : response.status === 429 ? "rate-limited" : "request failed") + " (HTTP " + response.status + ")" + (detail ? ": " + detail : "");
+        if (quota) providerCircuit.set(circuitId, { until: Date.now() + 10 * 60 * 1000, message });
         throw new ProviderError(message, { status: response.status, quota });
       }
       return response.json();
     }
+    throw new ProviderError("rate-limited (HTTP 429) after retries");
   });
 }
 
@@ -1138,6 +1155,7 @@ export async function searchMarketplaces(input, { includeOtherMerchants = false,
   const searchInput = { ...input, query, condition, deepScan: true };
 
   const round1 = shoppingQueries(query, condition).slice(0, lite ? 2 : 3).map(q => shoppingCall(searchInput, has, q)).filter(Boolean);
+  const organicOk = !lite; // browse cards stay credit-light: Google Shopping + link resolution only
   const itemSites = ["ebay", "aliexpress", "mercari"].filter(wants);
   // Deep (non-lite) scans also read Google Shopping page 2 and run a
   // separate used-only item-page search, for many more listings per part.
@@ -1146,8 +1164,8 @@ export async function searchMarketplaces(input, { includeOtherMerchants = false,
     round1.push(callSpec("serper", "Google Shopping (Serper)", null, searchInput, { q: q2, page: 2 }, () => searchSerperShopping(searchInput, { q: q2, page: 2 })));
   }
   const retailSites = ["amazon", "newegg", "bestbuy", "walmart", "microcenter", "bhphoto"].filter(wants);
-  if (has.serper && retailSites.length) round1.push(callSpec("serper-retail", "Retailer pages (Serper web search)", retailSites, searchInput, { q: query, condition: "new", sites: retailSites }, () => searchSerperItemPages({ ...searchInput, condition: "new" }, { marketplaces: retailSites, retail: true })));
-  if (has.serper && itemSites.length) round1.push(callSpec("serper-items", "Item pages (Serper web search)", itemSites, searchInput, { q: query, condition, sites: itemSites }, () => searchSerperItemPages(searchInput, { marketplaces: itemSites })));
+  if (organicOk && has.serper && retailSites.length) round1.push(callSpec("serper-retail", "Retailer pages (Serper web search)", retailSites, searchInput, { q: query, condition: "new", sites: retailSites }, () => searchSerperItemPages({ ...searchInput, condition: "new" }, { marketplaces: retailSites, retail: true })));
+  if (organicOk && has.serper && itemSites.length) round1.push(callSpec("serper-items", "Item pages (Serper web search)", itemSites, searchInput, { q: query, condition, sites: itemSites }, () => searchSerperItemPages(searchInput, { marketplaces: itemSites })));
   if (!lite && has.serper && wants("aliexpress")) round1.push(callSpec("serper-items", "Item pages (Serper web search)", ["aliexpress"], searchInput, { q: query, condition, sites: ["aliexpress"] }, () => searchSerperItemPages(searchInput, { marketplaces: ["aliexpress"] })));
   if (!lite && has.serper && itemSites.length && condition === "any" && allowsUsed(input.category)) {
     const usedInput = { ...searchInput, condition: "used" };
@@ -1188,7 +1206,7 @@ export async function searchMarketplaces(input, { includeOtherMerchants = false,
 
   // Only real store listings are shown: resolve Google-linked offers to the
   // store's own item page (Google Shopping stays a background source).
-  if (has.serper) qualified.items = await resolveRealLinks(searchInput, qualified.items, qualified.stats, lite ? 5 : 16);
+  if (has.serper) qualified.items = await resolveRealLinks(searchInput, qualified.items, qualified.stats, lite ? 4 : 12);
   else qualified.items = qualified.items.filter(x => x.linkType === "listing");
   const providers = summarizeProviders(all, qualified.stats);
   const errors = providers.filter(p => p.status === "error" || p.status === "skipped").map(p => ({ provider: p.name, message: p.message }));

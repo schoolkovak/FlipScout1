@@ -2,6 +2,8 @@ import React,{useMemo,useState} from "react";
 import {ExternalLink,Bookmark,BookmarkCheck,AlertTriangle,Truck,TrendingDown,TrendingUp,ArrowDownWideNarrow,Sparkles,Percent,Store,PackageSearch,ChevronDown} from "lucide-react";
 import {sortDeals} from "../shared/dealSort.js";
 import {SNIPER_MARKETPLACES} from "../shared/sniper.js";
+import {finalPrice} from "./pricing.js";
+import {useTaxState} from "./taxContext.js";
 
 export function money(v,digits=0){
   if(v===null||v===undefined||Number.isNaN(Number(v))) return "—";
@@ -56,12 +58,22 @@ export function MarketPulse({market,results}){
   if(!market)return null;
   const list=results||[];
   const cheapest=list.reduce((m,x)=>!m||x.totalPrice<m.totalPrice?x:m,null);
+  const st=useTaxState();
   const stores=new Set(list.map(storeKey)).size;
   return <div className="pulse">
-    <div><span>Lowest price</span><b className="dealText">{money(cheapest?.totalPrice,2)}</b><small>{cheapest?storeLabel(storeKey(cheapest),cheapest)+" · "+(CONDITION_LABEL[cheapest.condition]||cheapest.condition):"—"}</small></div>
-    <div><span>Market median</span><b>{money(market.median)}</b><small>{money(market.low)} – {money(market.high)} typical</small></div>
+    <div><span>Lowest price (tax & ship)</span><b className="dealText">{cheapest?money(finalPrice(cheapest,st).total,2):"—"}</b><small>{cheapest?storeLabel(storeKey(cheapest),cheapest)+" · "+(CONDITION_LABEL[cheapest.condition]||cheapest.condition):"—"}</small></div>
+    <div><span>Market median (pre-tax)</span><b>{money(market.median)}</b><small>{money(market.low)} – {money(market.high)} typical</small></div>
     <div><span>Valid listings</span><b>{list.length}</b><small>broken & mismatched removed</small></div>
     <div><span>Stores</span><b>{stores}</b><small>{market.confidence} confidence</small></div>
+  </div>;
+}
+
+export function PriceTotal({item,big=true}){
+  const st=useTaxState();
+  const fp=finalPrice(item,st);
+  return <div className="priceTotal">
+    <strong className={big?"":"small"}>{money(fp.total,2)}</strong>
+    <span>{money(fp.base,2)} + {fp.shipNote} + ~{money(fp.tax,2)} tax{st?" ("+st+")":""}</span>
   </div>;
 }
 
@@ -81,10 +93,7 @@ function DealCard({item,rank,watched,onWatch,cheapest,msrp}){
       {isCheapest&&<span className="cheapTag">Lowest price</span>}
     </div>
     <h4 title={item.title}>{item.title}</h4>
-    <div className="tilePrice">
-      <strong>{money(item.totalPrice,2)}</strong>
-      <span className={item.shippingKnown?"shipOk":"shipUnknown"}><Truck size={12}/>{item.shippingKnown?(item.shipping?"incl. "+money(item.shipping,2)+" ship":"free shipping"):"+ shipping?"}</span>
-    </div>
+    <PriceTotal item={item}/>
     <div className="tileStats">
       <span className={under>=5?"pill good":under<=-5?"pill bad":"pill"}>{under>=0?<TrendingDown size={12}/>:<TrendingUp size={12}/>}{Math.abs(under)}% {under>=0?"under":"over"} market</span>
       {vsLaunch!=null&&<span className={vsLaunch<0?"pill good":"pill bad"}>{vsLaunch>0?"+":""}{vsLaunch}% vs MSRP</span>}
@@ -104,7 +113,7 @@ function DealCard({item,rank,watched,onWatch,cheapest,msrp}){
 
 export function ScanSkeleton({label="Scanning stores"}){
   return <div className="scanning">
-    <div className="scanBar"><span className="scanPulse"></span>{label}<em>Google Shopping · eBay · direct store searches</em></div>
+    <div className="scanBar"><span className="scanPulse"></span>{label}<em>Loading live listings…</em></div>
     <div className="tileGrid">{Array.from({length:6},(_,i)=><div className="dealTile skeleton" key={i}><i></i><i></i><i></i><i></i></div>)}</div>
   </div>;
 }

@@ -3,7 +3,7 @@ import {AlertTriangle,RefreshCw,Target,Trash2,Sparkles} from "lucide-react";
 import {track} from "@vercel/analytics";
 import {SNIPER_CATEGORIES,SNIPER_MARKETPLACES,SNIPER_CONDITIONS,groupedSniperCategories,allowsUsed} from "../shared/sniper.js";
 import {getWatchlist,toggleWatchItem} from "./storage";
-import DealResults,{MarketPulse,ProviderNotes,ScanSkeleton,money} from "./DealResults.jsx";
+import DealResults,{MarketPulse,ProviderNotes,ScanSkeleton,PriceTotal,money} from "./DealResults.jsx";
 
 export default function DealHunt({providerKeys,onWatchChange}){
   const categoryGroups=useMemo(()=>groupedSniperCategories(),[]);
@@ -93,7 +93,7 @@ export default function DealHunt({providerKeys,onWatchChange}){
         <div><span className="eyebrow">{group.target.category} · {SNIPER_CONDITIONS.find(x=>x.value===group.target.condition)?.label||group.target.condition}{group.target.maxPrice>0?" · max "+money(group.target.maxPrice):""}</span><h3>{group.target.query}</h3></div>
         {group.bestDeal&&<a className="bestValue" href={group.bestDeal.url||undefined} target="_blank" rel="noreferrer">
           <span><Sparkles size={13}/>Best value{group.target.maxPrice>0?" under cap":""}</span>
-          <b>{money(group.bestDeal.totalPrice,2)}</b>
+          <PriceTotal item={group.bestDeal}/>
           <small>{group.bestDeal.source} · {group.bestDeal.condition} · score {group.bestDeal.score}</small>
         </a>}
       </div>

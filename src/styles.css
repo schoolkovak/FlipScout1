@@ -360,3 +360,11 @@ input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible{ou
 button.mcHead{background:none;border:0;padding:0;text-align:left;width:100%;color:inherit}
 button.mcImage{border:0;width:100%;cursor:pointer;padding:0}
 .modelSwitch{margin-left:auto;padding:9px 10px;border-radius:9px;border:1px solid var(--green);background:var(--card);font-weight:700}
+.priceTotal{display:grid;gap:2px}
+.priceTotal strong{font-family:var(--display);font-size:26px;font-weight:700;line-height:1.1}
+.priceTotal strong.small{font-size:18px}
+.priceTotal span{font-size:11px;color:var(--muted)}
+.bestValue .priceTotal strong{font-size:24px}
+.taxPick{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.taxPick select{padding:7px 8px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);font-size:12px}
+.autoNote{display:inline-flex;align-items:center;gap:6px;margin-left:auto;font-size:12px;color:var(--dim)}

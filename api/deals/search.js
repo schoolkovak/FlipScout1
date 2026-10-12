@@ -3,7 +3,11 @@ import { searchMarketplaces, providerStatus } from "../_lib/market.js";
 const RESULT_LIMIT = 200;
 
 export default async function handler(req,res) {
-  if (req.method!=="POST") return res.status(405).json({error:"POST required"});
+  // GET (?q=&category=&condition=&msrp=) is used by model pages and cached at
+  // Vercel's edge for 15 minutes; POST stays for direct API use.
+  const isGet=req.method==="GET";
+  if (!isGet&&req.method!=="POST") return res.status(405).json({error:"GET or POST required"});
+  if (isGet) req.body={query:req.query?.q,category:req.query?.category,condition:req.query?.condition,msrp:req.query?.msrp};
   const input={
     category:req.body?.category||"GPU",
     query:String(req.body?.query||"").trim().slice(0,160),
@@ -47,6 +51,7 @@ export default async function handler(req,res) {
     });
   }
 
+  if (isGet) res.setHeader("Cache-Control","public, s-maxage=900, stale-while-revalidate=86400");
   res.status(200).json({
     available:true,
     searchedAt:result.observedAt,
