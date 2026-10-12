@@ -205,7 +205,7 @@ export default function AutomaticDiscovery({providerKeys,onOpenScanner}){
         }
         if(providerErrors.some(e=>/serper/i.test(e.message||"")&&/429|quota/i.test(e.message||"")))setAuto(false);
       }else if(!Object.values(updates).some(x=>x.results.length)){
-        setMessage("No qualifying direct listings were returned for this batch. Try another model or check Source Details.");
+        setMessage("No qualifying priced listings from connected search sources. Check Source Details for model, link, and price rejections.");
       }
     }catch(error){
       if(mountedRef.current){
@@ -227,7 +227,9 @@ export default function AutomaticDiscovery({providerKeys,onOpenScanner}){
   useEffect(()=>{
     if(!auto)return;
     const timer=window.setInterval(()=>{
-      if(document.visibilityState==="visible")scanRef.current?.(null,false);
+      if(document.visibilityState==="visible")scanRef.current?.(
+        partRef.current==="All"?null:partRef.current,false
+      );
     },60*60*1000);
     return ()=>window.clearInterval(timer);
   },[auto]);
@@ -277,7 +279,7 @@ export default function AutomaticDiscovery({providerKeys,onOpenScanner}){
   ).size}));
   const latest=Object.values(catalog).map(row=>row.checkedAt).sort().at(-1);
   const scannedAll=TARGETS.filter(t=>catalog[t.id]).length;
-  const pageStatus=busy?"SEARCHING":auto?"HOURLY AUTO-SCAN ON":"PAUSED";
+  const pageStatus=busy?"SEARCHING":auto?"HOURLY AUTO-SCAN ON":"PROVIDER SCAN PAUSED";
 
   return <div className="fsDealLayout">
     <aside className="fsSidebar" aria-label="PC parts and deal filters">
