@@ -1018,6 +1018,92 @@ const DIRECT_STORE_ENGINES = {
   bestbuy: { name: "Best Buy (SearchAPI)", run: searchSearchApiBestBuy, conditions: ["any", "new", "open-box"] }
 };
 
+// ---------------------------------------------------------------------------
+// Real-link resolution. Google Shopping knows which store sells a part and at
+// what price, but usually links to its own page. For each such offer, search
+// that exact title on that store and keep the store's real item page; offers
+// that cannot be resolved are not shown.
+// ---------------------------------------------------------------------------
+const STORE_DOMAINS = {
+  amazon: "amazon.com", bestbuy: "bestbuy.com", walmart: "walmart.com", newegg: "newegg.com", ebay: "ebay.com",
+  aliexpress: "aliexpress", mercari: "mercari.com", bhphoto: "bhphotovideo.com", adorama: "adorama.com", microcenter: "microcenter.com"
+};
+const PRODUCT_PATHS = {
+  amazon: /\/(dp|gp\/product)\//, bestbuy: /^\/site\/.+\.p$/, walmart: /^\/ip\//, newegg: /\/p\//, ebay: /^\/itm\//,
+  aliexpress: /^\/item\//, mercari: /^\/us\/item\//, bhphoto: /^\/c\/product\//, adorama: /\.html$|^\/[a-z0-9-]+\.html/, microcenter: /^\/product\//
+};
+const resolveCache = new Map();
+
+function titleTokens(t) { return new Set(normalizeListingText(t).split(" ").filter(w => w.length > 1)); }
+function titleSimilarity(a, b) {
+  const A = titleTokens(a), B = titleTokens(b);
+  if (!A.size || !B.size) return 0;
+  let hit = 0;
+  for (const w of A) if (B.has(w)) hit++;
+  return hit / Math.min(A.size, B.size);
+}
+
+function storeHostMatches(host, item) {
+  const h = host.replace(/^www\./, "");
+  if (item.marketplace && item.marketplace !== "other") return h.includes(STORE_DOMAINS[item.marketplace] || item.marketplace);
+  const seller = String(item.seller || "").toLowerCase().replace(/\.com$/, "").replace(/[^a-z0-9]/g, "");
+  return seller.length >= 3 && h.replace(/[^a-z0-9]/g, "").includes(seller);
+}
+
+function looksLikeProductPage(u, item) {
+  const path = u.pathname.toLowerCase();
+  if (/\/(sch|search|s|browse|category|categories|c|l|deals?)(\/|$)|searchpage|search_results/.test(path) && !/\/c\/product\//.test(path)) return false;
+  if (u.search && /[?&](k|q|_nkw|st|keyword|ntt|query)=/.test(u.search)) return false;
+  const re = PRODUCT_PATHS[item.marketplace];
+  return re ? re.test(path) : path.split("/").filter(Boolean).length >= 1;
+}
+
+async function resolveOne(input, item) {
+  const store = item.marketplace && item.marketplace !== "other" ? marketplaceName(item.marketplace) : item.seller;
+  const key = (store + "|" + item.title).toLowerCase();
+  if (resolveCache.has(key)) return resolveCache.get(key);
+  const apiKey = providerKey("SERPER_API_KEY", input);
+  let found = null;
+  try {
+    const data = await providerFetch("serper", "https://google.serper.dev/search", {
+      method: "POST",
+      headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ q: item.title.slice(0, 110) + " " + store, gl: "us", hl: "en", num: 10 })
+    }, [apiKey]);
+    for (const r of data.organic || []) {
+      let u;
+      try { u = new URL(r.link); } catch { continue; }
+      if (!storeHostMatches(u.hostname, item) || !looksLikeProductPage(u, item)) continue;
+      if (titleSimilarity(item.title, r.title) < 0.6) continue;
+      found = u.href;
+      break;
+    }
+  } catch { found = null; }
+  resolveCache.set(key, found);
+  if (resolveCache.size > 3000) resolveCache.delete(resolveCache.keys().next().value);
+  return found;
+}
+
+// Resolve Google-linked offers (cheapest first, up to `limit`); drop the rest.
+async function resolveRealLinks(input, items, stats, limit) {
+  const google = items.filter(x => x.linkType === "google").sort((a, b) => a.totalPrice - b.totalPrice);
+  const toResolve = new Set(google.slice(0, limit));
+  await Promise.all([...toResolve].map(async x => {
+    const url = await resolveOne(input, x);
+    if (url) { x.url = url; x.linkType = "listing"; x.provider = x.provider + " → store page"; }
+  }));
+  const out = [];
+  for (const x of items) {
+    if (x.linkType === "listing") { out.push(x); continue; }
+    const name = x.provider.replace(/ → store page$/, "");
+    const st = stats.get(name) || stats.set(name, emptyStats(name)).get(name);
+    const reason = toResolve.has(x) ? "no-real-store-page" : "not-resolved";
+    st.dropped[reason] = (st.dropped[reason] || 0) + 1;
+    st.kept = Math.max(0, st.kept - 1);
+  }
+  return out;
+}
+
 // Google Shopping query variants. Shopping results default to new retail
 // stock, so used/refurbished/open-box listings need their own queries.
 function shoppingQueries(query, condition) {
@@ -1100,6 +1186,10 @@ export async function searchMarketplaces(input, { includeOtherMerchants = false,
   const all = [...settled, ...settled2];
   if (settled2.length) qualified = qualifyOffers(all.flatMap(r => r.offers), searchInput, { selected, includeOtherMerchants, stats: new Map() });
 
+  // Only real store listings are shown: resolve Google-linked offers to the
+  // store's own item page (Google Shopping stays a background source).
+  if (has.serper) qualified.items = await resolveRealLinks(searchInput, qualified.items, qualified.stats, lite ? 5 : 16);
+  else qualified.items = qualified.items.filter(x => x.linkType === "listing");
   const providers = summarizeProviders(all, qualified.stats);
   const errors = providers.filter(p => p.status === "error" || p.status === "skipped").map(p => ({ provider: p.name, message: p.message }));
   const market = buildMarket(qualified.items);

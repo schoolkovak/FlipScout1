@@ -259,7 +259,7 @@ for (const cpu of CPUS) {
 // Model numbers written right after a CPU family name count even when the
 // catalog does not list them (e.g. "Ryzen 5 5600X3D"), so they are never
 // mistaken for the searched model.
-const CPU_CONTEXT_RE = /\b(?:ryzen\s+(?:threadripper\s+)?(?:pro\s+)?[3579]|i[3579]|core\s+ultra\s+[3579](?:\s+processor)?|core\s+i[3579]\s+processor|athlon(?:\s+gold|\s+silver)?)\s+(\d{3,5}[a-z0-9]*)(?=\s|$)/g;
+const CPU_CONTEXT_RE = /\b(?:ryzen\s+(?:threadripper\s+)?(?:pro\s+)?[3579]|i[3579]|(?:core\s+)?ultra\s+[3579](?:\s+processor)?|core\s+i[3579]\s+processor|athlon(?:\s+gold|\s+silver)?)\s+(\d{3,5}[a-z0-9]*)(?=\s|$)/g;
 
 // Only CPU numbers written next to a CPU family name ("Ryzen 5 7600",
 // "i7 14700K"). Used to spot prebuilts/combos, where a bare "7600" would

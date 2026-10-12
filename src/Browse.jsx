@@ -20,7 +20,7 @@ const RANK_MODES=[{value:"cheapest",label:"Cheapest Available"},{value:"best",la
 const COND_MODES=[{value:"any",label:"Any"},{value:"new",label:"Only New"},{value:"used",label:"Only Used"}];
 const USED=new Set(["used","refurbished","renewed","open-box"]);
 const CACHE_MS=15*60*1000;
-const CACHE_VERSION="fs-overview-v3";
+const CACHE_VERSION="fs-overview-v4";
 
 function ago(iso,now){
   if(!iso)return "";

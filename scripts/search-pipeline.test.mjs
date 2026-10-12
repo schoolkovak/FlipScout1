@@ -336,3 +336,37 @@ test("Best value blends market value with launch MSRP; Google Shopping offer pag
   assert.equal(items.length, 1);
   assert.equal(items[0].linkType, "google");
 });
+
+test("Google Shopping offers are shown only when resolved to the store's real item page", async () => {
+  const g = id => "https://www.google.com/shopping/product/" + id + "?prds=oid:" + id;
+  const stub = stubFetch({
+    serper: ({ body, path }) => {
+      if (path === "/shopping") return { shopping: body.q.startsWith("used ") || body.q.startsWith("refurbished ") ? [] : [
+        { title: "Palit GeForce RTX 5090 GameRock 32GB", source: "eBay", price: "$2,890.00", link: g(1) },
+        { title: "Gigabyte GeForce RTX 5090 Gaming OC 32G", source: "Best Buy", price: "$2,999.99", link: g(2) },
+        { title: "ASUS TUF Gaming GeForce RTX 5090 32GB", source: "Newegg.com", price: "$3,099.99", link: g(3) }
+      ] };
+      if (/GameRock/.test(body.q)) return { organic: [
+        { title: "rtx 5090 for sale | eBay", link: "https://www.ebay.com/sch/i.html?_nkw=rtx+5090" },
+        { title: "Palit GeForce RTX 5090 GameRock 32GB GDDR7 Graphics Card | eBay", link: "https://www.ebay.com/itm/226611223344" }
+      ] };
+      if (/Gaming OC 32G/.test(body.q)) return { organic: [
+        { title: "Gigabyte GeForce RTX 5090 Gaming OC 32G Graphics Card - Best Buy", link: "https://www.bestbuy.com/site/gigabyte-rtx-5090-gaming-oc/6615929.p?skuId=6615929" }
+      ] };
+      return { organic: [{ title: "RTX 5090 graphics cards - Newegg.com", link: "https://www.newegg.com/p/pl?d=rtx+5090" }] };
+    }
+  });
+  try {
+    const result = await searchPartsSniper({ query: "RTX 5090", category: "GPU", condition: "any", marketplaces: ["ebay", "bestbuy", "newegg"], providerKeys: keys() });
+    const urls = result.ranked.map(x => x.url).sort();
+    assert.deepEqual(urls, ["https://www.bestbuy.com/site/gigabyte-rtx-5090-gaming-oc/6615929.p?skuId=6615929", "https://www.ebay.com/itm/226611223344"]);
+    assert.ok(result.ranked.every(x => x.linkType === "listing"));
+    assert.ok(!result.ranked.some(x => /google\.|\/sch\/|\/pl\?/.test(x.url)), "no Google or search pages");
+  } finally { stub.restore(); }
+});
+
+test("'Ultra 7 265KF ... RTX 5090' prebuilt is not shown as a GPU", () => {
+  const r = evaluateListing({ title: "ArsenalPC - Ultra 7 265KF - RTX 5090 - 2TB NVMe SSD - 64GB DDR5 Memory", query: "RTX 5090", category: "GPU" });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, "complete-system");
+});
