@@ -26,3 +26,6 @@ Restore point: branch `tomato` (commit 56d201c). Say "tomato" to return the site
 - Matcher test corpus: +23 cases (AM4 CPUs, PSUs, 500GB SSDs, DDR4). Fixed: "PSU extension cable kit for 650W power supply" was shown as a PSU.
 - Phones: the Browse sidebar folds into a "Series, models & filters" drawer so price cards come first; fixed browse content overflowing the screen width on phones.
 - Friendlier messages on model pages (credits used up, service slow, nothing matching) instead of raw provider errors.
+- Background refresh now runs hourly (GitHub was skipping the 3-hourly schedule); it still only spends credits on stale models within the daily cap, and skips publishing when nothing changed.
+- The `data` branch now tells Vercel not to deploy it (each data update was creating a failed Vercel deployment).
+- Model pages show the lowest-price history from saved updates (no extra searches).

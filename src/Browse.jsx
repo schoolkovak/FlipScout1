@@ -50,9 +50,9 @@ function linkLabel(item,name){return "View "+name+" on "+storeName(item);}
 function readCache(key){try{const v=JSON.parse(localStorage.getItem(key)||"null");return v&&Date.now()-v.at<CACHE_MS?v:null;}catch{return null;}}
 function writeCache(key,data){try{localStorage.setItem(key,JSON.stringify({at:Date.now(),data}));}catch{}}
 
-function Spark({series}){
+function Spark({series,w=70,h=20}){
   if(!series||series.length<2)return null;
-  const min=Math.min(...series),max=Math.max(...series),w=70,h=20;
+  const min=Math.min(...series),max=Math.max(...series);
   const pts=series.map((v,i)=>[i/(series.length-1)*w,max===min?h/2:h-(v-min)/(max-min)*h]);
   const down=series.at(-1)<=series[0];
   return <svg className={"spark "+(down?"down":"up")} width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-label="Your price history"><polyline points={pts.map(p=>p.join(",")).join(" ")} fill="none" strokeWidth="1.6"/></svg>;
@@ -317,6 +317,7 @@ export function ModelPage({providerKeys,route,setRoute,onWatchChange}){
       </div>
     </section>
     {data?.searchedAt&&<p className="snapNote">Prices updated {ago(data.searchedAt,Date.now())}{data.snapshot?" · refreshed automatically in the background":""}</p>}
+    {data?.history?.length>=2&&<div className="histBox"><span>Lowest price (before tax) over {data.history.length} updates</span><Spark series={data.history.map(p=>p.low)} w={160} h={28}/><b>{money(Math.min(...data.history.map(p=>p.low)))} – {money(Math.max(...data.history.map(p=>p.low)))}</b></div>}
     {loading&&<ScanSkeleton label={item.name+" — every real listing across trusted stores"}/>}
     {data&&!data.available&&<div className="notice"><Info size={18}/><div><b>No listings for {item.name} right now</b><p>{friendly(data.message)}</p><ProviderNotes providers={data.providers} coverage={data.coverage} errors={data.errors}/></div></div>}
     {data?.available&&<section className="resultsPanel">
