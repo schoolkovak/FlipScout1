@@ -62,3 +62,50 @@ test('Parts & Sniper keeps marketplace identity and filters junk results',async(
     assert.ok(result.ranked.every(x=>x.score<=x.scoreCap));
   }finally{globalThis.fetch=original;}
 });
+
+
+test('deal display retains valid low/high-priced offers excluded from robust market median',()=>{
+ const rows=[75,180,185,190,195,200,205,210,800].map((price,i)=>({
+   id:'deal-'+i,title:'RTX 4060 8GB graphics card',url:'https://www.ebay.com/itm/'+(1000+i),
+   totalPrice:price,itemPrice:price,shippingKnown:true,condition:'used',relevance:1
+ }));
+ const market=buildMarket(rows);
+ const visible=rankDeals(rows,market,{query:'RTX 4060',sortBy:'lowest'});
+ assert.ok(visible.length>market.sampleSize,'trimmed median should not hide valid listings');
+ assert.equal(visible.length,rows.length);
+ assert.equal(visible[0].totalPrice,75);
+ assert.ok(visible[0].riskFlags.some(x=>/verify/i.test(x)));
+});
+test('Deep Scan uses multiple chosen merchants even when Serper is configured',async()=>{
+ const original=globalThis.fetch,seen=[];
+ globalThis.fetch=async (url,opts)=>{
+   const u=new URL(url);
+   const engine=u.searchParams.get('engine');
+   seen.push(engine||u.hostname);
+   if(u.hostname==='google.serper.dev')return {ok:true,status:200,json:async()=>({shopping:[
+     {title:'RTX 5070 12GB desktop graphics card',source:'Amazon',price:'$500',
+       link:'https://www.amazon.com/dp/good',delivery:'Free shipping'},
+     {title:'RTX 5070 12GB desktop graphics card',source:'Newegg',price:'$510',
+       link:'https://www.newegg.com/p/abc',delivery:'Free shipping'}
+   ]})};
+   const seller=engine==='bestbuy_search'?'bestbuy':engine==='walmart_search'?'walmart':'';
+   if(engine==='google')return {ok:true,status:200,json:async()=>({organic_results:[]})};
+   const link=engine==='ebay_search'?'https://www.ebay.com/itm/123456789012':
+     engine==='amazon_search'?'https://www.amazon.com/dp/123456789':
+     seller==='bestbuy'?'https://www.bestbuy.com/site/123':seller==='walmart'?'https://www.walmart.com/ip/123':'https://www.example.com';
+   return {ok:true,status:200,json:async()=>({organic_results:[{
+     title:'RTX 5070 12GB desktop graphics card',extracted_price:510,condition:'New',
+     link,item_id:'123',is_free_shipping:true
+   }]})};
+ };
+ try{
+   const result=await searchPartsSniper({
+     query:'RTX 5070',category:'GPU',condition:'any',
+     marketplaces:['amazon','bestbuy','walmart','newegg','ebay','mercari'],
+     deepScan:true,providerKeys:{SERPER_API_KEY:'test-serper-deep',SEARCHAPI_API_KEY:'test-api-deep'}
+   });
+   for(const engine of ['ebay_search','amazon_search','bestbuy_search','walmart_search','google'])
+     assert.ok(seen.includes(engine),engine);
+   assert.ok(result.ranked.length>=2);
+ }finally{globalThis.fetch=original;}
+});

@@ -156,7 +156,14 @@ export function relevanceScore(title, query, category) {
   if(["gpu","cpu"].includes(cat)){
     const expected=resolveCatalogPart(cat,query);
     const identified=parseListingText(title)[cat];
-    if(expected.item && identified!==expected.canonical)return 0;
+    if(expected.item && identified!==expected.canonical){
+      // Listing titles frequently append VRAM, core counts or board-partner
+      // descriptions. Accept an unambiguous canonical model even when the
+      // strict whole-title parser cannot identify that longer string.
+      const expectedKey=normalizeText(expected.canonical).replace(/[^a-z0-9]/g,"");
+      const titleKey=t.replace(/[^a-z0-9]/g,"");
+      if(identified || !titleKey.includes(expectedKey))return 0;
+    }
     const model=String(query).match(/\b(?:\d{3,5}[a-z]*|[ab]\d{3})\b/i)?.[0];
     if(model && !t.replace(/\s+/g,"").includes(model.toLowerCase()))return 0;
     if(/\b(laptop|notebook|mobile|waterblock|water block|replacement fan|empty box|box only|riser|adapter|for parts|parts only|not working|broken|untested|repair|as is|gaming pc|desktop pc|prebuilt|bundle|motherboard combo)\b/.test(t))return 0;
@@ -878,7 +885,11 @@ export function rankDeals(items,market,{query,partBudget,buildBudget,committed,s
   const sample=Number(market.sampleSize||0);
   const evidenceCap=sample>=35?95:sample>=15?88:sample>=8?78:sample>=4?65:50;
 
-  const scored=market.comps.map(item=>{
+  // Market comps are robust-trimmed for estimating a representative median.
+  // They must NOT be the only visible offers: doing so hides unusually cheap
+  // valid listings and can turn 30 candidates into a single displayed deal.
+  const scored=dedupe(items).filter(x=>x.relevance>=.72 &&
+    Number.isFinite(x.totalPrice) && x.totalPrice>0).map(item=>{
     const under=medianValue ? (medianValue-item.totalPrice)/medianValue : 0;
     const underScore=Math.max(0,Math.min(1,(under+.10)/.35));
     const budgetScore=maxPart ? Math.max(0,Math.min(1,1-(item.totalPrice/maxPart-0.70))) : .55;
@@ -1036,7 +1047,7 @@ export async function liveSearch(input){
 
 export async function searchPartsSniper(input){
   const selected=[...new Set((input.marketplaces||["amazon","bestbuy","walmart","newegg","ebay","aliexpress","bhphoto","adorama","microcenter","mercari"]).filter(Boolean))];
-  const key="sniper|"+cacheKey({...input,marketplaces:selected});
+  const key="sniper|"+selected.slice().sort().join(",")+"|"+cacheKey(input);
   const hit=searchCache.get(key);
   if(hit && Date.now()-hit.savedAt<hit.ttl)return {...hit.value,cached:true};
 
@@ -1044,7 +1055,7 @@ export async function searchPartsSniper(input){
   const hasSearchApi=Boolean(providerKey("SEARCHAPI_API_KEY",input));
   const providers=[];
 
-  if(hasSerper) providers.push(["Retail marketplace search",()=>searchSerperMarketplaces({...input,marketplaces:selected})]);
+  if(hasSerper)providers.push(["Retail marketplace search",()=>searchSerperMarketplaces({...input,marketplaces:selected})]);
 
   if(selected.includes("ebay")&&hasSearchApi){
     providers.push(["eBay",async()=> (await searchSearchApiEbay(input)).map(x=>({...x,marketplace:"ebay",provider:"SearchAPI eBay"}))]);
@@ -1054,10 +1065,16 @@ export async function searchPartsSniper(input){
     providers.push(["Amazon",()=>searchSearchApiAmazon(input)]);
   }
 
-  if(!hasSerper&&hasSearchApi){
-    for(const marketplace of ["bestbuy","walmart","newegg","aliexpress","bhphoto","adorama","microcenter","mercari"]){
-      if(selected.includes(marketplace))providers.push([marketplaceName(marketplace),()=>searchSearchApiSiteMarketplace(input,marketplace)]);
-    }
+  // Deep scans add direct store searches even if Serper is present.
+  // Limit extra domain requests to avoid a new API-quota flood.
+  if(input.deepScan&&hasSearchApi){
+    if(selected.includes("bestbuy"))providers.push(["Best Buy",()=>searchSearchApiBestBuy(input)]);
+    if(selected.includes("walmart"))providers.push(["Walmart",()=>searchSearchApiWalmart(input)]);
+    for(const marketplace of ["newegg","aliexpress","mercari"].filter(id=>selected.includes(id)).slice(0,3))
+      providers.push([marketplaceName(marketplace),()=>searchSearchApiSiteMarketplace(input,marketplace)]);
+  }else if(!hasSerper&&hasSearchApi){
+    for(const marketplace of ["bestbuy","walmart","newegg","aliexpress","mercari"].filter(id=>selected.includes(id)))
+      providers.push([marketplaceName(marketplace),()=>searchSearchApiSiteMarketplace(input,marketplace)]);
   }
 
   const settled=await Promise.all(providers.map(async([name,run])=>{
@@ -1080,7 +1097,8 @@ export async function searchPartsSniper(input){
     ...x,
     riskFlags:[...(x.riskFlags||[]),...(x.sniperRiskFlags||[])]
   }));
-  const value={items,market,ranked,errors,observedAt:new Date().toISOString(),stale:false,cached:false};
+  const storeCounts=Object.fromEntries(selected.map(id=>[id,ranked.filter(x=>x.marketplace===id).length]));
+  const value={items,market,ranked,errors,storeCounts,observedAt:new Date().toISOString(),stale:false,cached:false};
   searchCache.set(key,{savedAt:Date.now(),ttl:errors.length?30000:CACHE_MS,value});
   return value;
 }

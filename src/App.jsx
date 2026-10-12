@@ -602,6 +602,7 @@ function PartsSniper({providerKeys,onWatchChange}){
   const [data,setData]=useState(null);
   const [error,setError]=useState("");
   const [watched,setWatched]=useState(()=>getWatchlist());
+  const [resultPages,setResultPages]=useState({});
 
   function updateTarget(id,key,value){
     setTargets(rows=>rows.map(x=>x.id===id?{...x,[key]:value}:x));
@@ -648,7 +649,7 @@ function PartsSniper({providerKeys,onWatchChange}){
     if(!marketplaces.length){setError("Choose at least one marketplace.");return;}
     const invalid=targets.find(x=>!String(x.query||"").trim());
     if(invalid){setError("Every target needs a part or model.");return;}
-    setLoading(true);setError("");setData(null);
+    setLoading(true);setError("");setData(null);setResultPages({});
     track("sniper_scan",{targets:targets.length,marketplaces:marketplaces.length,deepScan});
     try{
       const r=await fetch("/api/parts/sniper",{
@@ -711,7 +712,11 @@ function PartsSniper({providerKeys,onWatchChange}){
           {group.bestDeal.url&&<a href={group.bestDeal.url} target="_blank" rel="noreferrer">Open <ExternalLink size={14}/></a>}
         </div>}
 
-        {!group.results?.length?<div className="emptyState">No relevant priced listings survived FlipScout's filters for this target.</div>:<div className="sniperDealGrid">{group.results.slice(0,12).map((item,i)=><article className="sniperDeal" key={item.id||i}>
+        {!!group.results?.length&&<div className="sniperCoverage">{SNIPER_MARKETPLACES.filter(m=>marketplaces.includes(m.id)).map(m=>
+  <span key={m.id}>{m.name}: <b>{group.results.filter(x=>x.marketplace===m.id).length}</b></span>)}
+  <small>{group.results.length} qualifying listings found</small>
+</div>}
+{!group.results?.length?<div className="emptyState">No relevant priced listings survived FlipScout's filters for this target.</div>:<div className="sniperDealGrid">{group.results.slice(0,((resultPages[group.id]||0)+1)*12).map((item,i)=><article className="sniperDeal" key={item.id||i}>
           <div className="sniperDealTop"><div><span className="source">{item.source}</span>{item.soldCount>0&&<span className="soldChip">{item.soldCount}+ sold</span>}</div><div className="dealScore"><b>{item.score}</b><small>cap {item.scoreCap||100}</small></div></div>
           <h4>{item.title}</h4>
           <div className="sniperPrice"><b>{money(item.totalPrice)}</b><span>{item.shippingKnown?"delivered":"shipping not confirmed"}</span></div>
@@ -719,7 +724,11 @@ function PartsSniper({providerKeys,onWatchChange}){
           {item.riskFlags?.length>0&&<div className="dealRisks">{item.riskFlags.slice(0,2).map((risk,j)=><span key={j}><AlertTriangle size={12}/>{risk}</span>)}</div>}
           <div className="dealActions">{item.url&&<a className="listingLink" href={item.url} target="_blank" rel="noreferrer">Open listing <ExternalLink size={14}/></a>}<button className="watchButton" onClick={()=>toggleWatch(item,group.target)}>{isWatched(item)?<BookmarkCheck size={15}/>:<Bookmark size={15}/>} {isWatched(item)?"Watching":"Watch"}</button></div>
         </article>)}</div>}
-        {group.errors?.length>0&&<details className="providerDetails"><summary>Provider notes ({group.errors.length})</summary>{group.errors.map((e,i)=><p key={i}>{e.provider}: {e.message}</p>)}</details>}
+        {!!group.results?.length&&group.results.length>((resultPages[group.id]||0)+1)*12&&
+  <button className="secondary sniperShowMore" onClick={()=>setResultPages(p=>({...p,[group.id]:(p[group.id]||0)+1}))}>
+    Show 12 more listings ({group.results.length-((resultPages[group.id]||0)+1)*12} remaining)
+  </button>}
+  {group.errors?.length>0&&<details className="providerDetails"><summary>Provider notes ({group.errors.length})</summary>{group.errors.map((e,i)=><p key={i}>{e.provider}: {e.message}</p>)}</details>}
       </section>)}
     </section>}
   </div>;

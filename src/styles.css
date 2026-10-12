@@ -101,3 +101,9 @@ input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible{ou
 @media(max-width:1050px){.targetCard{grid-template-columns:auto 1fr 1fr}.targetQuery{grid-column:2/4}.targetRemove{grid-column:3;justify-self:end}.marketplacePicker{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:820px){.sniperHero{grid-template-columns:1fr}.sniperDealGrid{grid-template-columns:1fr}.sniperWinner{grid-template-columns:1fr auto}.sniperWinnerBadge{grid-column:1/-1}.sniperWinner>a{justify-self:start}.targetResultHeader{flex-direction:column}.marketMini{text-align:left}.marketplacePicker{grid-template-columns:1fr 1fr}}
 @media(max-width:620px){.targetCard{grid-template-columns:1fr}.targetNumber,.targetRemove,.targetQuery{grid-column:auto}.targetRemove{justify-self:end}.sniperActions{flex-direction:column}.sniperActions button{width:100%}.marketplacePicker{grid-template-columns:1fr}.sniperHeroStats{grid-template-columns:1fr 1fr}}
+
+.sniperCoverage{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:15px 0;padding:10px;border:1px solid var(--line,#33464c);border-radius:5px}
+.sniperCoverage span{font-size:11px;padding:6px 9px;background:var(--panel2,#17272b);border-radius:4px}
+.sniperCoverage b{color:var(--cyan,#27d6d7)}
+.sniperCoverage small{margin-left:auto;color:var(--muted,#a0acb0);font-size:11px}
+.sniperShowMore{display:block;margin:15px auto 20px;padding:12px 22px}
