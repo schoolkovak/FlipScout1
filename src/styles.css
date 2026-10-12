@@ -368,3 +368,7 @@ button.mcImage{border:0;width:100%;cursor:pointer;padding:0}
 .taxPick{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
 .taxPick select{padding:7px 8px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);font-size:12px}
 .autoNote{display:inline-flex;align-items:center;gap:6px;margin-left:auto;font-size:12px;color:var(--dim)}
+.stock.queued{background:#2a2614;color:#ffd166;box-shadow:0 0 0 1px rgba(255,209,102,.35)}
+.mcSearchNow{margin-top:10px;display:inline-flex;align-items:center;gap:6px;background:transparent;border:1px solid var(--line,#24323a);color:var(--green);border-radius:6px;padding:7px 12px;font-weight:600;cursor:pointer}
+.mcSearchNow:hover{border-color:var(--green)}
+.snapNote{font-size:12px;color:var(--muted,#8aa0ad);margin:6px 0 0}

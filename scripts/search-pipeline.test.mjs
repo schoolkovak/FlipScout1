@@ -281,28 +281,22 @@ test("unknown web shops, too-good-to-be-true prices and listings without a real 
   assert.ok(items.every(x => x.linkType === "listing" && !/google\.|\/sch\/|search/.test(x.url)));
 });
 
-test("item-page search covers eBay and AliExpress, keeps only item pages, hides Mercari", async () => {
+test("deep scan reads AliExpress item pages; no Google-indexed eBay or Mercari pages", async () => {
   const stub = stubFetch({
-    serper: ({ body, path }) => path === "/search" && / ebay$/.test(body.q) ? { organic: [
+    serper: ({ body, path }) => path === "/search" ? { organic: [
       { title: "Sapphire Pulse RX 7800 XT 16GB GDDR6 Used | eBay", link: "https://www.ebay.com/itm/334455667788", snippet: "Pre-Owned · $389.99 · Free shipping" },
       { title: "AMD Radeon RX 7800 XT 16GB Graphics Card - AliExpress", link: "https://www.aliexpress.us/item/3256807000000001.html", snippet: "US $402.15 · 4.6 stars" },
-      { title: "XFX RX 7800 XT 16GB - Mercari", link: "https://www.mercari.com/us/item/m12345678901/", snippet: "$360 · Good condition" },
-      { title: "rx 7800 xt for sale | eBay", link: "https://www.ebay.com/sch/i.html?_nkw=rx+7800+xt", snippet: "$400" }
-    ] } : path === "/search" ? { organic: [] } : { shopping: [] }
+      { title: "XFX RX 7800 XT 16GB - Mercari", link: "https://www.mercari.com/us/item/m12345678901/", snippet: "$360 · Good condition" }
+    ] } : { shopping: [] }
   });
   try {
     const result = await searchPartsSniper({ query: "RX 7800 XT", category: "GPU", condition: "any", marketplaces: ["ebay", "aliexpress", "mercari"], providerKeys: keys() });
     const organicCalls = stub.calls.filter(c => c.path === "/search");
     assert.ok(organicCalls.every(c => !/site:|\bOR\b/.test(c.body.q)), "no site:/OR operators (blocked on Serper's free plan)");
-    assert.ok(organicCalls.some(c => c.body.q === "RX 7800 XT ebay"));
-    assert.ok(organicCalls.some(c => c.body.q === "RX 7800 XT used ebay"), "deep scan adds a used-only item-page query");
-    assert.ok(organicCalls.some(c => c.body.q === "RX 7800 XT AliExpress"), "deep scan adds an AliExpress query");
-    const byStore = Object.fromEntries(result.ranked.map(x => [x.marketplace, x]));
-    assert.equal(byStore.ebay.totalPrice, 389.99);
-    assert.equal(byStore.ebay.condition, "used");
-    assert.equal(byStore.aliexpress.totalPrice, 402.15);
-    assert.ok(!byStore.mercari, "Mercari pages can't be checked live");
-    assert.equal(result.ranked.length, 2, "the eBay search-results page is not a listing");
+    assert.ok(organicCalls.some(c => c.body.q === "RX 7800 XT AliExpress"));
+    assert.ok(!organicCalls.some(c => /ebay/i.test(c.body.q)), "no eBay web search");
+    assert.deepEqual(result.ranked.map(x => x.marketplace), ["aliexpress"]);
+    assert.equal(result.ranked[0].totalPrice, 402.15);
   } finally { stub.restore(); }
 });
 
@@ -380,7 +374,9 @@ test("Google Shopping offers are shown only when resolved to the store's real it
   try {
     const result = await searchPartsSniper({ query: "RTX 5090", category: "GPU", condition: "any", marketplaces: ["ebay", "bestbuy", "newegg"], providerKeys: keys() });
     const urls = result.ranked.map(x => x.url).sort();
-    assert.deepEqual(urls, ["https://www.bestbuy.com/site/gigabyte-rtx-5090-gaming-oc/6615929.p?skuId=6615929", "https://www.ebay.com/itm/226611223344"]);
+    // eBay offers seen only through Google are not shown (can't be confirmed live).
+    assert.deepEqual(urls, ["https://www.bestbuy.com/site/gigabyte-rtx-5090-gaming-oc/6615929.p?skuId=6615929"]);
+    assert.ok(!stub.calls.some(c => /GameRock/.test(c.body?.q || "")), "no credit spent matching an eBay offer");
     assert.ok(result.ranked.every(x => x.linkType === "listing"));
     assert.ok(!result.ranked.some(x => /google\.|\/sch\/|\/pl\?/.test(x.url)), "no Google or search pages");
   } finally { stub.restore(); }
@@ -424,22 +420,35 @@ test("eBay live check: sold, removed, for-parts and auction-only pages are hidde
   assert.equal(parseEbayItemPage("<html>Pardon Our Interruption... captcha</html>").live, null);
 });
 
-test("eBay pages found through Google are opened: stale price replaced, sold listing dropped", async () => {
-  const stub = stubFetch({
-    serper: ({ body, path }) => path === "/search" && / ebay$/i.test(body.q) ? { organic: [
-      { title: "MSI GTX 1660 Super Ventus XS 6GB Used | eBay", link: "https://www.ebay.com/itm/111100002222?hash=abc", snippet: "Pre-Owned · $89.99" },
-      { title: "EVGA GTX 1660 Super SC Ultra 6GB Used | eBay", link: "https://www.ebay.com/itm/111100003333", snippet: "Pre-Owned · $95.00" }
-    ] } : path === "/search" ? { organic: [] } : { shopping: [] },
-    "ebay-page": ({ id, seen }) => id === "111100003333"
-      ? { html: `<div class="x-price-primary"><span class="ux-textspans">US $95.00</span></div><div>This listing sold on Fri, Oct 3.</div>` }
-      : { html: `<h1 class="x-item-title__mainTitle"><span class="ux-textspans">${seen.title}</span></h1><div class="x-price-primary"><span class="ux-textspans">US $124.50</span></div><a>Buy It Now</a>` }
-  });
+test("pages read saved snapshots: no paid search, pending models never trigger one", async () => {
+  const { default: overview } = await import("../api/parts/overview.js");
+  const { default: deals } = await import("../api/deals/search.js");
+  const original = globalThis.fetch;
+  const fetched = [];
+  const listing = (p, cond) => ({ id: "s|" + p, title: "MSI GeForce GTX 1660 Super 6GB", source: "Newegg", marketplace: "newegg", condition: cond, totalPrice: p, itemPrice: p, shipping: 0, shippingKnown: true, url: "https://www.newegg.com/p/N82E1" + p, linkType: "listing", provider: "Store price search", score: 50 });
+  globalThis.fetch = async url => {
+    fetched.push(String(url));
+    if (/models\/gtx-1660-super\.json$/.test(url)) return { ok: true, json: async () => ({ model: "GTX 1660 Super", searchedAt: new Date().toISOString(), market: { median: 150 }, results: [listing(140, "used"), listing(199, "new")], providers: [] }) };
+    if (/raw\.githubusercontent\.com/.test(url)) return { ok: false, status: 404, json: async () => ({}) };
+    throw new Error("paid search attempted: " + url);
+  };
+  const prev = process.env.SNAPSHOTS_OFF;
+  delete process.env.SNAPSHOTS_OFF;
   try {
-    const result = await searchPartsSniper({ query: "GTX 1660 Super", category: "GPU", condition: "any", marketplaces: ["ebay"], providerKeys: keys() });
-    assert.equal(result.ranked.length, 1);
-    assert.equal(result.ranked[0].url, "https://www.ebay.com/itm/111100002222");
-    assert.equal(result.ranked[0].itemPrice, 124.5, "price comes from the live page, not Google's snippet");
-    const items = result.providers.find(p => p.name === "Item pages (Serper web search)");
-    assert.ok(items.dropped["ebay-sold-or-ended"] >= 1);
-  } finally { stub.restore(); }
+    let body;
+    const res = { setHeader() {}, status() { return this; }, json(x) { body = x; return x; } };
+    await overview({ method: "GET", query: { group: "gpu", series: "gtx16" } }, res);
+    const card = body.items.find(x => x.id === "GTX 1660 Super");
+    assert.equal(card.available, true);
+    assert.equal(card.usedFrom, 140);
+    assert.equal(card.newFrom, 199);
+    assert.ok(body.items.find(x => x.id === "GTX 1630").pending, "unsaved model is pending, not searched");
+    await deals({ method: "GET", query: { q: "GTX 1660 Super", category: "GPU", condition: "new", model: "GTX 1660 Super" } }, res);
+    assert.equal(body.snapshot, true);
+    assert.deepEqual(body.results.map(x => x.totalPrice), [199]);
+    assert.ok(fetched.every(u => /raw\.githubusercontent\.com/.test(u)), "only saved files were read");
+  } finally {
+    globalThis.fetch = original;
+    if (prev !== undefined) process.env.SNAPSHOTS_OFF = prev;
+  }
 });

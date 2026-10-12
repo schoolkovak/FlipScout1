@@ -33,6 +33,10 @@ jobs:
           node --check api/flipper/index.js
           node --check api/_lib/flipper.js
           node --check api/_lib/verify.js
+          node --check api/_lib/meter.js
+          node --check api/_lib/snapshots.js
+          node --check api/_lib/summary.js
+          node --check scripts/build-snapshots.mjs
           node --check api/_lib/stores.js
           node --check shared/partCatalog.js
           node --check api/providers/test.js
