@@ -30,6 +30,9 @@ jobs:
           node --check api/parts/sniper.js
           node --check api/parts/overview.js
           node --check api/debug/providers.js
+          node --check api/flipper/index.js
+          node --check api/_lib/flipper.js
+          node --check api/_lib/verify.js
           node --check api/_lib/stores.js
           node --check shared/partCatalog.js
           node --check api/providers/test.js

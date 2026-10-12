@@ -1,7 +1,7 @@
 import React,{useEffect,useState} from "react";
 import {Search,Target,Bookmark,ExternalLink,Trash2,Radar,Eye} from "lucide-react";
 import {track} from "@vercel/analytics";
-import {PART_GROUPS} from "../shared/partCatalog.js";
+import {PART_GROUPS,findCatalogModel,normalizePartQuery} from "../shared/partCatalog.js";
 import {getWatchlist,toggleWatchItem,getSavedSearches,deleteSavedSearch} from "./storage";
 import {BrowsePage,ModelPage,CategoryPills} from "./Browse.jsx";
 import DealHunt from "./DealHunt.jsx";
@@ -37,7 +37,7 @@ function Logo(){
 
 function TopNav({route,go,watchCount,taxState,setTaxState}){
   const [q,setQ]=useState("");
-  function submit(e){e.preventDefault();const query=q.trim();if(!query)return;track("nav_search",{query});go({page:"model",query});}
+  function submit(e){e.preventDefault();const query=q.trim();if(!query)return;track("nav_search",{query});const hit=findCatalogModel(query);if(hit)go({page:"model",group:hit.group.id,series:hit.series.id,model:hit.item.name});else go({page:"model",query:normalizePartQuery(query)});}
   const links=[["browse","Browse Parts",Radar],["hunt","Deal Hunt",Target],["watch","Watchlist",Eye]];
   return <nav className="topNav">
     <button className="brand" onClick={()=>go({page:"browse",group:"gpu"})}><Logo/><span>FlipScout</span></button>
