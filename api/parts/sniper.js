@@ -44,10 +44,7 @@ export default async function handler(req,res){
   }
 
   const deepScan=Boolean(req.body?.deepScan);
-  // Limit bursts: five model searches at once can trip provider rate limits.
-  const results=[];
-  for(let i=0;i<targets.length;i+=2){
-    const completed=await Promise.all(targets.slice(i,i+2).map(async target=>{
+  const results=await Promise.all(targets.map(async target=>{
     const searchInput={
       query:target.query,
       category:target.category,
@@ -58,9 +55,7 @@ export default async function handler(req,res){
       sortBy:"best",
       deepScan,
       marketplaces,
-      distanceRadius:marketplaces.slice().sort().join(','),
-      providerKeys,
-      skipSearchApi:Boolean(req.body?.skipSearchApi)
+      providerKeys
     };
     try{
       const data=await searchPartsSniper(searchInput);
@@ -69,7 +64,7 @@ export default async function handler(req,res){
       return {
         id:target.id,
         target,
-        available:data.ranked.length>0,
+        available:data.market.sampleSize>0,
         searchedAt:data.observedAt,
         cached:data.cached,
         market:{
@@ -84,14 +79,7 @@ export default async function handler(req,res){
           confidence:data.market.confidence
         },
         bestDeal:best,
-        // Include both top-ranked and cheapest candidates for local sorting.
-        results:[...new Map([
-          ...data.ranked.slice(0,85),
-          ...data.ranked.slice().sort((a,b)=>a.totalPrice-b.totalPrice).slice(0,65)
-        ].map(x=>[x.url||x.id,x])).values()],
-        providerReports:data.providerReports||[],
-        funnel:data.funnel||null,
-        sourceCoverage:data.sourceCoverage||[],
+        results:data.ranked.slice(0,40),
         errors:data.errors
       };
     }catch(error){
@@ -101,13 +89,10 @@ export default async function handler(req,res){
         available:false,
         market:{sampleSize:0},
         results:[],
-        errors:[{provider:"Deal Hunt",message:String(error?.message||error).slice(0,180)}],
-        providerReports:[],funnel:null
+        errors:[{provider:"Deal Hunt",message:String(error?.message||error).slice(0,180)}]
       };
     }
-    }));
-    results.push(...completed);
-  }
+  }));
 
   const successful=results.filter(x=>x.available).length;
   res.status(200).json({
