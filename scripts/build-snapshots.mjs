@@ -12,7 +12,7 @@
 //   favorites first, never more than --budget credits per UTC day.
 // - Store-page matches are saved in links.json and reused for free.
 // Output: <data>/models/<slug>.json, <data>/links.json, <data>/state.json
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { PART_GROUPS } from "../shared/partCatalog.js";
 import { modelSlug } from "../api/_lib/snapshots.js";
@@ -69,10 +69,17 @@ function rerank(items, item) {
   return { market, ranked };
 }
 
+// Each save adds a point to the model's price history (lowest new / used /
+// overall price), so the model page can chart prices without new searches.
 function saveModel(item, payload) {
   const file = join(DATA, "models", modelSlug(item.name) + ".json");
   const { credits, resolved, sources, ...rest } = payload;
-  writeFileSync(file, JSON.stringify({ model: item.name, query: item.query, category: item.category, msrp: item.msrp || 0, ...rest }));
+  const prev = readJson(file, null);
+  const low = list => list.length ? Math.min(...list.map(x => x.totalPrice)) : null;
+  const res = rest.results || [];
+  const point = { at: rest.searchedAt || now(), low: low(res), newLow: low(res.filter(x => x.condition === "new")), usedLow: low(res.filter(x => x.condition !== "new")) };
+  const history = [...(prev?.history || []), point].filter(p => p.low != null).slice(-90);
+  writeFileSync(file, JSON.stringify({ model: item.name, query: item.query, category: item.category, msrp: item.msrp || 0, ...rest, history }));
 }
 
 async function pool(list, size, fn) {
@@ -155,6 +162,9 @@ async function main() {
     }
   }
 
+  const changed = log.free > 0 || log.paid > 0;
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, "changed=" + changed + "\n");
+  if (!changed) { console.log("nothing to refresh this run", JSON.stringify(log)); return; }
   state.runs = [log, ...(state.runs || [])].slice(0, 30);
   state.updatedAt = now();
   writeFileSync(join(DATA, "state.json"), JSON.stringify(state, null, 1));

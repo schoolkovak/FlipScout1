@@ -3,7 +3,9 @@ name: Refresh listings
 # page on the site loads saved data instead of spending API credits.
 on:
   schedule:
-    - cron: "23 */3 * * *"
+    # GitHub may delay or skip scheduled runs; running often is safe because
+    # the builder only spends credits on stale models within the daily budget.
+    - cron: "23 * * * *"
   workflow_dispatch:
     inputs:
       budget:
@@ -35,15 +37,19 @@ jobs:
             mkdir -p snapdata
           fi
       - name: Refresh
+        id: refresh
         env:
           SITE: ${{ vars.SNAPSHOT_SITE || 'https://flip-scout-ebon.vercel.app' }}
           BUDGET: ${{ github.event.inputs.budget || vars.SNAPSHOT_DAILY_CREDITS || '60' }}
           MAX_PAID: ${{ vars.SNAPSHOT_MAX_PAID_PER_RUN || '6' }}
         run: node scripts/build-snapshots.mjs --site="$SITE" --data=snapdata --budget="$BUDGET" --max-paid="$MAX_PAID"
       - name: Publish saved listings
+        if: steps.refresh.outputs.changed == 'true'
         run: |
           rm -rf publish && mkdir publish
           cp -r snapdata/models snapdata/links.json snapdata/state.json publish/ 2>/dev/null || true
+          # The data branch is not a site: keep Vercel from trying to deploy it.
+          echo '{"git":{"deploymentEnabled":false}}' > publish/vercel.json
           cd publish
           git init -q -b data
           git config user.name "flipscout-snapshots"
