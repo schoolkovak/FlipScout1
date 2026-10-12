@@ -21,10 +21,10 @@ function stubFetch(routes) {
     const engine = u.searchParams.get("engine");
     const body = options?.body ? JSON.parse(options.body) : null;
     const id = u.hostname === "google.serper.dev" ? "serper" : engine;
-    calls.push({ id, q: body?.q || u.searchParams.get("q"), params: Object.fromEntries(u.searchParams), body });
+    calls.push({ id, path: u.pathname, q: body?.q || u.searchParams.get("q"), params: Object.fromEntries(u.searchParams), body });
     const route = routes[id];
     if (!route) throw new Error("unexpected provider " + id);
-    const out = await route({ q: body?.q || u.searchParams.get("q"), params: u.searchParams, body });
+    const out = await route({ q: body?.q || u.searchParams.get("q"), params: u.searchParams, body, path: u.pathname });
     if (out && out.status) return { ok: false, status: out.status, text: async () => JSON.stringify(out.body || {}) };
     return { ok: true, status: 200, json: async () => out };
   };
@@ -262,19 +262,20 @@ test("unknown web shops, too-good-to-be-true prices and listings without a real 
 
 test("item-page search covers eBay, AliExpress and Mercari in one query and keeps only item pages", async () => {
   const stub = stubFetch({
-    serper: ({ q, body }) => body.q.startsWith("(site:ebay") ? { organic: [
+    serper: ({ body, path }) => path === "/search" && / ebay$/.test(body.q) ? { organic: [
       { title: "Sapphire Pulse RX 7800 XT 16GB GDDR6 Used | eBay", link: "https://www.ebay.com/itm/334455667788", snippet: "Pre-Owned · $389.99 · Free shipping" },
       { title: "AMD Radeon RX 7800 XT 16GB Graphics Card - AliExpress", link: "https://www.aliexpress.us/item/3256807000000001.html", snippet: "US $402.15 · 4.6 stars" },
       { title: "XFX RX 7800 XT 16GB - Mercari", link: "https://www.mercari.com/us/item/m12345678901/", snippet: "$360 · Good condition" },
       { title: "rx 7800 xt for sale | eBay", link: "https://www.ebay.com/sch/i.html?_nkw=rx+7800+xt", snippet: "$400" }
-    ] } : { shopping: [] }
+    ] } : path === "/search" ? { organic: [] } : { shopping: [] }
   });
   try {
     const result = await searchPartsSniper({ query: "RX 7800 XT", category: "GPU", condition: "any", marketplaces: ["ebay", "aliexpress", "mercari"], providerKeys: keys() });
-    const organicCalls = stub.calls.filter(c => c.id === "serper" && c.body.q.startsWith("(site:ebay"));
-    assert.equal(organicCalls.length, 2, "one neutral + one used-only item-page query on a deep scan");
-    assert.ok(organicCalls.some(c => / used$/.test(c.body.q)));
-    assert.match(organicCalls[0].body.q, /site:ebay\.com\/itm OR site:aliexpress\.us\/item OR site:aliexpress\.com\/item OR site:mercari\.com\/us\/item/);
+    const organicCalls = stub.calls.filter(c => c.path === "/search");
+    assert.ok(organicCalls.every(c => !/site:|\bOR\b/.test(c.body.q)), "no site:/OR operators (blocked on Serper's free plan)");
+    assert.ok(organicCalls.some(c => c.body.q === "RX 7800 XT ebay"));
+    assert.ok(organicCalls.some(c => c.body.q === "RX 7800 XT used ebay"), "deep scan adds a used-only item-page query");
+    assert.ok(organicCalls.some(c => c.body.q === "RX 7800 XT AliExpress"), "deep scan adds an AliExpress query");
     const byStore = Object.fromEntries(result.ranked.map(x => [x.marketplace, x]));
     assert.equal(byStore.ebay.totalPrice, 389.99);
     assert.equal(byStore.ebay.condition, "used");
@@ -286,7 +287,7 @@ test("item-page search covers eBay, AliExpress and Mercari in one query and keep
 
 test("PSUs, cooling and monitors are new-only: no used queries, no used listings", async () => {
   const stub = stubFetch({
-    serper: ({ body }) => body.q.startsWith("(site:") ? { organic: [
+    serper: ({ body, path }) => path === "/search" ? { organic: [
       { title: "Corsair RM850x 850W 80+ Gold PSU | eBay", link: "https://www.ebay.com/itm/998877665544", snippet: "Pre-Owned · $70.00" }
     ] } : { shopping: [
       { title: "Corsair RM850x 850W 80 PLUS Gold Fully Modular Power Supply", source: "Newegg.com", price: "$129.99", link: "https://www.newegg.com/p/N82E16817139326" },
@@ -303,12 +304,12 @@ test("PSUs, cooling and monitors are new-only: no used queries, no used listings
 
 test("retailer product pages (Amazon, Newegg, Best Buy...) come from one web search with real links", async () => {
   const stub = stubFetch({
-    serper: ({ body }) => body.q.startsWith("(site:amazon") ? { organic: [
+    serper: ({ body, path }) => path === "/search" && / price$/.test(body.q) ? { organic: [
       { title: "Amazon.com: EVGA 650 GQ, 80+ Gold 650W, Semi Modular Power Supply", link: "https://www.amazon.com/EVGA-Supernova-Modular/dp/B07Q24YHJ5", snippet: "$69.99 · In stock" },
       { title: "Thermaltake Toughpower GF A3 650W Gold - Newegg.com", link: "https://www.newegg.com/thermaltake-650w/p/N82E16817153340", price: 74.99, snippet: "ATX 3.0" },
       { title: "Corsair RM650e 650W 80 PLUS Gold - Best Buy", link: "https://www.bestbuy.com/site/corsair-rm650e/6560512.p", snippet: "Price $89.99" },
       { title: "650W Power Supplies - Best Buy", link: "https://www.bestbuy.com/site/searchpage.jsp?st=650w", snippet: "$59.99" }
-    ] } : body.q.startsWith("(site:") ? { organic: [] } : { shopping: [] }
+    ] } : path === "/search" ? { organic: [] } : { shopping: [] }
   });
   try {
     const result = await searchPartsSniper({ query: "650W PSU", category: "Power Supply / PSU", condition: "any", marketplaces: ["amazon", "newegg", "bestbuy"], providerKeys: keys() });
@@ -317,4 +318,21 @@ test("retailer product pages (Amazon, Newegg, Best Buy...) come from one web sea
     assert.ok(result.ranked.every(x => x.condition === "new" && x.linkType === "listing"));
     assert.ok(!result.ranked.some(x => /searchpage/.test(x.url)));
   } finally { stub.restore(); }
+});
+
+test("Best value blends market value with launch MSRP; Google Shopping offer pages are kept and labeled", () => {
+  const rows = [
+    { id: "a", title: "RTX 5070", totalPrice: 560, itemPrice: 560, shippingKnown: true, condition: "new", relevance: 1, url: "https://www.amazon.com/dp/B0A" },
+    { id: "b", title: "RTX 5070", totalPrice: 600, itemPrice: 600, shippingKnown: true, condition: "new", relevance: 1, url: "https://www.newegg.com/p/N1" },
+    { id: "c", title: "RTX 5070", totalPrice: 640, itemPrice: 640, shippingKnown: true, condition: "new", relevance: 1, url: "https://www.walmart.com/ip/1" },
+    { id: "d", title: "RTX 5070", totalPrice: 680, itemPrice: 680, shippingKnown: true, condition: "new", relevance: 1, url: "https://www.bestbuy.com/site/x/1.p" }
+  ];
+  const market = buildMarket(rows);
+  const plain = rankDeals(rows, market, { query: "RTX 5070" });
+  const withMsrp = rankDeals(rows, market, { query: "RTX 5070", msrp: 549 });
+  const score = (list, id) => list.find(x => x.id === id).score;
+  assert.ok(score(withMsrp, "d") <= score(plain, "d"), "listings far over MSRP lose value");
+  const { items } = qualifyOffers([{ provider: "Google Shopping (Serper)", marketplace: "bestbuy", seller: "Best Buy", title: "NVIDIA GeForce RTX 5070 12GB", itemPrice: 549, totalPrice: 549, shipping: 0, shippingKnown: false, defaultCondition: "new", url: "https://www.google.com/shopping/product/123456789?prds=oid:1" }], { query: "RTX 5070", category: "GPU", condition: "any" });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].linkType, "google");
 });

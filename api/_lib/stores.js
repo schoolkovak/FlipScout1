@@ -41,15 +41,21 @@ function unwrapGoogle(u) {
   try { return target ? new URL(target) : u; } catch { return u; }
 }
 
-// Only real listings: returns the direct item/product page on the store, or
-// null. Search-result pages and Google Shopping pages are not listings.
+// Returns the direct item/product page on the store ("listing"), a Google
+// Shopping offer page for one product ("google"), or null for search pages.
 export function listingLink(url) {
   let parsed = null;
   try { parsed = unwrapGoogle(new URL(url)); } catch {}
   if (!parsed || !["http:", "https:"].includes(parsed.protocol)) return { url: null, linkType: "none" };
   const host = parsed.hostname.toLowerCase();
   const path = parsed.pathname.toLowerCase();
-  if (/(^|\.)google\./.test(host)) return { url: null, linkType: "none" };
+  // Google Shopping product/offer pages are kept (they show this store's
+  // offer for this exact product) but labeled so the UI says so. Google web
+  // search result pages are not listings.
+  if (/(^|\.)google\./.test(host)) {
+    const isSearchPage = path === "/search" && !/[?&](prds|ibp)=/.test(parsed.search);
+    return isSearchPage ? { url: null, linkType: "none" } : { url: parsed.href, linkType: "google" };
+  }
   const isSearch = /\/(sch|search|s|w)(\/|$)|searchpage|search_results|\/pl$|\/l\/?$/.test(path) || /[?&](k|_nkw|st|keyword|ntt|searchinfo|d)=/.test(parsed.search) && !/\/(dp|itm|ip|p|item|site|product)\//.test(path);
   if (isSearch) return { url: null, linkType: "none" };
   return { url: parsed.href, linkType: "listing" };

@@ -350,3 +350,13 @@ input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible{ou
 .mcWhy summary{cursor:pointer;font-size:11px;color:var(--green)}
 .mcWhy p{font-size:11px;color:var(--muted);margin:5px 0;line-height:1.4}
 .mcWhy b{color:var(--text)}
+.sideHead.static{cursor:default}
+.sideHead .tip{margin-left:auto;color:var(--dim)}
+.modeRow.three{grid-template-columns:repeat(3,1fr)}
+.modelList{display:grid;gap:5px;margin-top:4px}
+.modelBtn{display:flex;justify-content:space-between;gap:8px;padding:8px 10px;border-radius:7px;border:1px solid var(--line2);background:var(--bg2);font-size:13px;font-weight:600;text-align:left}
+.modelBtn:hover{border-color:var(--green)}
+.modelBtn b{font-family:var(--display);color:var(--green)}
+button.mcHead{background:none;border:0;padding:0;text-align:left;width:100%;color:inherit}
+button.mcImage{border:0;width:100%;cursor:pointer;padding:0}
+.modelSwitch{margin-left:auto;padding:9px 10px;border-radius:9px;border:1px solid var(--green);background:var(--card);font-weight:700}

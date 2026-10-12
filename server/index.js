@@ -7,6 +7,7 @@ import providerTestHandler from "../api/providers/test.js";
 import pcHandler from "../api/market/pc.js";
 import sniperHandler from "../api/parts/sniper.js";
 import overviewHandler from "../api/parts/overview.js";
+import debugProvidersHandler from "../api/debug/providers.js";
 
 const app=express();
 app.use(cors());
@@ -19,6 +20,7 @@ app.post("/api/market/pc",pcHandler);
 app.post("/api/providers/test",providerTestHandler);
 app.post("/api/parts/sniper",sniperHandler);
 app.post("/api/parts/overview",overviewHandler);
+app.get("/api/debug/providers",debugProvidersHandler);
 app.use((error,req,res,next)=>{console.error("API request failed",error.name);res.status(500).json({available:false,message:"Market service unavailable. Please try again."});});
 
 const port=process.env.PORT||8787;

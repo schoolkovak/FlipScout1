@@ -8,6 +8,7 @@ export default async function handler(req,res) {
     category:req.body?.category||"GPU",
     query:String(req.body?.query||"").trim().slice(0,160),
     condition:req.body?.condition||"any",
+    msrp:Math.max(0,Number(req.body?.msrp)||0),
     partBudget:Number(req.body?.partBudget||0),
     buildBudget:Number(req.body?.buildBudget||0),
     committed:Number(req.body?.committed||0),
