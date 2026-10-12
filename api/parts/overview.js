@@ -1,6 +1,7 @@
 import { searchMarketplaces, providerStatus } from "../_lib/market.js";
 
-// Browse grid: one cheap Google Shopping query per model, returning the few
+// Browse grid: new + used Google Shopping queries and one eBay/AliExpress/
+// Mercari item-page search per model, returning the
 // cheapest qualified listings so the browser can pick by pricing mode
 // (cheapest / best deal / only new) without another request.
 const MAX_ITEMS = 12;
@@ -31,13 +32,20 @@ export default async function handler(req, res) {
     try {
       const data = await searchMarketplaces({ query: item.query, category: item.category, condition: "any", sortBy: "lowest", providerKeys }, { includeOtherMerchants: true, lite: true });
       const listings = data.ranked.slice().sort((a, b) => a.totalPrice - b.totalPrice);
+      const isUsed = x => ["used", "refurbished", "renewed", "open-box"].includes(x.condition);
       const newOnes = listings.filter(x => x.condition === "new");
+      const usedOnes = listings.filter(isUsed);
       const best = data.ranked.slice().sort((a, b) => b.score - a.score);
-      const pick = [...new Map([...listings.slice(0, 6), ...newOnes.slice(0, 3), ...best.slice(0, 3)].map(x => [x.id, x])).values()];
+      const pick = [...new Map([...listings.slice(0, 12), ...newOnes.slice(0, 5), ...usedOnes.slice(0, 5), ...best.slice(0, 3)].map(x => [x.id, x])).values()];
       return {
         id: item.id,
         available: listings.length > 0,
         count: listings.length,
+        stores: new Set(listings.map(x => x.marketplace === "other" ? x.source : x.marketplace)).size,
+        newCount: newOnes.length,
+        usedCount: usedOnes.length,
+        newFrom: newOnes[0]?.totalPrice ?? null,
+        usedFrom: usedOnes[0]?.totalPrice ?? null,
         median: data.market.median,
         image: listings.find(x => x.image)?.image || null,
         listings: pick.map(slim),

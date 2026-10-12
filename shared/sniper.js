@@ -70,3 +70,12 @@ export function groupedSniperCategories(){
   for(const item of SNIPER_CATEGORIES)(groups[item.group]||(groups[item.group]=[])).push(item);
   return groups;
 }
+
+// Used / open-box / refurbished listings are only shown for these part types.
+// Everything else (PSUs, cooling, monitors, hard drives, fans, accessories)
+// is new-only.
+export function allowsUsed(category){
+  const c=String(category||"").toLowerCase();
+  if(/hdd|hard drive/.test(c))return false;
+  return /^(gpu|cpu)$|graphics|processor|^ram|memory|ssd|nvme|motherboard/.test(c);
+}
