@@ -355,3 +355,39 @@ test('SearchAPI 429 breaker stops subsequent paid requests while Serper still re
     assert.ok(second.ranked.some(x=>x.marketplace==='walmart'));
   }finally{globalThis.fetch=before;}
 });
+
+
+test('both visible scanners use fixed one-hour refresh with no interval picker',async()=>{
+  const {readFile}=await import('node:fs/promises');
+  const discovery=await readFile(new URL('../src/AutomaticDiscovery.jsx',import.meta.url),'utf8');
+  const app=await readFile(new URL('../src/App.jsx',import.meta.url),'utf8');
+  const partScanner=app.slice(app.indexOf('function DealScanner('),app.indexOf('\nfunction Pagination('));
+  assert.ok(discovery.includes('60*60*1000'));
+  assert.ok(discovery.includes('partRef.current==="All"?null:partRef.current'));
+  assert.ok(!discovery.includes('Auto: 5 min'));
+  assert.ok(!discovery.includes('Automatic refresh interval'));
+  assert.ok(partScanner.includes('60*60*1000'));
+  assert.ok(partScanner.includes('Automatic hourly refresh while this tab is open'));
+  assert.ok(!partScanner.includes('Every 5 minutes'));
+  assert.ok(!partScanner.includes('Auto-refresh interval'));
+});
+
+test('partial Serper results remain usable if the secondary provider is rate-limited',async()=>{
+  const {searchPartsSniper}=await import('../api/_lib/market.js');
+  const previous=globalThis.fetch;
+  globalThis.fetch=async(url)=>{
+    const u=new URL(url);
+    if(u.hostname==='www.searchapi.io')return {status:429,ok:false,headers:{get:()=>null},json:async()=>({})};
+    if(u.hostname==='google.serper.dev')return {status:200,ok:true,json:async()=>({shopping:[
+      {title:'AMD Ryzen 5 5600 6-Core Desktop Processor',source:'Newegg',price:'$105.99',
+        link:'https://www.newegg.com/p/N82E16819113736'}
+    ]})};
+    throw Error('Unexpected provider');
+  };
+  try{
+    const result=await searchPartsSniper({query:'Ryzen 5 5600',category:'CPU',condition:'any',
+      marketplaces:['newegg'],providerKeys:{SERPER_API_KEY:'fallback-hourly',SEARCHAPI_API_KEY:'broken-secondary-hourly'}});
+    assert.ok(result.ranked.some(item=>item.marketplace==='newegg'));
+    assert.ok(result.errors.some(x=>/429/.test(x.message)));
+  }finally{globalThis.fetch=previous;}
+});
