@@ -15,15 +15,12 @@ export function GpuIcon({size=16}){
 const GROUP_ICONS={gpu:GpuIcon,cpu:Cpu,ram:MemoryStick,ssd:HardDrive,board:CircuitBoard,psu:Plug,fan:Fan,monitor:Monitor};
 export function GroupIcon({icon,size=16}){const I=GROUP_ICONS[icon]||Layers;return <I size={size}/>;}
 
-const PRICING_MODES=[
-  {value:"cheapest",label:"Cheapest Available"},
-  {value:"best",label:"Best Deal"},
-  {value:"new",label:"Only New"},
-  {value:"used",label:"Only Used"}
-];
+// Two independent choices: which listing to feature, and which condition.
+const RANK_MODES=[{value:"cheapest",label:"Cheapest Available"},{value:"best",label:"Best Deal"}];
+const COND_MODES=[{value:"any",label:"Any"},{value:"new",label:"Only New"},{value:"used",label:"Only Used"}];
 const USED=new Set(["used","refurbished","renewed","open-box"]);
 const CACHE_MS=15*60*1000;
-const CACHE_VERSION="fs-overview-v2";
+const CACHE_VERSION="fs-overview-v3";
 
 function ago(iso,now){
   if(!iso)return "";
@@ -33,16 +30,16 @@ function ago(iso,now){
   return m<60?m+"m "+String(s%60).padStart(2,"0")+"s ago":Math.floor(m/60)+"h ago";
 }
 function storeName(x){return x?.source||"store";}
-function pickListing(row,mode){
-  const list=row?.listings||[];
+function pickListing(row,mode={rank:"cheapest",cond:"any"}){
+  let list=row?.listings||[];
+  if(mode.cond==="new")list=list.filter(x=>x.condition==="new");
+  if(mode.cond==="used")list=list.filter(x=>USED.has(x.condition));
   if(!list.length)return null;
-  if(mode==="new")return list.filter(x=>x.condition==="new").sort((a,b)=>a.totalPrice-b.totalPrice)[0]||null;
-  if(mode==="used")return list.filter(x=>USED.has(x.condition)).sort((a,b)=>a.totalPrice-b.totalPrice)[0]||null;
-  if(mode==="best")return list.slice().sort((a,b)=>(b.score||0)-(a.score||0)||a.totalPrice-b.totalPrice)[0];
+  if(mode.rank==="best")return list.slice().sort((a,b)=>(b.score||0)-(a.score||0)||a.totalPrice-b.totalPrice)[0];
   return list.slice().sort((a,b)=>a.totalPrice-b.totalPrice)[0];
 }
 function vsMsrp(price,msrp){return msrp&&price?Math.round((price-msrp)/msrp*1000)/10:null;}
-function linkLabel(item,name){return "View "+name+" on "+storeName(item);}
+function linkLabel(item,name){return item?.linkType==="google"?"View "+storeName(item)+" offer on Google":"View "+name+" on "+storeName(item);}
 
 function readCache(key){try{const v=JSON.parse(localStorage.getItem(key)||"null");return v&&Date.now()-v.at<CACHE_MS?v:null;}catch{return null;}}
 function writeCache(key,data){try{localStorage.setItem(key,JSON.stringify({at:Date.now(),data}));}catch{}}
@@ -55,7 +52,12 @@ function Spark({series}){
   return <svg className={"spark "+(down?"down":"up")} width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-label="Your price history"><polyline points={pts.map(p=>p.join(",")).join(" ")} fill="none" strokeWidth="1.6"/></svg>;
 }
 
-function ModelCard({item,row,mode,now,loading,onSeeAll,onMode,trend}){
+function SourcesWhy({row,open=false}){
+  if(!row?.sources?.length)return null;
+  return <details className="mcWhy" open={open}><summary>What was searched</summary>{row.sources.map(src=><p key={src.name}><b>{src.name}</b> {src.status==="ok"?src.raw+" found → "+src.kept+" kept"+(Object.keys(src.dropped||{}).length?" · "+Object.entries(src.dropped).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([r,n])=>n+" "+r.replace(/-/g," ")).join(", "):""):src.message}</p>)}</details>;
+}
+
+function ModelCard({item,row,mode,now,loading,onSeeAll,onCond,trend}){
   const usedOk=allowsUsed(item.category);
   const [more,setMore]=useState(false);
   const pick=pickListing(row,mode);
@@ -63,8 +65,8 @@ function ModelCard({item,row,mode,now,loading,onSeeAll,onMode,trend}){
   const image=pick?.image||row?.image;
   if(loading&&!row)return <article className="modelCard loading"><div className="mcHead"><h3>{item.name}</h3></div><div className="mcImage shimmer"></div><i className="sk"></i><i className="sk short"></i><i className="sk"></i></article>;
   return <article className={"modelCard"+(delta!=null&&delta<0?" belowMsrp":"")}>
-    <div className="mcHead"><h3>{item.name}</h3><span className={"stock "+(pick?"in":"out")}>{pick?"IN STOCK":"NO MATCH"}</span></div>
-    <div className="mcImage">{image?<img src={image} alt="" loading="lazy" referrerPolicy="no-referrer"/>:<GroupIcon icon="gpu" size={56}/>}</div>
+    <button className="mcHead" onClick={onSeeAll} title={"See every "+item.name+" listing"}><h3>{item.name}</h3><span className={"stock "+(pick?"in":"out")}>{pick?"IN STOCK":"NO MATCH"}</span></button>
+    <button className="mcImage" onClick={onSeeAll} aria-label={"See every "+item.name+" listing"}>{image?<img src={image} alt="" loading="lazy" referrerPolicy="no-referrer"/>:<GroupIcon icon="gpu" size={56}/>}</button>
     {pick?<>
       <a className="mcTitle" href={pick.url||undefined} target="_blank" rel="noreferrer" title={pick.title}>{pick.title}</a>
       <div className="mcSpecs">{item.specs.map(([k,v])=><div key={k}><span>{k}</span><b>{v}</b></div>)}</div>
@@ -74,8 +76,8 @@ function ModelCard({item,row,mode,now,loading,onSeeAll,onMode,trend}){
         {delta!=null&&<em className={delta<0?"under":"over"}>{delta>0?"+":""}{delta}% MSRP</em>}
       </div>
       {usedOk&&<div className="mcSplit">
-        <button className={mode==="new"?"on":""} disabled={!row.newFrom} onClick={()=>onMode("new")}><span>New from</span><b>{money(row.newFrom,0)}</b></button>
-        <button className={mode==="used"?"on":""} disabled={!row.usedFrom} onClick={()=>onMode("used")}><span>Used from</span><b className="usedText">{money(row.usedFrom,0)}</b></button>
+        <button className={mode.cond==="new"?"on":""} disabled={!row.newFrom} onClick={()=>onCond("new")}><span>New from</span><b>{money(row.newFrom,0)}</b></button>
+        <button className={mode.cond==="used"?"on":""} disabled={!row.usedFrom} onClick={()=>onCond("used")}><span>Used from</span><b className="usedText">{money(row.usedFrom,0)}</b></button>
       </div>}
       <div className="mcMeta"><span>Updated {ago(row?.searchedAt,now)}</span>{item.msrp?<span>(MSRP: {money(item.msrp,2)})</span>:null}<Spark series={trend}/></div>
       <div className="mcCoverage">Lowest of {row.count} listing{row.count===1?"":"s"} · {row.stores} store{row.stores===1?"":"s"}{usedOk?" · "+row.usedCount+" used":" · new only"}</div>
@@ -86,9 +88,11 @@ function ModelCard({item,row,mode,now,loading,onSeeAll,onMode,trend}){
       {more&&<div className="mcMore">
         {(row.listings||[]).slice().sort((a,b)=>a.totalPrice-b.totalPrice).slice(0,10).map(x=><a key={x.id} href={x.url} target="_blank" rel="noreferrer"><span>{x.source}</span><em className={"c-"+x.condition}>{x.condition==="open-box"?"open box":x.condition}</em><b>{money(x.totalPrice,2)}</b></a>)}
         <small>{row.count} valid listings · market median {money(row.median)}</small>
+        {row.byStore?.length>0&&<div className="mcStores">{row.byStore.map(([n,c])=><span key={n}>{n} <b>{c}</b></span>)}</div>}
+        <SourcesWhy row={row}/>
       </div>}
       <a className="mcGo" href={pick.url||undefined} target="_blank" rel="noreferrer"><ExternalLink size={15}/>{linkLabel(pick,item.name)}</a>
-    </>:<div className="mcEmpty"><p>{mode==="new"?"No new listing found in this scan.":mode==="used"?"No used listing found in this scan.":"No trusted listing with a real item link in this scan."}</p><button onClick={onSeeAll}><Search size={14}/>Run full scan</button></div>}
+    </>:<div className="mcEmpty"><p>{mode.cond==="new"?"No new listing found in this scan.":mode.cond==="used"?"No used listing found in this scan.":"No trusted listing found in this scan."}</p><SourcesWhy row={row} open/><button onClick={onSeeAll}><Search size={14}/>Run full scan</button></div>}
   </article>;
 }
 
@@ -106,7 +110,9 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
   const [rows,setRows]=useState({});
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
-  const [mode,setMode]=useState("cheapest");
+  const [rank,setRank]=useState("cheapest");
+  const [cond,setCond]=useState("any");
+  const mode=useMemo(()=>({rank,cond}),[rank,cond]);
   const [minPrice,setMinPrice]=useState("");
   const [maxPrice,setMaxPrice]=useState("");
   const [minVram,setMinVram]=useState("");
@@ -125,7 +131,7 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
     setLoading(true);setError("");setRows({});
     track("browse_series",{group:group.id,series:series.id});
     try{
-      const r=await fetch("/api/parts/overview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:series.items.map(x=>({id:x.name,query:x.query,category:x.category})),providerKeys}),signal:AbortSignal.timeout(58000)});
+      const r=await fetch("/api/parts/overview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:series.items.map(x=>({id:x.name,query:x.query,category:x.category,msrp:x.msrp||0})),providerKeys}),signal:AbortSignal.timeout(58000)});
       const d=await r.json();
       if(id!==reqId.current)return;
       if(!d.available&&d.message)setError(d.message);
@@ -133,7 +139,7 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
       setRows(next);
       writeCache(key,next);
       for(const item of series.items){
-        const p=pickListing(next[item.name],"cheapest");
+        const p=pickListing(next[item.name]);
         if(p)saveMarketSnapshot({category:"browse",query:item.query,condition:"cheapest"},{median:p.totalPrice,low:p.totalPrice,high:p.totalPrice,sampleSize:next[item.name].count});
       }
     }catch{if(id===reqId.current)setError("Could not reach the live price service. Try again.");}
@@ -155,7 +161,7 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
   const loadedAt=Object.values(rows).map(x=>x.searchedAt).filter(Boolean).sort().at(-1);
   const toggle=k=>setOpen(o=>({...o,[k]:!o[k]}));
   const usedGroup=allowsUsed(series.items[0]?.category);
-  useEffect(()=>{if(!usedGroup&&(mode==="used"||mode==="new"))setMode("cheapest");},[usedGroup]);
+  useEffect(()=>{if(!usedGroup)setCond("any");},[usedGroup]);
 
   return <div className="browse">
     <aside className="sidebar">
@@ -166,11 +172,25 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
         </div>}
       </section>
       <section className="sideBox">
+        <button className="sideHead" onClick={()=>toggle("models")}><List size={15}/>Models<ChevronDown size={15} className={open.models!==false?"flip":""}/></button>
+        {open.models!==false&&<div className="modelList">
+          {series.items.map(it=>{const p=pickListing(rows[it.name],mode);return <button key={it.name} className="modelBtn" onClick={()=>setRoute({page:"model",group:group.id,series:series.id,model:it.name})}><span>{it.name}</span><b>{p?money(p.totalPrice):"—"}</b></button>;})}
+          <small className="sideLabel">Pick a model to see every listing, ranked by price or value.</small>
+        </div>}
+      </section>
+      <section className="sideBox">
         <button className="sideHead" onClick={()=>toggle("price")}><DollarSign size={15}/>Price<ChevronDown size={15} className={open.price?"flip":""}/></button>
         {open.price&&<><small className="sideLabel">Price Range</small><div className="rangeRow"><input inputMode="numeric" placeholder="Min" value={minPrice} onChange={e=>setMinPrice(e.target.value.replace(/[^\d.]/g,""))}/><input inputMode="numeric" placeholder="Max" value={maxPrice} onChange={e=>setMaxPrice(e.target.value.replace(/[^\d.]/g,""))}/></div>
-        <small className="sideLabel">Pricing Modes <span title="Which listing each card shows. Switching never re-searches."><Info size={12}/></span></small>
-        <div className="modeRow">{PRICING_MODES.filter(m=>usedGroup||(m.value!=="used"&&m.value!=="new")).map(m=><button key={m.value} className={mode===m.value?"on":""} onClick={()=>setMode(m.value)}>{m.label}</button>)}</div></>}
+</>}
       </section>
+      <section className="sideBox">
+        <div className="sideHead static"><Zap size={15}/>Show <span className="tip" title="Which listing each card features. Switching never re-searches."><Info size={12}/></span></div>
+        <div className="modeRow">{RANK_MODES.map(m=><button key={m.value} className={rank===m.value?"on":""} onClick={()=>setRank(m.value)}>{m.label}</button>)}</div>
+      </section>
+      {usedGroup&&<section className="sideBox">
+        <div className="sideHead static"><Filter size={15}/>Condition</div>
+        <div className="modeRow three">{COND_MODES.map(m=><button key={m.value} className={cond===m.value?"on":""} onClick={()=>setCond(m.value)}>{m.label}</button>)}</div>
+      </section>}
       <section className="sideBox">
         <button className="sideHead" onClick={()=>toggle("filters")}><Filter size={15}/>Filters<ChevronDown size={15} className={open.filters?"flip":""}/></button>
         {open.filters&&<>
@@ -194,7 +214,7 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
       {error&&<div className="notice"><Info size={18}/><div><b>{error}</b></div></div>}
       <div className="modelGrid">
         {cards.map(c=><ModelCard key={c.item.name} item={c.item} row={c.row} mode={mode} now={now} loading={loading}
-          onMode={setMode}
+          onCond={setCond}
           trend={getMarketTrend({category:"browse",query:c.item.query,condition:"cheapest"})?.series}
           onSeeAll={()=>setRoute({page:"model",group:group.id,series:series.id,model:c.item.name})}/>)}
       </div>
@@ -209,7 +229,8 @@ export function guessCategory(q){
   if(/\b(ryzen|core\s?i[3579]|i[3579][-\s]\d|core ultra|threadripper)/.test(s))return "CPU";
   if(/\bddr[345]\b|\bram\b|memory/.test(s))return "RAM / Memory";
   if(/\bnvme\b|\bm\.?2\b/.test(s))return "NVMe SSD";
-  if(/\bssd\b/.test(s))return "SATA SSD";
+  if(/\bsata\b/.test(s)&&/\bssd\b/.test(s))return "SATA SSD";
+  if(/\bssd\b|solid state/.test(s))return "SSD / NVMe";
   if(/\bhdd\b|hard drive/.test(s))return "Hard Drive / HDD";
   if(/\b[abxz]\d{3}[a-z]?\b|motherboard/.test(s))return "Motherboard";
   if(/\b\d{3,4}\s?w\b|\bpsu\b|power supply/.test(s))return "Power Supply / PSU";
@@ -231,7 +252,7 @@ export function ModelPage({providerKeys,route,setRoute,onWatchChange}){
     setLoading(true);setData(null);
     track("full_scan",{query:item.query});
     try{
-      const r=await fetch("/api/deals/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({category:item.category,query:item.query,condition,sortBy:"lowest",providerKeys}),signal:AbortSignal.timeout(58000)});
+      const r=await fetch("/api/deals/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({category:item.category,query:item.query,msrp:item.msrp||0,condition,sortBy:"lowest",providerKeys}),signal:AbortSignal.timeout(58000)});
       setData(await r.json());
     }catch{setData({available:false,message:"Live search backend is unavailable."});}
     finally{setLoading(false);}
@@ -247,6 +268,7 @@ export function ModelPage({providerKeys,route,setRoute,onWatchChange}){
     <div className="crumbBar">
       <button className="backBtn" onClick={()=>setRoute(route.query?{page:"browse"}:{page:"browse",group:group.id,series:series.id})}><ArrowLeft size={15}/>Go Back<small>Return to product group</small></button>
       <div className="crumbs">{route.query?<><span>Search</span><b>›</b><strong>{item.name}</strong></>:<><span>{group.label}</span><b>›</b><span>{series.label}</span><b>›</b><strong>{item.name}</strong></>}</div>
+      {!route.query&&<select className="modelSwitch" value={item.name} onChange={e=>setRoute({page:"model",group:group.id,series:series.id,model:e.target.value})} aria-label="Switch model">{series.items.map(x=><option key={x.name}>{x.name}</option>)}</select>}
     </div>
     <section className="modelHero">
       <div>
@@ -266,7 +288,7 @@ export function ModelPage({providerKeys,route,setRoute,onWatchChange}){
     {data&&!data.available&&<div className="notice"><Info size={18}/><div><b>No live listings</b><p>{data.message}</p><ProviderNotes providers={data.providers} coverage={data.coverage} errors={data.errors}/></div></div>}
     {data?.available&&<section className="resultsPanel">
       <MarketPulse market={data.market} results={data.results}/>
-      <DealResults results={data.results} isWatched={isWatched} onWatch={toggle}/>
+      <DealResults results={data.results} isWatched={isWatched} onWatch={toggle} msrp={item.msrp}/>
       <ProviderNotes providers={data.providers} coverage={data.coverage} errors={data.errors}/>
     </section>}
   </div>;

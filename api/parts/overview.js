@@ -24,13 +24,13 @@ export default async function handler(req, res) {
     return res.status(200).json({ available: false, message: "No market data provider is configured. Add SERPER_API_KEY to the server environment.", items: [] });
   }
   const items = (Array.isArray(req.body?.items) ? req.body.items : []).slice(0, MAX_ITEMS)
-    .map(x => ({ id: String(x?.id || x?.query || ""), query: String(x?.query || "").trim().slice(0, 120), category: String(x?.category || "GPU") }))
+    .map(x => ({ id: String(x?.id || x?.query || ""), query: String(x?.query || "").trim().slice(0, 120), category: String(x?.category || "GPU"), msrp: Math.max(0, Number(x?.msrp) || 0) }))
     .filter(x => x.query);
   if (!items.length) return res.status(400).json({ available: false, message: "No parts requested.", items: [] });
 
   const results = await Promise.all(items.map(async item => {
     try {
-      const data = await searchMarketplaces({ query: item.query, category: item.category, condition: "any", sortBy: "lowest", providerKeys }, { includeOtherMerchants: true, lite: true });
+      const data = await searchMarketplaces({ query: item.query, category: item.category, msrp: item.msrp, condition: "any", sortBy: "lowest", providerKeys }, { includeOtherMerchants: true, lite: true });
       const listings = data.ranked.slice().sort((a, b) => a.totalPrice - b.totalPrice);
       const isUsed = x => ["used", "refurbished", "renewed", "open-box"].includes(x.condition);
       const newOnes = listings.filter(x => x.condition === "new");
@@ -49,6 +49,9 @@ export default async function handler(req, res) {
         median: data.market.median,
         image: listings.find(x => x.image)?.image || null,
         listings: pick.map(slim),
+        // What each source returned, so a thin card can be explained.
+        sources: data.providers.map(p => ({ name: p.name, status: p.status, message: p.message, raw: p.raw, kept: p.kept, dropped: p.dropped })),
+        byStore: Object.entries(listings.reduce((m, x) => (m[x.source] = (m[x.source] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1]),
         searchedAt: data.observedAt,
         errors: data.errors
       };

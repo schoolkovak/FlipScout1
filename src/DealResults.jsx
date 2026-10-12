@@ -11,7 +11,7 @@ export function money(v,digits=0){
 // Sorting only reorders what is already loaded; it never triggers a search.
 export const RESULT_SORTS=[
   {value:"lowest",label:"Lowest price",Icon:ArrowDownWideNarrow},
-  {value:"best",label:"Best value",Icon:Sparkles},
+  {value:"best",label:"Best value (vs market & MSRP)",Icon:Sparkles},
   {value:"under",label:"Most under market",Icon:Percent}
 ];
 
@@ -65,7 +65,8 @@ export function MarketPulse({market,results}){
   </div>;
 }
 
-function DealCard({item,rank,watched,onWatch,cheapest}){
+function DealCard({item,rank,watched,onWatch,cheapest,msrp}){
+  const vsLaunch=msrp?Math.round((item.totalPrice-msrp)/msrp*100):null;
   const id=storeKey(item);
   const under=Number(item.percentVsMarket||0);
   const isCheapest=cheapest&&item.totalPrice===cheapest;
@@ -86,6 +87,7 @@ function DealCard({item,rank,watched,onWatch,cheapest}){
     </div>
     <div className="tileStats">
       <span className={under>=5?"pill good":under<=-5?"pill bad":"pill"}>{under>=0?<TrendingDown size={12}/>:<TrendingUp size={12}/>}{Math.abs(under)}% {under>=0?"under":"over"} market</span>
+      {vsLaunch!=null&&<span className={vsLaunch<0?"pill good":"pill bad"}>{vsLaunch>0?"+":""}{vsLaunch}% vs MSRP</span>}
       {item.soldCount>0&&<span className="pill">{item.soldCount}+ sold</span>}
       {sellerDiffers&&<span className="pill subtle"><Store size={12}/>{String(item.seller).slice(0,22)}</span>}
     </div>
@@ -94,7 +96,7 @@ function DealCard({item,rank,watched,onWatch,cheapest}){
     </div>
     {risks.length>0&&<div className="tileRisks">{risks.slice(0,2).map((r,j)=><span key={j}><AlertTriangle size={11}/>{r}</span>)}</div>}
     <div className="tileActions">
-      {item.url?<a className="openBtn" href={item.url} target="_blank" rel="noreferrer">View listing <ExternalLink size={13}/></a>:<span className="mutedText">No link</span>}
+      {item.url?<a className="openBtn" href={item.url} target="_blank" rel="noreferrer">{item.linkType==="google"?"View offer on Google":"View listing"} <ExternalLink size={13}/></a>:<span className="mutedText">No link</span>}
       {onWatch&&<button className={"iconBtn"+(watched?" on":"")} onClick={()=>onWatch(item)} aria-label={watched?"Stop watching":"Watch"}>{watched?<BookmarkCheck size={16}/>:<Bookmark size={16}/>}</button>}
     </div>
   </article>;
@@ -107,7 +109,7 @@ export function ScanSkeleton({label="Scanning stores"}){
   </div>;
 }
 
-export default function DealResults({results,isWatched,onWatch,pageSize=24}){
+export default function DealResults({results,isWatched,onWatch,pageSize=24,msrp=null}){
   const [sortBy,setSortBy]=useState("lowest");
   const [cond,setCond]=useState("all");
   const [stores,setStores]=useState([]);
@@ -116,7 +118,11 @@ export default function DealResults({results,isWatched,onWatch,pageSize=24}){
 
   const condCounts=useMemo(()=>{const m={all:all.length};for(const x of all){const g=conditionGroup(x.condition);m[g]=(m[g]||0)+1;}return m;},[all]);
   const storeCounts=useMemo(()=>{const m=new Map();for(const x of all){const k=storeKey(x);m.set(k,{id:k,name:storeLabel(k,x),n:(m.get(k)?.n||0)+1});}return [...m.values()].sort((a,b)=>b.n-a.n);},[all]);
-  const visible=useMemo(()=>sortDeals(all.filter(x=>(cond==="all"||conditionGroup(x.condition)===cond)&&(!stores.length||stores.includes(storeKey(x)))),sortBy),[all,cond,stores,sortBy]);
+  const sorts=RESULT_SORTS;
+  const visible=useMemo(()=>{
+    const list=all.filter(x=>(cond==="all"||conditionGroup(x.condition)===cond)&&(!stores.length||stores.includes(storeKey(x))));
+    return sortDeals(list,sortBy);
+  },[all,cond,stores,sortBy]);
   const cheapest=visible.length?Math.min(...visible.map(x=>x.totalPrice)):null;
 
   function toggleStore(id){setStores(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]);setShown(pageSize);}
@@ -125,7 +131,7 @@ export default function DealResults({results,isWatched,onWatch,pageSize=24}){
   return <div className="results">
     <div className="toolbar">
       <div className="segmented" role="radiogroup" aria-label="Sort results">
-        {RESULT_SORTS.map(({value,label,Icon})=><button key={value} role="radio" aria-checked={sortBy===value} className={sortBy===value?"on":""} onClick={()=>setSortBy(value)}><Icon size={14}/>{label}</button>)}
+        {sorts.map(({value,label,Icon})=><button key={value} role="radio" aria-checked={sortBy===value} className={sortBy===value?"on":""} onClick={()=>setSortBy(value)}><Icon size={14}/>{label}</button>)}
       </div>
       <div className="chipRow">
         {CONDITION_FILTERS.filter(x=>x.value==="all"||condCounts[x.value]).map(x=><button key={x.value} className={"chip"+(cond===x.value?" on":"")} onClick={()=>{setCond(x.value);setShown(pageSize);}}>{x.label}<em>{condCounts[x.value]||0}</em></button>)}
@@ -137,7 +143,7 @@ export default function DealResults({results,isWatched,onWatch,pageSize=24}){
       <span className="countNote">{visible.length} listing{visible.length===1?"":"s"}</span>
     </div>
     <div className="tileGrid">
-      {visible.slice(0,shown).map((x,i)=><DealCard key={x.id||i} item={x} rank={i} cheapest={cheapest} watched={isWatched?.(x)} onWatch={onWatch}/>)}
+      {visible.slice(0,shown).map((x,i)=><DealCard key={x.id||i} item={x} rank={i} cheapest={cheapest} watched={isWatched?.(x)} onWatch={onWatch} msrp={msrp}/>)}
     </div>
     {visible.length>shown&&<button className="moreBtn" onClick={()=>setShown(n=>n+pageSize)}>Show {Math.min(pageSize,visible.length-shown)} more <span>{visible.length-shown} remaining</span></button>}
   </div>;

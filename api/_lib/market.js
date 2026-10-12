@@ -130,7 +130,7 @@ async function providerFetch(provider, url, options = {}, secrets = []) {
   const open = providerCircuit.get(circuitId);
   if (open && open.until > Date.now()) throw new ProviderError(open.message, { quota: true, skipped: true });
   const host = new URL(url).hostname;
-  return withHostLimit(host, 4, async () => {
+  return withHostLimit(host, 8, async () => {
     for (let attempt = 0; attempt < 2; attempt++) {
       let response;
       try {
@@ -144,7 +144,9 @@ async function providerFetch(provider, url, options = {}, secrets = []) {
         const text = await response.text?.().catch(() => "") || "";
         const detail = redact(providerMessage(text), secrets);
         const keyProblem = response.status === 401 || response.status === 403;
-        const quota = keyProblem || response.status === 402 || response.status === 429 || /credit|quota|limit|exceed|plan|balance|subscription/i.test(detail);
+        // Only real credit/key problems pause a provider. A 400 such as "num
+        // over the limit" must not lock out every other search.
+        const quota = keyProblem || response.status === 402 || response.status === 429 || /not enough credits|out of (?:credits|searches)|credits? (?:exhausted|depleted)|quota exceeded|insufficient (?:credits|balance)/i.test(detail);
         const message = (keyProblem ? "API key rejected" : quota ? "out of credits or rate-limited" : "request failed") + " (HTTP " + response.status + ")" + (detail ? ": " + detail : "");
         if (quota) providerCircuit.set(circuitId, { until: Date.now() + (response.status === 429 ? 60 * 1000 : 10 * 60 * 1000), message });
         throw new ProviderError(message, { status: response.status, quota });
@@ -273,6 +275,17 @@ export async function searchSerperShopping(input, { q, page = 1 } = {}) {
 // ("site:A OR site:B ..."): real listing links, with price and condition read
 // from Google's result. This is where most used listings come from, and it
 // covers marketplaces Google Shopping often leaves out.
+// Retailer product pages (new stock): real, linkable listings for every model,
+// including ones Google Shopping only shows behind its own product pages.
+const RETAIL_PAGE_SITES = [
+  { id: "amazon", site: "amazon.com/dp", re: /(^|\.)amazon\.com$/, path: /\/(dp|gp\/product)\// },
+  { id: "newegg", site: "newegg.com/p", re: /(^|\.)newegg\.com$/, path: /^\/(p\/|.*\/p\/)/ },
+  { id: "bestbuy", site: "bestbuy.com/site", re: /(^|\.)bestbuy\.com$/, path: /^\/site\/.+\.p$/ },
+  { id: "walmart", site: "walmart.com/ip", re: /(^|\.)walmart\.com$/, path: /^\/ip\// },
+  { id: "microcenter", site: "microcenter.com/product", re: /(^|\.)microcenter\.com$/, path: /^\/product\// },
+  { id: "bhphoto", site: "bhphotovideo.com/c/product", re: /(^|\.)bhphotovideo\.com$/, path: /^\/c\/product\// }
+];
+
 const ITEM_PAGE_SITES = [
   { id: "ebay", site: "ebay.com/itm", re: /(^|\.)ebay\.com$/, path: /^\/itm\// },
   { id: "aliexpress", site: "aliexpress.us/item", re: /(^|\.)aliexpress\.(us|com)$/, path: /^\/item\// },
@@ -288,13 +301,19 @@ function organicPrice(x) {
   return m ? Number(m[1].replace(/,/g, "")) : null;
 }
 
-export async function searchSerperItemPages(input, { marketplaces = ["ebay", "aliexpress", "mercari"] } = {}) {
+export async function searchSerperItemPages(input, { marketplaces = ["ebay", "aliexpress", "mercari"], retail = false } = {}) {
   const apiKey = providerKey("SERPER_API_KEY", input);
   if (!apiKey) return [];
-  const sites = ITEM_PAGE_SITES.filter(x => marketplaces.includes(x.id));
+  const table = retail ? RETAIL_PAGE_SITES : ITEM_PAGE_SITES;
+  const sites = table.filter(x => marketplaces.includes(x.id));
   if (!sites.length) return [];
-  const term = { new: "brand new", used: "used", "open-box": "open box", refurbished: "refurbished", renewed: "refurbished" }[input.condition] || "";
-  const q = ["(" + sites.map(x => "site:" + x.site).join(" OR ") + ")", input.query, term].filter(Boolean).join(" ");
+  const term = retail ? "" : { new: "brand new", used: "used", "open-box": "open box", refurbished: "refurbished", renewed: "refurbished" }[input.condition] || "";
+  // Serper's free plan rejects site:/OR operators ("Query pattern not allowed
+  // for free accounts"), so use plain-text queries and keep only results that
+  // are real item pages on the wanted sites.
+  const ids = [...new Set(sites.map(x => x.id))];
+  const hint = retail ? "price" : ids.length === 1 ? marketplaceName(ids[0]) : ids.includes("ebay") ? "ebay" : marketplaceName(ids[0]);
+  const q = [input.query, term, hint].filter(Boolean).join(" ");
   const data = await providerFetch("serper", "https://google.serper.dev/search", {
     method: "POST",
     headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
@@ -304,14 +323,14 @@ export async function searchSerperItemPages(input, { marketplaces = ["ebay", "al
   for (const x of data.organic || []) {
     let u;
     try { u = new URL(x.link); } catch { continue; }
-    const site = ITEM_PAGE_SITES.find(s => s.re && s.re.test(u.hostname) && s.path.test(u.pathname));
+    const site = table.find(s => s.re && s.re.test(u.hostname) && s.path.test(u.pathname));
     if (!site) continue;
     const snippet = String(x.snippet || "");
     const cond = snippet.match(/\b(brand new|new \(other\)|new other|open box|pre-owned|preowned|used|certified - refurbished|refurbished|for parts or not working|for parts)\b/i)?.[0] || "";
     const ship = /free (?:shipping|delivery)/i.test(snippet) ? { shipping: 0, shippingKnown: true } : { shipping: 0, shippingKnown: false };
     out.push(offer({
-      provider: "Item pages (Serper web search)", marketplace: site.id, seller: marketplaceName(site.id),
-      title: String(x.title || "").replace(/\s*[|\-–]\s*(eBay|AliExpress|Mercari)\s*$/i, "").trim(),
+      provider: retail ? "Retailer pages (Serper web search)" : "Item pages (Serper web search)", marketplace: site.id, seller: marketplaceName(site.id),
+      title: String(x.title || "").replace(/^Amazon\.com\s*:\s*/i, "").replace(/\s*[|\-–:]\s*(eBay|AliExpress|Mercari|Amazon\.com.*|Newegg\.com|Best Buy|Walmart\.com|Micro Center|B&H Photo.*)\s*$/i, "").trim(),
       url: u.href, itemPrice: organicPrice(x) || 0, ...ship,
       structuredCondition: cond, defaultCondition: MARKETPLACE_DEFAULT_CONDITION[site.id] || "unknown"
     }));
@@ -711,6 +730,19 @@ export function qualifyOffers(rawOffers, input, { selected = null, includeOtherM
   const mid = prices.length >= 6 ? prices[Math.floor(prices.length / 2)] : null;
   const items = [];
   for (const x of deduped.items) {
+    // Launch-price floor: a "new RTX 5090" far below MSRP is fake, whatever
+    // the other listings say (AliExpress listings get a stricter floor).
+    const msrp = Number(input.msrp) || 0;
+    const kindCore = /gpu|graphics|^cpu$|processor/i.test(String(input.category || ""));
+    const msrpFloor = !msrp ? 0 : x.marketplace === "aliexpress" && kindCore ? 0.6 : x.condition === "new" || x.condition === "open-box" ? 0.5 : 0.3;
+    if (msrpFloor && x.totalPrice < msrp * msrpFloor) {
+      const st = stats.get(x.provider);
+      if (st) {
+        st.dropped["far-below-msrp"] = (st.dropped["far-below-msrp"] || 0) + 1;
+        if (st.examples.length < 6 && !st.examples.some(e => e.reason === "far-below-msrp")) st.examples.push({ reason: "far-below-msrp", detail: "MSRP " + msrp, title: x.title.slice(0, 140), price: x.totalPrice });
+      }
+      continue;
+    }
     if (mid && x.totalPrice < mid * 0.4) {
       const st = stats.get(x.provider);
       if (st) {
@@ -746,7 +778,7 @@ export function qualifyOffers(rawOffers, input, { selected = null, includeOtherM
   for (const x of accepted) accByProvider.set(x.provider, (accByProvider.get(x.provider) || 0) + 1);
   for (const [name, s] of stats) {
     s.kept = keptByProvider.get(name) || 0;
-    s.duplicates = Math.max(0, (accByProvider.get(name) || 0) - s.kept - (s.dropped["too-good-to-be-true"] || 0) - (s.dropped["no-direct-link"] || 0));
+    s.duplicates = Math.max(0, (accByProvider.get(name) || 0) - s.kept - (s.dropped["too-good-to-be-true"] || 0) - (s.dropped["no-direct-link"] || 0) - (s.dropped["far-below-msrp"] || 0));
   }
   return { items, stats, duplicates };
 }
@@ -873,7 +905,7 @@ function resaleAppeal(query, title) {
   return Math.min(1, score);
 }
 
-export function rankDeals(items, market, { query, partBudget, buildBudget, committed, sortBy = "best" }) {
+export function rankDeals(items, market, { query, partBudget, buildBudget, committed, sortBy = "best", msrp: launchMsrp = 0 }) {
   const overallMedian = market.median || 0;
   const remainingBefore = Math.max(0, Number(buildBudget || 0) - Number(committed || 0));
   const maxPart = Number(partBudget || 0);
@@ -885,7 +917,11 @@ export function rankDeals(items, market, { query, partBudget, buildBudget, commi
   const scored = simpleDedupe(items).filter(x => Number.isFinite(x.totalPrice) && x.totalPrice > 0).map(item => {
     const group = conditionGroup(item.condition);
     const medianValue = market.conditionMedians?.[group] || overallMedian;
-    const under = medianValue ? (medianValue - item.totalPrice) / medianValue : 0;
+    // Value vs the live market for this condition, blended with value vs
+    // launch MSRP when the model has one.
+    const underMarket = medianValue ? (medianValue - item.totalPrice) / medianValue : 0;
+    const msrp = Number(launchMsrp) || 0;
+    const under = msrp ? underMarket * 0.6 + ((msrp - item.totalPrice) / msrp) * 0.4 : underMarket;
     const underScore = Math.max(0, Math.min(1, (under + .10) / .35));
     const budgetScore = maxPart ? Math.max(0, Math.min(1, 1 - (item.totalPrice / maxPart - 0.70))) : .55;
     const buildFit = remainingBefore ? Math.max(0, Math.min(1, (remainingBefore - item.totalPrice) / Math.max(remainingBefore, .01) + .35)) : .5;
@@ -1017,7 +1053,20 @@ export async function searchMarketplaces(input, { includeOtherMerchants = false,
 
   const round1 = shoppingQueries(query, condition).slice(0, lite ? 2 : 3).map(q => shoppingCall(searchInput, has, q)).filter(Boolean);
   const itemSites = ["ebay", "aliexpress", "mercari"].filter(wants);
+  // Deep (non-lite) scans also read Google Shopping page 2 and run a
+  // separate used-only item-page search, for many more listings per part.
+  if (!lite && has.serper) {
+    const q2 = shoppingQueries(query, condition)[0];
+    round1.push(callSpec("serper", "Google Shopping (Serper)", null, searchInput, { q: q2, page: 2 }, () => searchSerperShopping(searchInput, { q: q2, page: 2 })));
+  }
+  const retailSites = ["amazon", "newegg", "bestbuy", "walmart", "microcenter", "bhphoto"].filter(wants);
+  if (has.serper && retailSites.length) round1.push(callSpec("serper-retail", "Retailer pages (Serper web search)", retailSites, searchInput, { q: query, condition: "new", sites: retailSites }, () => searchSerperItemPages({ ...searchInput, condition: "new" }, { marketplaces: retailSites, retail: true })));
   if (has.serper && itemSites.length) round1.push(callSpec("serper-items", "Item pages (Serper web search)", itemSites, searchInput, { q: query, condition, sites: itemSites }, () => searchSerperItemPages(searchInput, { marketplaces: itemSites })));
+  if (!lite && has.serper && wants("aliexpress")) round1.push(callSpec("serper-items", "Item pages (Serper web search)", ["aliexpress"], searchInput, { q: query, condition, sites: ["aliexpress"] }, () => searchSerperItemPages(searchInput, { marketplaces: ["aliexpress"] })));
+  if (!lite && has.serper && itemSites.length && condition === "any" && allowsUsed(input.category)) {
+    const usedInput = { ...searchInput, condition: "used" };
+    round1.push(callSpec("serper-items", "Item pages (Serper web search)", itemSites, searchInput, { q: query, condition: "used", sites: itemSites }, () => searchSerperItemPages(usedInput, { marketplaces: itemSites })));
+  }
   if (wants("ebay") && !lite) {
     if (has.ebayApi) round1.push(callSpec("ebay-api", "eBay Browse API", ["ebay"], searchInput, { q: query, condition }, () => searchEbay(searchInput)));
     else if (has.serpapi) round1.push(callSpec("serpapi-ebay", "eBay (SerpApi)", ["ebay"], searchInput, { q: query, condition }, () => searchSerpApiEbay(searchInput)));
