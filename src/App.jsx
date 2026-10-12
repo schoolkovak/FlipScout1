@@ -6,6 +6,8 @@ import {getWatchlist,toggleWatchItem,getSavedSearches,deleteSavedSearch} from ".
 import {BrowsePage,ModelPage,CategoryPills} from "./Browse.jsx";
 import DealHunt from "./DealHunt.jsx";
 import {money} from "./DealResults.jsx";
+import {STATE_TAX,loadTaxState,saveTaxState,finalPrice} from "./pricing.js";
+import {TaxContext} from "./taxContext.js";
 
 const EMPTY_KEYS={SERPER_API_KEY:"",SEARCHAPI_API_KEY:""};
 function loadProviderKeys(){
@@ -33,7 +35,7 @@ function Logo(){
   </svg>;
 }
 
-function TopNav({route,go,watchCount}){
+function TopNav({route,go,watchCount,taxState,setTaxState}){
   const [q,setQ]=useState("");
   function submit(e){e.preventDefault();const query=q.trim();if(!query)return;track("nav_search",{query});go({page:"model",query});}
   const links=[["browse","Browse Parts",Radar],["hunt","Deal Hunt",Target],["watch","Watchlist",Eye]];
@@ -41,6 +43,7 @@ function TopNav({route,go,watchCount}){
     <button className="brand" onClick={()=>go({page:"browse",group:"gpu"})}><Logo/><span>FlipScout</span></button>
     <div className="navLinks">{links.map(([id,label,Icon])=><button key={id} className={(route.page===id||(id==="browse"&&route.page==="model"))?"on":""} onClick={()=>go({page:id,group:route.group})}><Icon size={15}/>{label}{id==="watch"&&watchCount>0&&<em>{watchCount}</em>}</button>)}</div>
     <form className="navSearch" onSubmit={submit} role="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search any part… e.g. RTX 4070 Super"/></form>
+    <label className="taxPick" title="Sales tax is estimated from your state">Tax<select value={taxState} onChange={e=>setTaxState(e.target.value)}><option value="">Avg 7.5%</option>{Object.entries(STATE_TAX).map(([k,v])=><option key={k} value={k}>{k} {v}%</option>)}</select></label>
     <span className="livePill"><i></i>LIVE</span>
   </nav>;
 }
@@ -91,6 +94,8 @@ export default function App(){
   const [providerKeys]=useState(loadProviderKeys);
   const [refresh,setRefresh]=useState(0);
   const [watchCount,setWatchCount]=useState(()=>getWatchlist().length);
+  const [taxState,setTax]=useState(loadTaxState);
+  const setTaxState=v=>{setTax(v);saveTaxState(v);};
   const bump=()=>{setRefresh(x=>x+1);setWatchCount(getWatchlist().length);};
 
   useEffect(()=>{const on=()=>setRoute(parseRoute());window.addEventListener("hashchange",on);return()=>window.removeEventListener("hashchange",on);},[]);
@@ -103,8 +108,8 @@ export default function App(){
   }
   const showPills=route.page==="browse"||route.page==="model";
 
-  return <div className="appShell">
-    <TopNav route={route} go={go} watchCount={watchCount}/>
+  return <TaxContext.Provider value={taxState}><div className="appShell">
+    <TopNav route={route} go={go} watchCount={watchCount} taxState={taxState} setTaxState={setTaxState}/>
     {showPills&&<CategoryPills groupId={route.query?"":route.group} onPick={g=>go({page:"browse",group:g.id,series:g.series[0].id})}/>}
     <main className="mainWrap">
       {route.page==="browse"&&<BrowsePage providerKeys={providerKeys} groupId={route.group} seriesId={route.series} setRoute={go}/>}
@@ -113,5 +118,5 @@ export default function App(){
       {route.page==="watch"&&<Watchlist refresh={refresh} onChange={bump} go={go}/>}
     </main>
     <Footer providerKeys={providerKeys}/>
-  </div>;
+  </div></TaxContext.Provider>;
 }

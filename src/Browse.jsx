@@ -5,7 +5,9 @@ import {PART_GROUPS,findSeries} from "../shared/partCatalog.js";
 import {SNIPER_CONDITIONS,allowsUsed} from "../shared/sniper.js";
 import {getWatchlist,toggleWatchItem,saveSearch} from "./storage";
 import {saveMarketSnapshot,getMarketTrend} from "./marketHistory";
-import DealResults,{MarketPulse,ProviderNotes,ScanSkeleton,money} from "./DealResults.jsx";
+import DealResults,{MarketPulse,ProviderNotes,ScanSkeleton,PriceTotal,money} from "./DealResults.jsx";
+import {finalPrice,taxRate} from "./pricing.js";
+import {useTaxState} from "./taxContext.js";
 
 export function GpuIcon({size=16}){
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -20,7 +22,7 @@ const RANK_MODES=[{value:"cheapest",label:"Cheapest Available"},{value:"best",la
 const COND_MODES=[{value:"any",label:"Any"},{value:"new",label:"Only New"},{value:"used",label:"Only Used"}];
 const USED=new Set(["used","refurbished","renewed","open-box"]);
 const CACHE_MS=15*60*1000;
-const CACHE_VERSION="fs-overview-v3";
+const CACHE_VERSION="fs-overview-v5";
 
 function ago(iso,now){
   if(!iso)return "";
@@ -58,6 +60,8 @@ function SourcesWhy({row,open=false}){
 }
 
 function ModelCard({item,row,mode,now,loading,onSeeAll,onCond,trend}){
+  const st=useTaxState();
+  const rate=taxRate(st);
   const usedOk=allowsUsed(item.category);
   const [more,setMore]=useState(false);
   const pick=pickListing(row,mode);
@@ -71,13 +75,13 @@ function ModelCard({item,row,mode,now,loading,onSeeAll,onCond,trend}){
       <a className="mcTitle" href={pick.url||undefined} target="_blank" rel="noreferrer" title={pick.title}>{pick.title}</a>
       <div className="mcSpecs">{item.specs.map(([k,v])=><div key={k}><span>{k}</span><b>{v}</b></div>)}</div>
       <div className="mcPriceRow">
-        <strong>{money(pick.totalPrice,2)}</strong>
+        <PriceTotal item={pick}/>
         {pick.condition!=="new"&&<span className={"condBadge c-"+pick.condition}>{pick.condition==="open-box"?"OPEN BOX":String(pick.condition).toUpperCase()}</span>}
         {delta!=null&&<em className={delta<0?"under":"over"}>{delta>0?"+":""}{delta}% MSRP</em>}
       </div>
       {usedOk&&<div className="mcSplit">
-        <button className={mode.cond==="new"?"on":""} disabled={!row.newFrom} onClick={()=>onCond("new")}><span>New from</span><b>{money(row.newFrom,0)}</b></button>
-        <button className={mode.cond==="used"?"on":""} disabled={!row.usedFrom} onClick={()=>onCond("used")}><span>Used from</span><b className="usedText">{money(row.usedFrom,0)}</b></button>
+        <button className={mode.cond==="new"?"on":""} disabled={!row.newFrom} onClick={()=>onCond("new")}><span>New from</span><b>{money(row.newFrom&&row.newFrom*(1+rate),0)}</b></button>
+        <button className={mode.cond==="used"?"on":""} disabled={!row.usedFrom} onClick={()=>onCond("used")}><span>Used from</span><b className="usedText">{money(row.usedFrom&&row.usedFrom*(1+rate),0)}</b></button>
       </div>}
       <div className="mcMeta"><span>Updated {ago(row?.searchedAt,now)}</span>{item.msrp?<span>(MSRP: {money(item.msrp,2)})</span>:null}<Spark series={trend}/></div>
       <div className="mcCoverage">Lowest of {row.count} listing{row.count===1?"":"s"} · {row.stores} store{row.stores===1?"":"s"}{usedOk?" · "+row.usedCount+" used":" · new only"}</div>
@@ -86,13 +90,13 @@ function ModelCard({item,row,mode,now,loading,onSeeAll,onCond,trend}){
         <button onClick={()=>setMore(m=>!m)}>{more?"Less":"More Info"}<ChevronDown size={14} className={more?"flip":""}/></button>
       </div>
       {more&&<div className="mcMore">
-        {(row.listings||[]).slice().sort((a,b)=>a.totalPrice-b.totalPrice).slice(0,10).map(x=><a key={x.id} href={x.url} target="_blank" rel="noreferrer"><span>{x.source}</span><em className={"c-"+x.condition}>{x.condition==="open-box"?"open box":x.condition}</em><b>{money(x.totalPrice,2)}</b></a>)}
+        {(row.listings||[]).slice().sort((a,b)=>a.totalPrice-b.totalPrice).slice(0,10).map(x=><a key={x.id} href={x.url} target="_blank" rel="noreferrer"><span>{x.source}</span><em className={"c-"+x.condition}>{x.condition==="open-box"?"open box":x.condition}</em><b>{money(finalPrice(x,st).total,2)}</b></a>)}
         <small>{row.count} valid listings · market median {money(row.median)}</small>
         {row.byStore?.length>0&&<div className="mcStores">{row.byStore.map(([n,c])=><span key={n}>{n} <b>{c}</b></span>)}</div>}
         <SourcesWhy row={row}/>
       </div>}
       <a className="mcGo" href={pick.url||undefined} target="_blank" rel="noreferrer"><ExternalLink size={15}/>{linkLabel(pick,item.name)}</a>
-    </>:<div className="mcEmpty"><p>{mode.cond==="new"?"No new listing found in this scan.":mode.cond==="used"?"No used listing found in this scan.":"No trusted listing found in this scan."}</p><SourcesWhy row={row} open/><button onClick={onSeeAll}><Search size={14}/>Run full scan</button></div>}
+    </>:<div className="mcEmpty"><p>{mode.cond==="new"?"No new listing right now.":mode.cond==="used"?"No used listing right now.":"No real store listing right now."}</p><SourcesWhy row={row}/></div>}
   </article>;
 }
 
@@ -131,7 +135,7 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
     setLoading(true);setError("");setRows({});
     track("browse_series",{group:group.id,series:series.id});
     try{
-      const r=await fetch("/api/parts/overview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:series.items.map(x=>({id:x.name,query:x.query,category:x.category,msrp:x.msrp||0})),providerKeys}),signal:AbortSignal.timeout(58000)});
+      const r=await fetch("/api/parts/overview?group="+encodeURIComponent(group.id)+"&series="+encodeURIComponent(series.id),{signal:AbortSignal.timeout(58000)});
       const d=await r.json();
       if(id!==reqId.current)return;
       if(!d.available&&d.message)setError(d.message);
@@ -208,7 +212,7 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
       <div className="crumbBar">
         <button className="backBtn" onClick={()=>setRoute({page:"browse",group:group.id,series:group.series[0].id})}><ArrowLeft size={15}/>{group.label}</button>
         <div className="crumbs"><span>{group.label}</span><b>›</b><strong>{series.label}</strong><em>{series.items.length} models{loadedAt?" | Last updated "+new Date(loadedAt).toLocaleTimeString():""}</em></div>
-        <button className="ghostBtn" onClick={()=>load(true)} disabled={loading}><RefreshCw size={14} className={loading?"spin":""}/>Refresh prices</button>
+        <span className="autoNote"><RefreshCw size={13}/>Prices refresh automatically every 30 min</span>
       </div>
       <DealTicker cards={hot}/>
       {error&&<div className="notice"><Info size={18}/><div><b>{error}</b></div></div>}
@@ -252,7 +256,8 @@ export function ModelPage({providerKeys,route,setRoute,onWatchChange}){
     setLoading(true);setData(null);
     track("full_scan",{query:item.query});
     try{
-      const r=await fetch("/api/deals/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({category:item.category,query:item.query,msrp:item.msrp||0,condition,sortBy:"lowest",providerKeys}),signal:AbortSignal.timeout(58000)});
+      const qs=new URLSearchParams({q:item.query,category:item.category,condition,msrp:String(item.msrp||0)});
+      const r=await fetch("/api/deals/search?"+qs.toString(),{signal:AbortSignal.timeout(58000)});
       setData(await r.json());
     }catch{setData({available:false,message:"Live search backend is unavailable."});}
     finally{setLoading(false);}
@@ -261,7 +266,9 @@ export function ModelPage({providerKeys,route,setRoute,onWatchChange}){
 
   function toggle(x){const out=toggleWatchItem({...x,category:item.category,query:item.query});setWatched(out.items);onWatchChange?.();}
   const isWatched=x=>watched.some(w=>(w.url||w.id||w.title)===(x.url||x.id||x.title));
+  const st=useTaxState();
   const cheapest=data?.results?.length?Math.min(...data.results.map(x=>x.totalPrice)):null;
+  const cheapestFinal=data?.results?.length?Math.min(...data.results.map(x=>finalPrice(x,st).total)):null;
   const delta=vsMsrp(cheapest,item.msrp);
 
   return <div className="modelPage">
@@ -276,15 +283,15 @@ export function ModelPage({providerKeys,route,setRoute,onWatchChange}){
         <div className="heroSpecs">{item.specs.map(([k,v])=><span key={k}>{k} <b>{v}</b></span>)}{item.msrp&&<span>MSRP <b>{money(item.msrp)}</b></span>}</div>
       </div>
       <div className="heroRight">
-        {cheapest!=null&&<div className="heroPrice"><small>Lowest trusted price</small><strong>{money(cheapest,2)}</strong>{delta!=null&&<em className={delta<0?"under":"over"}>{delta>0?"+":""}{delta}% vs MSRP</em>}</div>}
+        {cheapest!=null&&<div className="heroPrice"><small>Lowest price (tax & shipping)</small><strong>{money(cheapestFinal,2)}</strong>{delta!=null&&<em className={delta<0?"under":"over"}>{delta>0?"+":""}{delta}% vs MSRP</em>}</div>}
         <div className="heroControls">
           {allowsUsed(item.category)?<select value={condition} onChange={e=>setCondition(e.target.value)} aria-label="Condition">{SNIPER_CONDITIONS.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}</select>:<span className="newOnly">New only</span>}
           <button className="ghostBtn" onClick={()=>{saveSearch({category:item.category,query:item.query,condition,sortBy:"lowest"});onWatchChange?.();}}><Bookmark size={14}/>Save</button>
-          <button className="ghostBtn" onClick={scan} disabled={loading}><RefreshCw size={14} className={loading?"spin":""}/>Rescan</button>
+
         </div>
       </div>
     </section>
-    {loading&&<ScanSkeleton label={"Full scan: "+item.name+" across every trusted store"}/>}
+    {loading&&<ScanSkeleton label={item.name+" — every real listing across trusted stores"}/>}
     {data&&!data.available&&<div className="notice"><Info size={18}/><div><b>No live listings</b><p>{data.message}</p><ProviderNotes providers={data.providers} coverage={data.coverage} errors={data.errors}/></div></div>}
     {data?.available&&<section className="resultsPanel">
       <MarketPulse market={data.market} results={data.results}/>

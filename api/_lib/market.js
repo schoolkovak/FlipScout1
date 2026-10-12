@@ -123,6 +123,20 @@ function providerMessage(text) {
   } catch { return String(text || "").slice(0, 200); }
 }
 
+// Serper's free plan allows 5 requests/second: space request starts per host
+// so a page of searches never trips the limit.
+const HOST_MIN_INTERVAL_MS = { "google.serper.dev": 230 };
+const hostNextStart = new Map();
+async function paceHost(host) {
+  const gap = HOST_MIN_INTERVAL_MS[host];
+  if (!gap) return;
+  const now = Date.now();
+  const at = Math.max(now, hostNextStart.get(host) || 0);
+  hostNextStart.set(host, at + gap);
+  if (at > now) await new Promise(r => setTimeout(r, at - now));
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 async function providerFetch(provider, url, options = {}, secrets = []) {
   // One circuit per provider credential: a browser-entered key and the
   // server key fail independently.
@@ -130,8 +144,9 @@ async function providerFetch(provider, url, options = {}, secrets = []) {
   const open = providerCircuit.get(circuitId);
   if (open && open.until > Date.now()) throw new ProviderError(open.message, { quota: true, skipped: true });
   const host = new URL(url).hostname;
-  return withHostLimit(host, 8, async () => {
-    for (let attempt = 0; attempt < 2; attempt++) {
+  return withHostLimit(host, 5, async () => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await paceHost(host);
       let response;
       try {
         response = await fetch(url, { ...options, signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS) });
@@ -143,16 +158,18 @@ async function providerFetch(provider, url, options = {}, secrets = []) {
       if (!response.ok) {
         const text = await response.text?.().catch(() => "") || "";
         const detail = redact(providerMessage(text), secrets);
+        // Per-second rate limit: wait and retry, never pause the provider.
+        if (response.status === 429 && /per second|rate limit/i.test(detail) && attempt < 3) { await sleep(700 * (attempt + 1)); continue; }
         const keyProblem = response.status === 401 || response.status === 403;
-        // Only real credit/key problems pause a provider. A 400 such as "num
-        // over the limit" must not lock out every other search.
-        const quota = keyProblem || response.status === 402 || response.status === 429 || /not enough credits|out of (?:credits|searches)|credits? (?:exhausted|depleted)|quota exceeded|insufficient (?:credits|balance)/i.test(detail);
-        const message = (keyProblem ? "API key rejected" : quota ? "out of credits or rate-limited" : "request failed") + " (HTTP " + response.status + ")" + (detail ? ": " + detail : "");
-        if (quota) providerCircuit.set(circuitId, { until: Date.now() + (response.status === 429 ? 60 * 1000 : 10 * 60 * 1000), message });
+        // Only real credit/key problems pause a provider.
+        const quota = keyProblem || response.status === 402 || /not enough credits|out of (?:credits|searches)|credits? (?:exhausted|depleted)|quota exceeded|insufficient (?:credits|balance)/i.test(detail);
+        const message = (keyProblem ? "API key rejected" : quota ? "out of credits" : response.status === 429 ? "rate-limited" : "request failed") + " (HTTP " + response.status + ")" + (detail ? ": " + detail : "");
+        if (quota) providerCircuit.set(circuitId, { until: Date.now() + 10 * 60 * 1000, message });
         throw new ProviderError(message, { status: response.status, quota });
       }
       return response.json();
     }
+    throw new ProviderError("rate-limited (HTTP 429) after retries");
   });
 }
 
@@ -1018,6 +1035,92 @@ const DIRECT_STORE_ENGINES = {
   bestbuy: { name: "Best Buy (SearchAPI)", run: searchSearchApiBestBuy, conditions: ["any", "new", "open-box"] }
 };
 
+// ---------------------------------------------------------------------------
+// Real-link resolution. Google Shopping knows which store sells a part and at
+// what price, but usually links to its own page. For each such offer, search
+// that exact title on that store and keep the store's real item page; offers
+// that cannot be resolved are not shown.
+// ---------------------------------------------------------------------------
+const STORE_DOMAINS = {
+  amazon: "amazon.com", bestbuy: "bestbuy.com", walmart: "walmart.com", newegg: "newegg.com", ebay: "ebay.com",
+  aliexpress: "aliexpress", mercari: "mercari.com", bhphoto: "bhphotovideo.com", adorama: "adorama.com", microcenter: "microcenter.com"
+};
+const PRODUCT_PATHS = {
+  amazon: /\/(dp|gp\/product)\//, bestbuy: /^\/site\/.+\.p$/, walmart: /^\/ip\//, newegg: /\/p\//, ebay: /^\/itm\//,
+  aliexpress: /^\/item\//, mercari: /^\/us\/item\//, bhphoto: /^\/c\/product\//, adorama: /\.html$|^\/[a-z0-9-]+\.html/, microcenter: /^\/product\//
+};
+const resolveCache = new Map();
+
+function titleTokens(t) { return new Set(normalizeListingText(t).split(" ").filter(w => w.length > 1)); }
+function titleSimilarity(a, b) {
+  const A = titleTokens(a), B = titleTokens(b);
+  if (!A.size || !B.size) return 0;
+  let hit = 0;
+  for (const w of A) if (B.has(w)) hit++;
+  return hit / Math.min(A.size, B.size);
+}
+
+function storeHostMatches(host, item) {
+  const h = host.replace(/^www\./, "");
+  if (item.marketplace && item.marketplace !== "other") return h.includes(STORE_DOMAINS[item.marketplace] || item.marketplace);
+  const seller = String(item.seller || "").toLowerCase().replace(/\.com$/, "").replace(/[^a-z0-9]/g, "");
+  return seller.length >= 3 && h.replace(/[^a-z0-9]/g, "").includes(seller);
+}
+
+function looksLikeProductPage(u, item) {
+  const path = u.pathname.toLowerCase();
+  if (/\/(sch|search|s|browse|category|categories|c|l|deals?)(\/|$)|searchpage|search_results/.test(path) && !/\/c\/product\//.test(path)) return false;
+  if (u.search && /[?&](k|q|_nkw|st|keyword|ntt|query)=/.test(u.search)) return false;
+  const re = PRODUCT_PATHS[item.marketplace];
+  return re ? re.test(path) : path.split("/").filter(Boolean).length >= 1;
+}
+
+async function resolveOne(input, item) {
+  const store = item.marketplace && item.marketplace !== "other" ? marketplaceName(item.marketplace) : item.seller;
+  const key = (store + "|" + item.title).toLowerCase();
+  if (resolveCache.has(key)) return resolveCache.get(key);
+  const apiKey = providerKey("SERPER_API_KEY", input);
+  let found = null;
+  try {
+    const data = await providerFetch("serper", "https://google.serper.dev/search", {
+      method: "POST",
+      headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ q: item.title.slice(0, 110) + " " + store, gl: "us", hl: "en", num: 10 })
+    }, [apiKey]);
+    for (const r of data.organic || []) {
+      let u;
+      try { u = new URL(r.link); } catch { continue; }
+      if (!storeHostMatches(u.hostname, item) || !looksLikeProductPage(u, item)) continue;
+      if (titleSimilarity(item.title, r.title) < 0.6) continue;
+      found = u.href;
+      break;
+    }
+  } catch { found = null; }
+  resolveCache.set(key, found);
+  if (resolveCache.size > 3000) resolveCache.delete(resolveCache.keys().next().value);
+  return found;
+}
+
+// Resolve Google-linked offers (cheapest first, up to `limit`); drop the rest.
+async function resolveRealLinks(input, items, stats, limit) {
+  const google = items.filter(x => x.linkType === "google").sort((a, b) => a.totalPrice - b.totalPrice);
+  const toResolve = new Set(google.slice(0, limit));
+  await Promise.all([...toResolve].map(async x => {
+    const url = await resolveOne(input, x);
+    if (url) { x.url = url; x.linkType = "listing"; x.provider = x.provider + " → store page"; }
+  }));
+  const out = [];
+  for (const x of items) {
+    if (x.linkType === "listing") { out.push(x); continue; }
+    const name = x.provider.replace(/ → store page$/, "");
+    const st = stats.get(name) || stats.set(name, emptyStats(name)).get(name);
+    const reason = toResolve.has(x) ? "no-real-store-page" : "not-resolved";
+    st.dropped[reason] = (st.dropped[reason] || 0) + 1;
+    st.kept = Math.max(0, st.kept - 1);
+  }
+  return out;
+}
+
 // Google Shopping query variants. Shopping results default to new retail
 // stock, so used/refurbished/open-box listings need their own queries.
 function shoppingQueries(query, condition) {
@@ -1052,6 +1155,7 @@ export async function searchMarketplaces(input, { includeOtherMerchants = false,
   const searchInput = { ...input, query, condition, deepScan: true };
 
   const round1 = shoppingQueries(query, condition).slice(0, lite ? 2 : 3).map(q => shoppingCall(searchInput, has, q)).filter(Boolean);
+  const organicOk = !lite; // browse cards stay credit-light: Google Shopping + link resolution only
   const itemSites = ["ebay", "aliexpress", "mercari"].filter(wants);
   // Deep (non-lite) scans also read Google Shopping page 2 and run a
   // separate used-only item-page search, for many more listings per part.
@@ -1060,8 +1164,8 @@ export async function searchMarketplaces(input, { includeOtherMerchants = false,
     round1.push(callSpec("serper", "Google Shopping (Serper)", null, searchInput, { q: q2, page: 2 }, () => searchSerperShopping(searchInput, { q: q2, page: 2 })));
   }
   const retailSites = ["amazon", "newegg", "bestbuy", "walmart", "microcenter", "bhphoto"].filter(wants);
-  if (has.serper && retailSites.length) round1.push(callSpec("serper-retail", "Retailer pages (Serper web search)", retailSites, searchInput, { q: query, condition: "new", sites: retailSites }, () => searchSerperItemPages({ ...searchInput, condition: "new" }, { marketplaces: retailSites, retail: true })));
-  if (has.serper && itemSites.length) round1.push(callSpec("serper-items", "Item pages (Serper web search)", itemSites, searchInput, { q: query, condition, sites: itemSites }, () => searchSerperItemPages(searchInput, { marketplaces: itemSites })));
+  if (organicOk && has.serper && retailSites.length) round1.push(callSpec("serper-retail", "Retailer pages (Serper web search)", retailSites, searchInput, { q: query, condition: "new", sites: retailSites }, () => searchSerperItemPages({ ...searchInput, condition: "new" }, { marketplaces: retailSites, retail: true })));
+  if (organicOk && has.serper && itemSites.length) round1.push(callSpec("serper-items", "Item pages (Serper web search)", itemSites, searchInput, { q: query, condition, sites: itemSites }, () => searchSerperItemPages(searchInput, { marketplaces: itemSites })));
   if (!lite && has.serper && wants("aliexpress")) round1.push(callSpec("serper-items", "Item pages (Serper web search)", ["aliexpress"], searchInput, { q: query, condition, sites: ["aliexpress"] }, () => searchSerperItemPages(searchInput, { marketplaces: ["aliexpress"] })));
   if (!lite && has.serper && itemSites.length && condition === "any" && allowsUsed(input.category)) {
     const usedInput = { ...searchInput, condition: "used" };
@@ -1100,6 +1204,10 @@ export async function searchMarketplaces(input, { includeOtherMerchants = false,
   const all = [...settled, ...settled2];
   if (settled2.length) qualified = qualifyOffers(all.flatMap(r => r.offers), searchInput, { selected, includeOtherMerchants, stats: new Map() });
 
+  // Only real store listings are shown: resolve Google-linked offers to the
+  // store's own item page (Google Shopping stays a background source).
+  if (has.serper) qualified.items = await resolveRealLinks(searchInput, qualified.items, qualified.stats, lite ? 4 : 12);
+  else qualified.items = qualified.items.filter(x => x.linkType === "listing");
   const providers = summarizeProviders(all, qualified.stats);
   const errors = providers.filter(p => p.status === "error" || p.status === "skipped").map(p => ({ provider: p.name, message: p.message }));
   const market = buildMarket(qualified.items);

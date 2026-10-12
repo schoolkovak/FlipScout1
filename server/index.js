@@ -16,10 +16,12 @@ app.use(express.json());
 app.get("/api/health",(req,res)=>res.json({ok:true,service:"flipscout-api",time:new Date().toISOString()}));
 app.get("/api/sources",sourcesHandler);
 app.post("/api/deals/search",dealsHandler);
+app.get("/api/deals/search",dealsHandler);
 app.post("/api/market/pc",pcHandler);
 app.post("/api/providers/test",providerTestHandler);
 app.post("/api/parts/sniper",sniperHandler);
 app.post("/api/parts/overview",overviewHandler);
+app.get("/api/parts/overview",overviewHandler);
 app.get("/api/debug/providers",debugProvidersHandler);
 app.use((error,req,res,next)=>{console.error("API request failed",error.name);res.status(500).json({available:false,message:"Market service unavailable. Please try again."});});
 
