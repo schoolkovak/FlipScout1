@@ -27,12 +27,22 @@ export const PART_GROUPS = [
       { id: "rtx30", label: "RTX 30 Series", brand: "nvidia", items: [
         gpu("RTX 3090 Ti", 1999, 24, 450), gpu("RTX 3090", 1499, 24, 350), gpu("RTX 3080 Ti", 1199, 12, 350),
         gpu("RTX 3080 10GB", 699, 10, 320), gpu("RTX 3070 Ti", 599, 8, 290), gpu("RTX 3070", 499, 8, 220),
-        gpu("RTX 3060 Ti", 399, 8, 200), gpu("RTX 3060 12GB", 329, 12, 170), gpu("RTX 3050 8GB", 249, 8, 130)
+        gpu("RTX 3060 Ti", 399, 8, 200), gpu("RTX 3060 12GB", 329, 12, 170), gpu("RTX 3060 8GB", 329, 8, 170),
+        gpu("RTX 3050 8GB", 249, 8, 130), gpu("RTX 3050 6GB", 169, 6, 70)
       ] },
-      { id: "rtx20", label: "RTX 20 / GTX 16", brand: "nvidia", items: [
-        gpu("RTX 2080 Ti", 999, 11, 250), gpu("RTX 2080 Super", 699, 8, 250), gpu("RTX 2070 Super", 499, 8, 215),
-        gpu("RTX 2060 Super", 399, 8, 175), gpu("RTX 2060", 349, 6, 160), gpu("GTX 1660 Super", 229, 6, 125),
-        gpu("GTX 1660 Ti", 279, 6, 120), gpu("GTX 1650 Super 4GB", 159, 4, 100)
+      { id: "rtx20", label: "RTX 20 Series", brand: "nvidia", items: [
+        gpu("RTX 2080 Ti", 999, 11, 250), gpu("RTX 2080 Super", 699, 8, 250), gpu("RTX 2080", 699, 8, 215),
+        gpu("RTX 2070 Super", 499, 8, 215), gpu("RTX 2070", 499, 8, 175), gpu("RTX 2060 Super", 399, 8, 175),
+        gpu("RTX 2060", 349, 6, 160)
+      ] },
+      { id: "gtx16", label: "GTX 16 Series", brand: "nvidia", items: [
+        gpu("GTX 1660 Ti", 279, 6, 120), gpu("GTX 1660 Super", 229, 6, 125), gpu("GTX 1660", 219, 6, 120),
+        gpu("GTX 1650 Super", 159, 4, 100), gpu("GTX 1650", 149, 4, 75), gpu("GTX 1630", 149, 4, 75)
+      ] },
+      { id: "gtx10", label: "GTX 10 Series", brand: "nvidia", items: [
+        gpu("GTX 1080 Ti", 699, 11, 250), gpu("GTX 1080", 599, 8, 180), gpu("GTX 1070 Ti", 449, 8, 180),
+        gpu("GTX 1070", 379, 8, 150), gpu("GTX 1060 6GB", 249, 6, 120), gpu("GTX 1060 3GB", 199, 3, 120),
+        gpu("GTX 1050 Ti", 139, 4, 75)
       ] },
       { id: "rx9000", label: "RX 9000 Series", brand: "amd", items: [
         gpu("RX 9070 XT", 599, 16, 304), gpu("RX 9070", 549, 16, 220),
@@ -47,6 +57,10 @@ export const PART_GROUPS = [
         gpu("RX 6950 XT", 1099, 16, 335), gpu("RX 6900 XT", 999, 16, 300), gpu("RX 6800 XT", 649, 16, 300),
         gpu("RX 6800", 579, 16, 250), gpu("RX 6750 XT", 549, 12, 250), gpu("RX 6700 XT", 479, 12, 230),
         gpu("RX 6650 XT", 399, 8, 180), gpu("RX 6600", 329, 8, 132)
+      ] },
+      { id: "rx5000", label: "RX 5000 / 500", brand: "amd", items: [
+        gpu("RX 5700 XT", 399, 8, 225), gpu("RX 5700", 349, 8, 180), gpu("RX 5600 XT", 279, 6, 150),
+        gpu("RX 5500 XT 8GB", 199, 8, 130), gpu("RX 590", 279, 8, 225), gpu("RX 580 8GB", 229, 8, 185)
       ] },
       { id: "arc", label: "Intel Arc", brand: "intel", items: [
         gpu("Arc B580", 249, 12, 190, { query: "Intel Arc B580" }), gpu("Arc B570", 219, 10, 150, { query: "Intel Arc B570" }),
@@ -219,4 +233,34 @@ export const PART_GROUPS = [
 export function findSeries(groupId, seriesId) {
   const group = PART_GROUPS.find(g => g.id === groupId) || PART_GROUPS[0];
   return { group, series: group.series.find(s => s.id === seriesId) || group.series[0] };
+}
+
+// Typed searches: "1660 super", "gtx1660ti", "5700xt" -> the catalog model,
+// so the model page gets the right category, MSRP and series.
+const modelKey = s => String(s || "").toLowerCase().replace(/\b(nvidia|geforce|amd|radeon|intel|graphics card|gpu)\b/g, "").replace(/\b(rtx|gtx|gt|rx)\s*/g, "").replace(/[^a-z0-9]/g, "");
+export function findCatalogModel(query) {
+  const key = modelKey(query);
+  if (!key) return null;
+  let loose = null;
+  for (const group of PART_GROUPS) for (const series of group.series) for (const item of series.items) {
+    const k = modelKey(item.name);
+    if (k === key) return { group, series, item };
+    // "1060" -> "GTX 1060 6GB", "3050" -> "RTX 3050 8GB" (memory size left off)
+    if (!loose && modelKey(item.name.replace(/\s*\d{1,2}\s*GB\b/i, "")) === key) loose = { group, series, item };
+  }
+  return loose;
+}
+
+// Bare GPU numbers get their brand prefix so the search engine and the
+// category guess understand them: "1660 ti" -> "GTX 1660 Ti", "6600" -> "RX 6600".
+export function normalizePartQuery(query) {
+  const q = String(query || "").trim().replace(/\s+/g, " ");
+  const m = q.match(/^(\d{3,4})\s*(ti|super|xtx|xt|gre)?(\s.*)?$/i);
+  if (!m) return q;
+  const n = m[1], suffix = m[2] ? " " + m[2].replace(/^(ti|super)$/i, s => s[0].toUpperCase() + s.slice(1).toLowerCase()).replace(/^(xtx|xt|gre)$/i, s => s.toUpperCase()) : "";
+  let prefix = "";
+  if (/^1[0-6]\d\d$/.test(n)) prefix = "GTX";
+  else if (/^90\d\d$/.test(n) || /^(4|5)[5-9]0$/.test(n) || /^[5-7][5-9]\d0$/.test(n) || /^5[5-7]00$/.test(n)) prefix = "RX";
+  else if (/^[2-5]0[5-9]0$/.test(n)) prefix = "RTX";
+  return prefix ? prefix + " " + n + suffix + (m[3] || "") : q;
 }

@@ -3,6 +3,7 @@ import { evaluateListing, normalizeListingText } from "./matching.js";
 import { SNIPER_MARKETPLACES, allowsUsed } from "../../shared/sniper.js";
 import { sortDeals } from "../../shared/dealSort.js";
 import { isTrustedMerchant, listingLink } from "./stores.js";
+import { verifyListings } from "./verify.js";
 
 export { relevanceScore } from "./matching.js";
 
@@ -1092,6 +1093,9 @@ async function resolveOne(input, item) {
       try { u = new URL(r.link); } catch { continue; }
       if (!storeHostMatches(u.hostname, item) || !looksLikeProductPage(u, item)) continue;
       if (titleSimilarity(item.title, r.title) < 0.6) continue;
+      // A page whose indexed price is far from the offer is a different listing.
+      const p = organicPrice(r);
+      if (p && Math.abs(p - item.itemPrice) / item.itemPrice > 0.2) continue;
       found = u.href;
       break;
     }
@@ -1102,23 +1106,34 @@ async function resolveOne(input, item) {
 }
 
 // Resolve Google-linked offers (cheapest first, up to `limit`); drop the rest.
-async function resolveRealLinks(input, items, stats, limit) {
-  const google = items.filter(x => x.linkType === "google").sort((a, b) => a.totalPrice - b.totalPrice);
+export async function resolveRealLinks(input, items, stats, limit) {
+  const google = items.filter(x => x.linkType === "google" && x.marketplace !== "mercari").sort((a, b) => a.totalPrice - b.totalPrice);
   const toResolve = new Set(google.slice(0, limit));
   await Promise.all([...toResolve].map(async x => {
     const url = await resolveOne(input, x);
     if (url) { x.url = url; x.linkType = "listing"; x.provider = x.provider + " → store page"; }
   }));
   const out = [];
-  for (const x of items) {
-    if (x.linkType === "listing") { out.push(x); continue; }
+  const drop = (x, reason) => {
     const name = x.provider.replace(/ → store page$/, "");
     const st = stats.get(name) || stats.set(name, emptyStats(name)).get(name);
-    const reason = toResolve.has(x) ? "no-real-store-page" : "not-resolved";
     st.dropped[reason] = (st.dropped[reason] || 0) + 1;
     st.kept = Math.max(0, st.kept - 1);
+    if (st.examples.length < 6 && !st.examples.some(e => e.reason === reason)) st.examples.push({ reason, detail: null, title: String(x.title || "").slice(0, 140), price: x.totalPrice });
+  };
+  for (const x of items) {
+    if (x.linkType === "listing") { out.push(x); continue; }
+    drop(x, toResolve.has(x) ? "no-real-store-page" : "not-resolved");
   }
-  return out;
+  // eBay pages found through Google may have sold, ended or changed price:
+  // open each one and keep it only if it is still live at a real price.
+  const recheck = input.query ? x => {
+    const v = evaluateListing({ title: x.title, query: input.query, category: input.category, structuredCondition: x.pageCondition || "", defaultCondition: "unknown", requestedCondition: input.condition || "any" });
+    if (!v.ok) return false;
+    x.condition = v.condition;
+    return true;
+  } : null;
+  return verifyListings(out, { limit: Math.max(16, limit * 2), recheck, drop });
 }
 
 // Google Shopping query variants. Shopping results default to new retail
@@ -1156,7 +1171,8 @@ export async function searchMarketplaces(input, { includeOtherMerchants = false,
 
   const round1 = shoppingQueries(query, condition).slice(0, lite ? 2 : 3).map(q => shoppingCall(searchInput, has, q)).filter(Boolean);
   const organicOk = !lite; // browse cards stay credit-light: Google Shopping + link resolution only
-  const itemSites = ["ebay", "aliexpress", "mercari"].filter(wants);
+  // Mercari is not searched: its pages can't be checked live and are usually sold.
+  const itemSites = ["ebay", "aliexpress"].filter(wants);
   // Deep (non-lite) scans also read Google Shopping page 2 and run a
   // separate used-only item-page search, for many more listings per part.
   if (!lite && has.serper) {
@@ -1264,12 +1280,13 @@ function marketplaceCoverage(selected, has, results, storeCounts, condition) {
   return selected.map(id => {
     const direct = queried.has(id);
     let note;
-    if (direct) note = "Searched directly";
+    if (id === "mercari") note = "Hidden: Mercari listings can't be checked live and are often already sold";
+    else if (direct) note = "Searched directly";
     else if (targeted.has(id)) note = "Store price search + store-targeted query";
     else if (broad) note = "Searched via store price search";
     else note = "Not searched: no working provider";
     if (!direct && id in DIRECT_STORE_ENGINES && !DIRECT_STORE_ENGINES[id].conditions.includes(condition)) note += "; store search has no " + condition + " filter";
-    if (!direct && ["newegg", "mercari", "aliexpress", "bhphoto", "adorama", "microcenter"].includes(id)) note += " (no public listing API)";
+    if (!direct && ["newegg", "aliexpress", "bhphoto", "adorama", "microcenter"].includes(id)) note += " (no public listing API)";
     return { id, name: marketplaceName(id), listings: storeCounts[id] || 0, direct, note };
   });
 }

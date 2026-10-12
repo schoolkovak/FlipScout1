@@ -16,8 +16,27 @@ const keys = () => ({ SERPER_API_KEY: "serper-test-" + (++keySeq), SEARCHAPI_API
 function stubFetch(routes) {
   const original = globalThis.fetch;
   const calls = [];
+  const ebaySeen = new Map();
+  const remember = out => JSON.stringify(out || {}, (k, v) => {
+    if (v && typeof v === "object" && typeof v.link === "string" && /ebay\.com\/itm\/(\d+)/.test(v.link)) {
+      const id = v.link.match(/\/itm\/(\d+)/)[1];
+      const price = Number(v.extracted_price ?? v.price?.extracted ?? String(v.snippet || "").match(/\$(\d+(?:\.\d+)?)/)?.[1]) || null;
+      if (!ebaySeen.has(id) || price) ebaySeen.set(id, { title: String(v.title || "").replace(/\s*\|\s*eBay$/, ""), price });
+    }
+    return v;
+  });
   globalThis.fetch = async (url, options) => {
     const u = new URL(url);
+    if (/(^|\.)ebay\.com$/.test(u.hostname) && !u.searchParams.get("engine")) {
+      // Live item-page check: a stubbed live Buy It Now page (tests may override).
+      const id = u.pathname.match(/\/itm\/(\d+)/)?.[1];
+      calls.push({ id: "ebay-page", path: u.pathname });
+      const seen = ebaySeen.get(id) || {};
+      const page = routes["ebay-page"] ? await routes["ebay-page"]({ id, seen }) : null;
+      const price = seen.price ? "US $" + seen.price.toFixed(2) : "US $1.00 to US $99999.00";
+      const html = page?.html ?? `<h1 class="x-item-title__mainTitle"><span class="ux-textspans ux-textspans--BOLD">${seen.title || "Item"}</span></h1><div class="x-price-primary"><span class="ux-textspans">${price}</span></div><button>Buy It Now</button>`;
+      return { ok: (page?.status || 200) < 400, status: page?.status || 200, url: u.href, text: async () => html };
+    }
     const engine = u.searchParams.get("engine");
     const body = options?.body ? JSON.parse(options.body) : null;
     const id = u.hostname === "google.serper.dev" ? "serper" : engine;
@@ -25,6 +44,7 @@ function stubFetch(routes) {
     const route = routes[id];
     if (!route) throw new Error("unexpected provider " + id);
     const out = await route({ q: body?.q || u.searchParams.get("q"), params: u.searchParams, body, path: u.pathname });
+    remember(out);
     if (out && out.status) return { ok: false, status: out.status, text: async () => JSON.stringify(out.body || {}) };
     return { ok: true, status: 200, json: async () => out };
   };
@@ -99,7 +119,8 @@ test("Deal Scanner queries Google Shopping, eBay, and direct stores missing from
     assert.ok(shoppingQs.some(q => /aliexpress|b&h photo|adorama/.test(q)), "store-targeted query for a store Google missed");
     for (const e of ["ebay_search", "amazon_search", "walmart_search", "bestbuy_search"]) assert.ok(engines.includes(e), e);
     const stores = new Set(result.ranked.map(x => x.marketplace));
-    for (const id of ["newegg", "microcenter", "mercari", "ebay", "amazon", "walmart", "bestbuy", "other"]) assert.ok(stores.has(id), id);
+    for (const id of ["newegg", "microcenter", "ebay", "amazon", "walmart", "bestbuy", "other"]) assert.ok(stores.has(id), id);
+    assert.ok(!stores.has("mercari"), "unverifiable Mercari pages are hidden");
     assert.ok(!result.ranked.some(x => /5070 ti|no display/i.test(x.title)), "wrong model and broken listing filtered");
     assert.ok(result.ranked.some(x => x.condition === "open-box" && x.marketplace === "bestbuy"));
     const ebay = result.providers.find(p => p.name === "eBay (SearchAPI)");
@@ -260,7 +281,7 @@ test("unknown web shops, too-good-to-be-true prices and listings without a real 
   assert.ok(items.every(x => x.linkType === "listing" && !/google\.|\/sch\/|search/.test(x.url)));
 });
 
-test("item-page search covers eBay, AliExpress and Mercari in one query and keeps only item pages", async () => {
+test("item-page search covers eBay and AliExpress, keeps only item pages, hides Mercari", async () => {
   const stub = stubFetch({
     serper: ({ body, path }) => path === "/search" && / ebay$/.test(body.q) ? { organic: [
       { title: "Sapphire Pulse RX 7800 XT 16GB GDDR6 Used | eBay", link: "https://www.ebay.com/itm/334455667788", snippet: "Pre-Owned · $389.99 · Free shipping" },
@@ -280,8 +301,8 @@ test("item-page search covers eBay, AliExpress and Mercari in one query and keep
     assert.equal(byStore.ebay.totalPrice, 389.99);
     assert.equal(byStore.ebay.condition, "used");
     assert.equal(byStore.aliexpress.totalPrice, 402.15);
-    assert.equal(byStore.mercari.condition, "used");
-    assert.equal(result.ranked.length, 3, "the eBay search-results page is not a listing");
+    assert.ok(!byStore.mercari, "Mercari pages can't be checked live");
+    assert.equal(result.ranked.length, 2, "the eBay search-results page is not a listing");
   } finally { stub.restore(); }
 });
 
@@ -383,5 +404,42 @@ test("Serper per-second rate limit (429) is retried, not treated as out of credi
     const result = await searchPartsSniper({ query: "650W PSU", category: "Power Supply / PSU", condition: "new", marketplaces: ["newegg"], providerKeys: keys() });
     assert.equal(result.ranked.length, 1);
     assert.ok(!result.providers.some(p => p.status !== "ok"));
+  } finally { stub.restore(); }
+});
+
+test("eBay live check: sold, removed, for-parts and auction-only pages are hidden; live price wins", async () => {
+  const { parseEbayItemPage } = await import("../api/_lib/verify.js");
+  const live = (price, extra = "") => `<h1 class="x-item-title__mainTitle"><span class="ux-textspans ux-textspans--BOLD">EVGA GTX 1660 Super 6GB</span></h1><div class="x-price-primary" data-testid="x-price-primary"><span class="ux-textspans">${price}</span></div>${extra}<a>Buy It Now</a>`;
+  assert.equal(parseEbayItemPage("<h1>We looked everywhere!</h1>", 404).reason, "listing-removed");
+  assert.equal(parseEbayItemPage("<h1>We looked everywhere!</h1> Looks like this page is missing.", 200).reason, "listing-removed");
+  assert.equal(parseEbayItemPage(live("US $99.00", "<div>This listing sold on Mon, Oct 6 at 9:12 PM.</div>")).reason, "sold-or-ended");
+  assert.equal(parseEbayItemPage(live("US $99.00", "<div>This listing was ended by the seller because the item is no longer available.</div>")).reason, "sold-or-ended");
+  assert.equal(parseEbayItemPage(live("US $40.00", '<div class="x-item-condition-text"><div><span class="ux-textspans">For parts or not working</span></div></div>')).reason, "for-parts");
+  assert.equal(parseEbayItemPage('<div class="x-price-primary"><span class="ux-textspans">US $50.00</span></div><button>Place bid</button>').reason, "auction-only");
+  const ok = parseEbayItemPage(live("US $1,129.99"));
+  assert.equal(ok.live, true);
+  assert.equal(ok.price, 1129.99);
+  assert.equal(ok.title, "EVGA GTX 1660 Super 6GB");
+  assert.deepEqual(parseEbayItemPage(live("US $20.00 to US $45.00")).range, [20, 45]);
+  assert.equal(parseEbayItemPage("<html>Pardon Our Interruption... captcha</html>").live, null);
+});
+
+test("eBay pages found through Google are opened: stale price replaced, sold listing dropped", async () => {
+  const stub = stubFetch({
+    serper: ({ body, path }) => path === "/search" && / ebay$/i.test(body.q) ? { organic: [
+      { title: "MSI GTX 1660 Super Ventus XS 6GB Used | eBay", link: "https://www.ebay.com/itm/111100002222?hash=abc", snippet: "Pre-Owned · $89.99" },
+      { title: "EVGA GTX 1660 Super SC Ultra 6GB Used | eBay", link: "https://www.ebay.com/itm/111100003333", snippet: "Pre-Owned · $95.00" }
+    ] } : path === "/search" ? { organic: [] } : { shopping: [] },
+    "ebay-page": ({ id, seen }) => id === "111100003333"
+      ? { html: `<div class="x-price-primary"><span class="ux-textspans">US $95.00</span></div><div>This listing sold on Fri, Oct 3.</div>` }
+      : { html: `<h1 class="x-item-title__mainTitle"><span class="ux-textspans">${seen.title}</span></h1><div class="x-price-primary"><span class="ux-textspans">US $124.50</span></div><a>Buy It Now</a>` }
+  });
+  try {
+    const result = await searchPartsSniper({ query: "GTX 1660 Super", category: "GPU", condition: "any", marketplaces: ["ebay"], providerKeys: keys() });
+    assert.equal(result.ranked.length, 1);
+    assert.equal(result.ranked[0].url, "https://www.ebay.com/itm/111100002222");
+    assert.equal(result.ranked[0].itemPrice, 124.5, "price comes from the live page, not Google's snippet");
+    const items = result.providers.find(p => p.name === "Item pages (Serper web search)");
+    assert.ok(items.dropped["ebay-sold-or-ended"] >= 1);
   } finally { stub.restore(); }
 });

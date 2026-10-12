@@ -1,7 +1,7 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
 import {Cpu,MemoryStick,HardDrive,CircuitBoard,Plug,Fan,Monitor,ArrowLeft,ExternalLink,RefreshCw,ChevronDown,List,Info,Flame,Bookmark,Search,Zap,TrendingDown,Filter,DollarSign,Layers} from "lucide-react";
 import {track} from "@vercel/analytics";
-import {PART_GROUPS,findSeries} from "../shared/partCatalog.js";
+import {PART_GROUPS,findSeries,findCatalogModel,normalizePartQuery} from "../shared/partCatalog.js";
 import {SNIPER_CONDITIONS,allowsUsed} from "../shared/sniper.js";
 import {getWatchlist,toggleWatchItem,saveSearch} from "./storage";
 import {saveMarketSnapshot,getMarketTrend} from "./marketHistory";
@@ -22,7 +22,7 @@ const RANK_MODES=[{value:"cheapest",label:"Cheapest Available"},{value:"best",la
 const COND_MODES=[{value:"any",label:"Any"},{value:"new",label:"Only New"},{value:"used",label:"Only Used"}];
 const USED=new Set(["used","refurbished","renewed","open-box"]);
 const CACHE_MS=15*60*1000;
-const CACHE_VERSION="fs-overview-v5";
+const CACHE_VERSION="fs-overview-v6";
 
 function ago(iso,now){
   if(!iso)return "";
@@ -229,7 +229,7 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
 
 export function guessCategory(q){
   const s=String(q||"").toLowerCase();
-  if(/\b(rtx|gtx|rx\s?\d|radeon|geforce|arc\s?[ab]\d)/.test(s))return "GPU";
+  if(/\b(rtx|gtx|rx\s?\d|radeon|geforce|arc\s?[ab]\d)/.test(s)||/^\s*\d{3,4}\s*(ti|super|xtx?|gre)?\s*$/.test(s))return "GPU";
   if(/\b(ryzen|core\s?i[3579]|i[3579][-\s]\d|core ultra|threadripper)/.test(s))return "CPU";
   if(/\bddr[345]\b|\bram\b|memory/.test(s))return "RAM / Memory";
   if(/\bnvme\b|\bm\.?2\b/.test(s))return "NVMe SSD";
@@ -246,7 +246,8 @@ export function guessCategory(q){
 
 export function ModelPage({providerKeys,route,setRoute,onWatchChange}){
   const {group,series}=findSeries(route.group,route.series);
-  const item=series.items.find(x=>x.name===route.model)||(route.query?{name:route.query,query:route.query,category:guessCategory(route.query),specs:[],msrp:null}:series.items[0]);
+  const typed=route.query?normalizePartQuery(route.query):"";
+  const item=series.items.find(x=>x.name===route.model)||(typed?(findCatalogModel(typed)?.item||{name:typed,query:typed,category:guessCategory(typed),specs:[],msrp:null}):series.items[0]);
   const [condition,setCondition]=useState("any");
   const [data,setData]=useState(null);
   const [loading,setLoading]=useState(false);

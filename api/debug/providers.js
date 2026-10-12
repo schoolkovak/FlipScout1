@@ -25,7 +25,14 @@ async function call(path, body, key) {
   }
 }
 
+import { checkEbayListing } from "../_lib/verify.js";
+
 export default async function handler(req, res) {
+  // ?ebay=<item url>: run the live eBay page check (no API credits).
+  if (req.query?.ebay) {
+    const started = Date.now();
+    return res.status(200).json({ ebayCheck: await checkEbayListing(String(req.query.ebay)), ms: Date.now() - started });
+  }
   const key = process.env.SERPER_API_KEY || "";
   if (!key) return res.status(200).json({ serperConfigured: false, message: "SERPER_API_KEY is not set on the server." });
   const q = String(req.query?.q || "RTX 4060").slice(0, 80);

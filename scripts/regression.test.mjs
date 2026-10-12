@@ -55,9 +55,10 @@ test('Parts & Sniper keeps marketplace identity and filters junk results',async(
       partBudget:550,buildBudget:1100,committed:300,
       providerKeys:{SERPER_API_KEY:'test-serper',SEARCHAPI_API_KEY:'test-searchapi'}
     });
-    assert.ok(result.market.sampleSize>=4);
+    assert.ok(result.market.sampleSize>=3);
     const sources=new Set(result.items.map(x=>x.source));
-    for(const source of ['Amazon','Newegg','eBay','Mercari'])assert.ok(sources.has(source),source);
+    for(const source of ['Amazon','Newegg','eBay'])assert.ok(sources.has(source),source);
+    assert.ok(!sources.has('Mercari'),'Mercari pages cannot be checked live, so they are hidden');
     assert.ok(!result.items.some(x=>/laptop/i.test(x.title)));
     assert.ok(result.ranked.every(x=>x.score<=x.scoreCap));
   }finally{globalThis.fetch=original;}
