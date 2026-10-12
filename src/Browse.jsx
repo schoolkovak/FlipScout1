@@ -41,7 +41,7 @@ function pickListing(row,mode={rank:"cheapest",cond:"any"}){
   return list.slice().sort((a,b)=>a.totalPrice-b.totalPrice)[0];
 }
 function vsMsrp(price,msrp){return msrp&&price?Math.round((price-msrp)/msrp*1000)/10:null;}
-function linkLabel(item,name){return item?.linkType==="google"?"View "+storeName(item)+" offer on Google":"View "+name+" on "+storeName(item);}
+function linkLabel(item,name){return "View "+name+" on "+storeName(item);}
 
 function readCache(key){try{const v=JSON.parse(localStorage.getItem(key)||"null");return v&&Date.now()-v.at<CACHE_MS?v:null;}catch{return null;}}
 function writeCache(key,data){try{localStorage.setItem(key,JSON.stringify({at:Date.now(),data}));}catch{}}
