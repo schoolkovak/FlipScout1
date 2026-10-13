@@ -519,3 +519,24 @@ test("shipping: unknown is estimated by part type; big retailers ship free over 
   assert.equal(shippingFields({ itemPrice: 20, shippingKnown: false }, "newegg", "RAM / Memory").totalPrice, 26);
   assert.equal(shippingFields({ itemPrice: 40, shippingKnown: false }, "ebay", "PC Case").totalPrice, 65);
 });
+
+test("eBay Browse API: auctions are skipped, Buy It Now kept, links cleaned", async () => {
+  const { searchEbay } = await import("../api/_lib/market.js");
+  const env = { ...process.env };
+  process.env.EBAY_CLIENT_ID = "id"; process.env.EBAY_CLIENT_SECRET = "secret";
+  const original = globalThis.fetch;
+  const headers = [];
+  globalThis.fetch = async (url, opts) => {
+    if (String(url).includes("/oauth2/token")) return { ok: true, status: 200, json: async () => ({ access_token: "t", expires_in: 7200 }) };
+    headers.push(opts.headers);
+    return { ok: true, status: 200, json: async () => ({ itemSummaries: [
+      { itemId: "v1|1|0", title: "EVGA GTX 1660 Super", price: { value: "99" }, buyingOptions: ["FIXED_PRICE"], itemWebUrl: "https://www.ebay.com/itm/111111111111?_skw=x&hash=y" },
+      { itemId: "v1|2|0", title: "MSI GTX 1660 Super", price: { value: "60" }, buyingOptions: ["AUCTION", "FIXED_PRICE"], itemWebUrl: "https://www.ebay.com/itm/222222222222" }
+    ] }) };
+  };
+  try {
+    const offers = await searchEbay({ query: "GTX 1660 Super", condition: "any" });
+    assert.deepEqual(offers.map(o => o.url), ["https://www.ebay.com/itm/111111111111"]);
+    assert.match(headers[0]["X-EBAY-C-ENDUSERCTX"], /zip%3D32832/);
+  } finally { globalThis.fetch = original; process.env = env; }
+});
