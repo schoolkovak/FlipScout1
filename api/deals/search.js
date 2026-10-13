@@ -1,4 +1,4 @@
-import { searchMarketplaces, providerStatus, buildMarket } from "../_lib/market.js";
+import { searchMarketplaces, providerStatus, buildMarket, checkEbayAvailability } from "../_lib/market.js";
 import { withMeter } from "../_lib/meter.js";
 import { readSnapshot, modelPath, ageHours } from "../_lib/snapshots.js";
 import { modelPayload, filterByCondition } from "../_lib/summary.js";
@@ -42,10 +42,12 @@ export default async function handler(req, res) {
     const name = String(q.model || "") || findCatalogModel(input.query)?.item.name || "";
     const snap = name ? await readSnapshot(modelPath(name)) : null;
     if (snap?.results?.length && ageHours(snap.searchedAt) < SNAPSHOT_MAX_AGE_H) {
-      const results = filterByCondition(snap.results, input.condition);
-      const market = input.condition === "any" ? snap.market : { ...snap.market, ...pick(buildMarket(results)) };
+      // Ask eBay which of the cheapest saved listings are still for sale.
+      const live = await checkEbayAvailability(filterByCondition(snap.results, input.condition));
+      const results = live.items;
+      const market = input.condition === "any" && !live.removed ? snap.market : { ...snap.market, ...pick(buildMarket(results)) };
       res.setHeader?.("Cache-Control", "public, s-maxage=300, stale-while-revalidate=3600");
-      return res.status(200).json({ ...snap, available: results.length > 0, market, results, resultCount: results.length, snapshot: true,
+      return res.status(200).json({ ...snap, available: results.length > 0, market, results, resultCount: results.length, snapshot: true, liveCheck: { checked: live.checked, removed: live.removed, error: live.error },
         message: results.length ? undefined : "No " + input.condition + " listings in the latest update for this model." });
     }
   }

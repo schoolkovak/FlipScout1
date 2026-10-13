@@ -164,6 +164,15 @@ function systemSignal(kind, t, host) {
   return null;
 }
 
+// GPU listings that are really laptops or whole PCs without saying so:
+// laptop model lines, or specs only a complete system has (system RAM, an
+// SSD size, laptop CPU names, a screen with a refresh rate).
+const LAPTOP_LINE_RE = /\b(?:razer blade|blade 1[468]|strix scar|scar 1[5-8]|zephyrus|legion (?:pro|slim|[579])|(?:msi )?(?:raider|stealth|titan|vector|katana|crosshair|sword|cyborg) (?:ge|gs|gt|a1|1[5-8]|hx|ai|\d{2})|alienware (?:m1[5-8]|x1[5-8]|1[68])|omen (?:max|transcend|1[67])|predator helios|helios neo|aorus (?:1[5-8]|master 1[68])|rog strix g1[5-8]|tuf gaming (?:a1[5-8]|f1[5-8]))\b/;
+const SYSTEM_SPEC_RE = /\b\d{1,3}\s?gb\s+(?:ram|ddr[45]x?|memory|ddr5 ram|ddr4 ram)\b|\b\d{1,2}\s?tb\s+(?:ssd|nvme|m 2|storage|hdd)\b|\b\d{3,4}\s?gb\s+(?:ssd|nvme)\b|\b(?:ryzen ai|core ultra|ultra [579] (?:\d{3}hx|hx)|i[3579] \d{4,5}hx?|hx \d{3})\b|\b(?:qhd|fhd|uhd|wqxga|oled)\b[^|]*\b\d{3}\s?hz\b|\b\d{3}\s?hz\b[^|]*\b(?:qhd|fhd|uhd|wqxga|oled)\b/;
+export function gpuHostSignal(t) {
+  return t.match(LAPTOP_LINE_RE)?.[0] || t.match(SYSTEM_SPEC_RE)?.[0] || null;
+}
+
 function laptopRe(kind) {
   return kind === "ram"
     ? /\b(?:laptop|notebook|so ?dimm|sodimm)\b/
@@ -341,6 +350,13 @@ export function evaluateListing({ title, query, category, structuredCondition = 
   // GPUs/CPUs/RAM/boards, where the laptop part is a different product.
   if (["gpu", "cpu", "ram", "motherboard", "pc"].includes(kind) && laptopRe(kind).test(t) && !laptopRe(kind).test(q))
     return reject("laptop-or-mobile", t.match(laptopRe(kind))[0]);
+  if (kind === "gpu") {
+    // A bare circuit board (no cooler/shroud) is not a working graphics card.
+    const bare = t.match(/\b(?:pcb|bare board|board only|core only|no (?:cooler|heatsink|shroud|fans?)|without (?:cooler|heatsink|shroud|fans?))\b/);
+    if (bare) return reject("incomplete", bare[0]);
+    const sig = gpuHostSignal(t);
+    if (sig) return reject("laptop-or-system", sig);
+  }
   if (["gpu", "cpu", "motherboard", "ram", "nvme", "ssd", "sata", "hdd", "psu"].includes(kind)) {
     const system = systemSignal(kind, t, host);
     if (system) return reject("complete-system", system);

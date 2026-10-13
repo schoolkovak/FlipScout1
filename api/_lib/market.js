@@ -637,9 +637,55 @@ export async function searchEbay(input) {
       title: x.title || "", url: ebayItemUrl(x.itemWebUrl), itemPrice: Number(x.price?.value || 0),
       shipping: shippingKnown ? Number(shipValue) : 0, shippingKnown,
       structuredCondition: x.condition || "", sellerFeedback: Number(x.seller?.feedbackPercentage || 0) || null,
-      freshness: x.itemCreationDate || null
+      freshness: x.itemCreationDate || null,
+      // The seller's own photo of this listing (none → no image shown).
+      image: x.image?.imageUrl || x.thumbnailImages?.[0]?.imageUrl || null
     });
   });
+}
+
+// Saved eBay listings can sell out between refreshes. One getItems call (up
+// to 20 items) asks eBay which of the cheapest are still for sale and at what
+// price; sold-out, ended and out-of-stock listings are dropped. If the check
+// fails, listings are returned unchanged.
+function ebayRestId(x) {
+  if (x.providerItemId && /^v1\|/.test(x.providerItemId)) return { id: x.providerItemId, exact: true };
+  const legacy = String(x.url || "").match(/\/itm\/(?:[^/?#]+\/)?(\d{9,15})/)?.[1];
+  return legacy ? { id: "v1|" + legacy + "|0", exact: false } : null;
+}
+export async function checkEbayAvailability(items, { limit = 20 } = {}) {
+  const token = await getEbayToken().catch(() => null);
+  const ebay = items.filter(x => x.marketplace === "ebay" && ebayRestId(x)).sort((a, b) => a.totalPrice - b.totalPrice).slice(0, limit);
+  if (!token || !ebay.length) return { items, checked: 0, removed: 0 };
+  let data;
+  try {
+    const ids = [...new Set(ebay.map(x => ebayRestId(x).id))];
+    data = await providerFetch("ebay", "https://api.ebay.com/buy/browse/v1/item/?item_ids=" + encodeURIComponent(ids.join(",")), {
+      headers: { "Authorization": "Bearer " + token, "X-EBAY-C-MARKETPLACE-ID": "EBAY_US", "X-EBAY-C-ENDUSERCTX": "contextualLocation=country%3DUS%2Czip%3D" + (env("EBAY_SHIP_TO_ZIP") || "32832") }
+    }, [token]);
+  } catch (error) {
+    return { items, checked: 0, removed: 0, error: String(error?.message || error).slice(0, 160) };
+  }
+  const live = new Map((data.items || []).map(i => [i.itemId, i]));
+  const gone = new Set();
+  const out = items.map(x => x);
+  for (const x of ebay) {
+    const ref = ebayRestId(x);
+    const it = live.get(ref.id);
+    if (!it) { if (ref.exact) gone.add(x); continue; }
+    const status = it.estimatedAvailabilities?.[0]?.estimatedAvailabilityStatus;
+    const ended = it.itemEndDate && Date.parse(it.itemEndDate) < Date.now();
+    if (status === "OUT_OF_STOCK" || ended || (it.buyingOptions || []).includes("AUCTION")) { gone.add(x); continue; }
+    const price = Number(it.price?.value);
+    const ship = it.shippingOptions?.[0]?.shippingCost?.value;
+    const i = out.indexOf(x);
+    const fresh = { ...x, liveChecked: true };
+    if (price > 0) fresh.itemPrice = price;
+    if (ship !== undefined && ship !== null) { fresh.shipping = Number(ship); fresh.shippingKnown = true; fresh.shippingEstimated = false; }
+    fresh.totalPrice = Math.round(((Number(fresh.itemPrice) || 0) + (Number(fresh.shipping) || 0)) * 100) / 100;
+    out[i] = fresh;
+  }
+  return { items: out.filter(x => !gone.has(x)), checked: ebay.length, removed: gone.size };
 }
 
 // ---------------------------------------------------------------------------
@@ -760,6 +806,7 @@ export function qualifyOffers(rawOffers, input, { selected = null, includeOtherM
       itemPrice: raw.itemPrice,
       ...shippingFields(raw, marketplace, input.category),
       seller: raw.seller,
+      providerItemId: raw.providerItemId || null,
       url: safeUrl(raw.url),
       sellerFeedback: raw.sellerFeedback || null,
       soldCount: raw.soldCount || 0,
