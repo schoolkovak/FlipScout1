@@ -623,3 +623,25 @@ test("cases: size / lighting / color read from titles; models only keep matching
   assert.equal(ok("Thermaltake Versa H18 Black Micro ATX Case", "ATX mid tower PC case"), false);
   assert.equal(ok("Zalman T6 ATX Mid Tower Case", "ARGB PC case"), false);
 });
+
+test("deal alerts: great deals from saved listings, each sent once, with est. profit", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { findGreatDeals, sendAlerts } = await import("./deal-alerts.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "fs-alerts-"));
+  mkdirSync(join(dir, "models"));
+  const L = (t, p, c = "used") => ({ id: t + p, title: t, totalPrice: p, itemPrice: p, condition: c, url: "https://www.ebay.com/itm/" + (100000000000 + p), source: "eBay", marketplace: "ebay" });
+  writeFileSync(join(dir, "models", "rtx-5060.json"), JSON.stringify({ searchedAt: new Date().toISOString(), results: [L("ZOTAC RTX 5060 8GB", 260), L("RTX 5060 8GB a", 340), L("RTX 5060 8GB b", 350), L("RTX 5060 8GB c", 360)] }));
+  const deals = await findGreatDeals(dir);
+  assert.equal(deals.length, 1);
+  assert.equal(deals[0].profit, 85, "used market $345 − $260");
+  const posts = [];
+  const fakeFetch = async (url, opts) => { posts.push({ url, opts }); return { ok: true }; };
+  const first = await sendAlerts(deals, { topic: "t", fetchImpl: fakeFetch });
+  assert.equal(first.sent.length, 1);
+  assert.match(posts[0].opts.body, /Est\. profit ~\$85/);
+  assert.equal(posts[0].opts.headers.Click, deals[0].url);
+  const again = await sendAlerts(deals, { topic: "t", alerted: first.sent, fetchImpl: fakeFetch });
+  assert.equal(again.sent.length, 0, "never alerted twice");
+});

@@ -47,6 +47,9 @@ jobs:
           BUDGET: ${{ github.event.inputs.budget || vars.SNAPSHOT_DAILY_CREDITS || '60' }}
           MAX_PAID: ${{ vars.SNAPSHOT_MAX_PAID_PER_RUN || '6' }}
           FORCE_FREE: ${{ github.event.inputs.force_free == 'true' && '1' || '0' }}
+          # Phone alerts for great deals (free ntfy app). Override with a repo
+          # secret NTFY_TOPIC; the default topic is hard to guess.
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC || 'flipscout-deals-7f3c9a2e51b84d06' }}
         run: node scripts/build-snapshots.mjs --site="$SITE" --data=snapdata --budget="$BUDGET" --max-paid="$MAX_PAID" --force-free="$FORCE_FREE"
       - name: Publish saved listings
         if: steps.refresh.outputs.changed == 'true'
