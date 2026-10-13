@@ -118,7 +118,7 @@ export function flipCaseOk(title) {
   return !/\b(?:cooler|aio|power supply|psu|motherboard|graphics card|cable|stand|dust filter|replacement|bracket|side panel|front panel)\b/.test(t);
 }
 async function cases(read) {
-  const s = await saved(["RGB ATX mid tower PC case", "RGB Micro ATX PC case", "ATX mid tower PC case", "Micro ATX PC case"], read);
+  const s = await saved(["RGB gaming PC case", "ARGB PC case", "White PC case", "ATX mid tower PC case", "Micro ATX PC case"], read);
   const all = uniqueById(s.rows).filter(x => flipCaseOk(x.title));
   const market = usedMarket(all);
   const listings = all.filter(x => x.totalPrice <= 52 && sane(x.totalPrice, market))

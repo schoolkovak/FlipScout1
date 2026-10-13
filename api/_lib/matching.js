@@ -6,6 +6,7 @@
 // outright. Remaining descriptive words in the query only adjust relevance.
 import { resolveCatalogPart, GPUS, CPUS } from "../../shared/catalog.js";
 import { SNIPER_CATEGORIES } from "../../shared/sniper.js";
+import { caseAttributes } from "../../shared/caseAttrs.js";
 
 // ---------------------------------------------------------------------------
 // Text normalization
@@ -372,6 +373,11 @@ export function evaluateListing({ title, query, category, structuredCondition = 
     return reject("laptop-or-mobile", t.match(laptopRe(kind))[0]);
   if (kind === "gpu") {
     // "For ASUS TUF RX 6700 XT ... Heatsink": a part made for that card.
+    // Accessories and enclosures that name a card: SLI/NVLink bridges, risers,
+    // sag brackets, power cables, external eGPU boxes.
+    const gpuExtra = t.match(/\b(?:nvlink|sli bridge|hb bridge|bridge|riser|vertical (?:mount|bracket|kit)|anti ?sag|sag bracket|gpu holder|gpu stand|egpu|e gpu|external graphics|gaming box|thunderbolt|enclosure)\b/)
+      || (!/\b\d{1,2}\s?gb?\b|\bgddr\d/.test(t) && t.match(/\b(?:12vhpwr|16 ?pin|power cable|extension cable|adapter cable|cables?|adapter|support bracket|dock)\b/));
+    if (gpuExtra) return reject("accessory", gpuExtra[0]);
     // "2pcs Cooling Fan ... for MSI RX5500XT 8GB": fans made for that card.
     if (/\b(?:\d\s?pcs|cooling fans?|replacement fans?|graphics card fans?|video card fans?|gpu fans?|fan set|fans? kit)\b/.test(t) && /\bfor\b/.test(t)) return reject("accessory", "gpu fans");
     if (/^for\b/.test(t) || (/\b(?:heatsink|heat sink|cooling fans?|replacement fans?|fans? replacement|water ?block|shroud)\b/.test(t) && !/\b\d{1,2}\s?gb?\b|\bgddr\d/.test(t))) return reject("accessory", "gpu part");
@@ -509,6 +515,14 @@ export function evaluateListing({ title, query, category, structuredCondition = 
     if (casePart && (!caseBody || /\b(?:replacement|spare)\b/.test(t))) return reject("accessory", "case part");
     if (/\b(?:case fans?|fan pack|\d pack|3 pack)\b/.test(t) && !/\b(?:mid tower|full tower|mini tower|tower case|chassis|computer case|pc case|atx case)\b/.test(t)) return reject("accessory", "case fans");
     if (!isCase) return reject("model-not-stated", "not a case");
+    // Case models named for a size / lighting / color only keep matching ones.
+    const attrs = caseAttributes(t);
+    if (/\bwhite\b/.test(q) && attrs.Color !== "White") return reject("color-mismatch", "not white");
+    if (/\bargb\b/.test(q) && attrs.Lighting !== "ARGB") return reject("lighting-mismatch", attrs.Lighting);
+    else if (/\brgb\b/.test(q) && attrs.Lighting === "No RGB") return reject("lighting-mismatch", "no RGB");
+    if (/\bmicro atx\b/.test(q) && attrs.Size !== "Micro ATX") return reject("size-mismatch", attrs.Size);
+    else if (/\bmini itx\b/.test(q) && attrs.Size !== "Mini ITX") return reject("size-mismatch", attrs.Size);
+    else if (/\batx mid tower\b/.test(q) && attrs.Size !== "ATX") return reject("size-mismatch", attrs.Size);
   } else if (kind === "aio" || kind === "aircooler" || kind === "cooler" || kind === "fans") {
     if (/\b(?:mounting kit|mounting bracket|bracket kit|retention kit|backplate kit|replacement fans?|replacement pump|pump only|lcd screen only|thermal paste only)\b/.test(t)) return reject("accessory", "cooler part");
     const isLiquid = /\b(?:aio|liquid|water cool\w*|all in one|radiator)\b/.test(t) || /\bh(?:60|100|115|150|170)i\b/.test(t);

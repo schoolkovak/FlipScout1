@@ -2,6 +2,8 @@ import React,{useEffect,useMemo,useRef,useState} from "react";
 import {Box,Cpu,MemoryStick,HardDrive,CircuitBoard,Plug,Fan,Monitor,ArrowLeft,ExternalLink,RefreshCw,ChevronDown,List,Info,Flame,Bookmark,Search,Zap,TrendingDown,Filter,DollarSign,Layers} from "lucide-react";
 import {track} from "@vercel/analytics";
 import {PART_GROUPS,findSeries,findCatalogModel,normalizePartQuery} from "../shared/partCatalog.js";
+import {caseAttributes,CASE_FACETS,monitorAttributes,MONITOR_FACETS} from "../shared/caseAttrs.js";
+const FACETS={"PC Case":{list:CASE_FACETS,of:x=>caseAttributes(x.title)},"Monitor":{list:MONITOR_FACETS,of:x=>monitorAttributes(x.title)}};
 import {SNIPER_CONDITIONS,allowsUsed} from "../shared/sniper.js";
 import {getWatchlist,toggleWatchItem,saveSearch} from "./storage";
 import {saveMarketSnapshot,getMarketTrend} from "./marketHistory";
@@ -323,7 +325,7 @@ export function ModelPage({providerKeys,route,setRoute,onWatchChange}){
     {data&&!data.available&&<div className="notice"><Info size={18}/><div><b>No listings for {item.name} right now</b><p>{friendly(data.message)}</p><ProviderNotes providers={data.providers} coverage={data.coverage} errors={data.errors}/></div></div>}
     {data?.available&&<section className="resultsPanel">
       <MarketPulse market={data.market} results={data.results}/>
-      <DealResults results={data.results} isWatched={isWatched} onWatch={toggle} msrp={item.msrp}/>
+      <DealResults results={data.results} isWatched={isWatched} onWatch={toggle} msrp={item.msrp} facets={FACETS[item.category]||null}/>
       <ProviderNotes providers={data.providers} coverage={data.coverage} errors={data.errors}/>
     </section>}
   </div>;
