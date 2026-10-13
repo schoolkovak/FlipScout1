@@ -40,3 +40,4 @@ Restore point: branch `tomato` (commit 56d201c). Say "tomato" to return the site
 - Tax defaults to Florida (changeable in the Tax picker).
 - Buy It Now only: eBay auctions are skipped, including auctions that also offer Buy It Now.
 - Refresh workflow has a "force_free" option to re-check every model on the free APIs immediately.
+- 500GB NVMe now also listed under "NVMe SSD" and 500GB SATA under "SATA SSD / HDD"; searching "500gb nvme" / "500gb sata" opens the right model.

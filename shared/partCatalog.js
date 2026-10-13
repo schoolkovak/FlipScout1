@@ -160,12 +160,14 @@ export const PART_GROUPS = [
         spec("1TB SSD", "SSD / NVMe", [["Capacity", "1 TB"], ["Type", "NVMe or SATA"]])
       ] },
       { id: "nvme", label: "NVMe SSD", items: [
+        spec("500GB NVMe SSD", "NVMe SSD", [["Capacity", "500 GB"], ["Interface", "M.2 NVMe"]]),
         spec("1TB NVMe SSD", "NVMe SSD", [["Capacity", "1 TB"], ["Interface", "M.2 NVMe"]]),
         spec("2TB NVMe SSD", "NVMe SSD", [["Capacity", "2 TB"], ["Interface", "M.2 NVMe"]]),
         spec("4TB NVMe SSD", "NVMe SSD", [["Capacity", "4 TB"], ["Interface", "M.2 NVMe"]]),
         spec("2TB PCIe 5.0 NVMe SSD", "NVMe SSD", [["Capacity", "2 TB"], ["Interface", "PCIe 5.0"]])
       ] },
       { id: "sata", label: "SATA SSD / HDD", items: [
+        spec("500GB SATA SSD", "SATA SSD", [["Capacity", "500 GB"], ["Form", "2.5\""]]),
         spec("1TB SATA SSD", "SATA SSD", [["Capacity", "1 TB"], ["Form", "2.5\""]]),
         spec("2TB SATA SSD", "SATA SSD", [["Capacity", "2 TB"], ["Form", "2.5\""]]),
         spec("4TB 7200RPM HDD", "Hard Drive / HDD", [["Capacity", "4 TB"], ["Speed", "7200 RPM"]]),
@@ -256,7 +258,7 @@ export function findSeries(groupId, seriesId) {
 
 // Typed searches: "1660 super", "gtx1660ti", "5700xt" -> the catalog model,
 // so the model page gets the right category, MSRP and series.
-const modelKey = s => String(s || "").toLowerCase().replace(/\b(nvidia|geforce|amd|radeon|intel|graphics card|gpu)\b/g, "").replace(/\b(rtx|gtx|gt|rx)\s*/g, "").replace(/[^a-z0-9]/g, "");
+const modelKey = s => String(s || "").toLowerCase().replace(/\b(nvidia|geforce|amd|radeon|intel|graphics card|gpu|ssd|solid state drive|drive)\b/g, "").replace(/\b(rtx|gtx|gt|rx)\s*/g, "").replace(/[^a-z0-9]/g, "");
 export function findCatalogModel(query) {
   const key = modelKey(query);
   if (!key) return null;
