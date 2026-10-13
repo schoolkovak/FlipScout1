@@ -702,3 +702,18 @@ test("newegg: search-page JSON becomes real listings and combo deals", async () 
   assert.deepEqual(combos[0].kinds, ["cpu", "motherboard"]);
   assert.equal(combos[0].url, "https://www.newegg.com/Product/ComboDealDetails?ItemList=Combo.4888188");
 });
+
+test("box-only listings are rejected; cards that come with a box are kept", async () => {
+  const { evaluateListing, BOX_SCAM_DESCRIPTION_RE } = await import("../api/_lib/matching.js");
+  const ok = t => evaluateListing({ title: t, query: "RTX 3070", category: "GPU" }).ok;
+  assert.equal(ok("EVGA GeForce RTX 3070 FTW3 Ultra 8GB GDDR6 Ray Tracing DLSS PCIe 4.0 Box"), false);
+  assert.equal(ok("Box for EVGA RTX 3070 FTW3"), false);
+  assert.equal(ok("EVGA RTX 3070 FTW3 just the box"), false);
+  assert.equal(ok("EVGA RTX 3070 XC3 Box and contents shown"), false);
+  assert.equal(ok("MSI GeForce RTX 3070 VENTUS 3X OC 8GB GDDR6 Graphics Card w/ Original Box"), true);
+  assert.equal(ok("MSI GeForce RTX 3070 GAMING Z Trio LHR 8GB GDDR6 Graphics Card New In Box"), true);
+  assert.equal(ok("EVGA RTX 3070 FTW3 Ultra Open Box"), true);
+  assert.equal(ok("EVGA RTX 3070 FTW3 Ultra No Box"), true);
+  assert.ok(BOX_SCAM_DESCRIPTION_RE.test("This auction is for the box and the contents shown in the picture"));
+  assert.ok(!BOX_SCAM_DESCRIPTION_RE.test("Works great, comes with the original box and all accessories."));
+});

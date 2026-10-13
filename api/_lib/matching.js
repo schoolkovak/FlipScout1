@@ -139,6 +139,22 @@ function tokenCoverage(normTitle, tokens) {
 // ---------------------------------------------------------------------------
 // Shared rejection rules
 // ---------------------------------------------------------------------------
+// Box-only listings: "RTX 3070 FTW3 Ultra 8GB ... PCIe 4.0 Box", "Box for RTX
+// 3070", "just the box". A title ending in "box" is fine when it says the card
+// comes with/in it ("w/ Original Box", "New In Box", "Open Box", "No Box").
+const BOX_KEEP_WORDS = new Set(["with", "w", "in", "inc", "incl", "includes", "including", "plus", "open", "and", "no", "without", "wo", "nib", "bnib"]);
+const BOX_ONLY_RE = /^(?:empty |original |retail |oem )?box(?:es)? (?:for|of|only)\b|\b(?:just|only) (?:the |a )?(?:original |retail )?box\b|\bbox (?:and|&) (?:the )?(?:contents|accessories)(?: shown| only| pictured)?\b|\bbox photos? only\b/;
+export function boxOnlyTitle(t) {
+  const m = t.match(BOX_ONLY_RE);
+  if (m) return m[0];
+  const words = t.trim().split(/\s+/);
+  if (!/^(?:box|boxes|packaging)$/.test(words[words.length - 1] || "")) return null;
+  return words.slice(-5, -1).some(w => BOX_KEEP_WORDS.has(w)) ? null : words.slice(-3).join(" ");
+}
+// eBay descriptions of box-only bait: "This auction is for the box and the
+// contents shown in the picture."
+export const BOX_SCAM_DESCRIPTION_RE = /\b(?:(?:auction|listing|sale|item) is (?:only )?for (?:the )?(?:empty |original |retail )?box|(?:this is|you are buying|you will receive|you get) (?:only |just )?(?:the |an? )?(?:empty |original |retail )?box\b|box only|empty box|(?:does not|doesn'?t|will not) (?:include|come with) (?:the |a )?(?:graphics card|gpu|video card|card|processor|cpu)|picture of the (?:card|gpu))/i;
+
 const INCOMPLETE_RE = /\b(?:box only|empty box|box and manual|manual only|no gpu|no cpu|no ram|no ssd|no hdd|no psu|barebones?|missing (?:fan|fans|backplate|shroud|cables?|pins?|parts?|screws?|bracket|io shield|accessories|lid))\b/;
 const ACCESSORY_FOR_RE = /\b(?:water ?block|waterblock|backplate|heatsink|cooler|fans?|bracket|mount|cables?|adapter|shroud|enclosure|cover|pads?|stand|holder|frame|kit|shield|screen|panel|filter|sticker|skin)\s+(?:for|compatible with|fits|replacement for)\s+(?!gaming|gamers|desktop|pc\b|pcs\b|computer|home|office|work|amd\b|intel\b|ryzen|lga|socket|am4\b|am5\b|cpu\b|processor|\d)/;
 // Unambiguous complete-system wording.
@@ -365,6 +381,8 @@ export function evaluateListing({ title, query, category, structuredCondition = 
   // Incomplete / accessory / form-factor ------------------------------------
   const incomplete = hasUnnegated(t, INCOMPLETE_RE);
   if (incomplete) return reject("incomplete", incomplete);
+  const boxOnly = kind !== "case" && boxOnlyTitle(t);
+  if (boxOnly) return reject("box-only", boxOnly);
   const host = stripHostPhrases(t);
   if (kind !== "generic" && kind !== "case" && kind !== "fans" && ACCESSORY_FOR_RE.test(host)) return reject("accessory", host.match(ACCESSORY_FOR_RE)[0]);
   // SSDs/HDDs legitimately say "for laptop and desktop"; only reject laptop
