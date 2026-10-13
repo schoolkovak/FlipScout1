@@ -53,3 +53,4 @@ Restore point: branch `tomato` (commit 56d201c). Say "tomato" to return the site
 - Matcher: GPU heatsinks/fans/parts ("For ASUS TUF RX 6700 XT … Heatsink") and laptop RAM by part number (Samsung M471…, SK hynix …GS, Crucial CT…SF…) are rejected.
 - Duplicates: the same store + title + price is shown once (sellers listing several identical units), and saved eBay items are merged by item ID.
 - The refresh re-checks all ~200 models in one run (6 at a time) and applies the shipping rules to older saved store listings too.
+- eBay: US-located sellers only and USD prices only (foreign listings showed converted prices without import charges, e.g. a CA$101.99 RX 580 shown as $51). GPU fan sets "for" a card are rejected.

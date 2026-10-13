@@ -556,13 +556,14 @@ test("eBay Browse API: auctions are skipped, Buy It Now kept, links cleaned", as
   const env = { ...process.env };
   process.env.EBAY_CLIENT_ID = "id"; process.env.EBAY_CLIENT_SECRET = "secret";
   const original = globalThis.fetch;
-  const headers = [];
+  const headers = [], urls = [];
   globalThis.fetch = async (url, opts) => {
     if (String(url).includes("/oauth2/token")) return { ok: true, status: 200, json: async () => ({ access_token: "t", expires_in: 7200 }) };
-    headers.push(opts.headers);
+    headers.push(opts.headers); urls.push(String(url));
     return { ok: true, status: 200, json: async () => ({ itemSummaries: [
       { itemId: "v1|1|0", title: "EVGA GTX 1660 Super", price: { value: "99" }, buyingOptions: ["FIXED_PRICE"], itemWebUrl: "https://www.ebay.com/itm/111111111111?_skw=x&hash=y", image: { imageUrl: "https://i.ebayimg.com/images/g/abc/s-l225.jpg" } },
-      { itemId: "v1|2|0", title: "MSI GTX 1660 Super", price: { value: "60" }, buyingOptions: ["AUCTION", "FIXED_PRICE"], itemWebUrl: "https://www.ebay.com/itm/222222222222" }
+      { itemId: "v1|2|0", title: "MSI GTX 1660 Super", price: { value: "60" }, buyingOptions: ["AUCTION", "FIXED_PRICE"], itemWebUrl: "https://www.ebay.com/itm/222222222222" },
+      { itemId: "v1|3|0", title: "ASUS GTX 1660 Super", price: { value: "51", currency: "USD" }, buyingOptions: ["FIXED_PRICE"], itemLocation: { country: "CA" }, itemWebUrl: "https://www.ebay.com/itm/333333333333" }
     ] }) };
   };
   try {
@@ -570,6 +571,7 @@ test("eBay Browse API: auctions are skipped, Buy It Now kept, links cleaned", as
     assert.deepEqual(offers.map(o => o.url), ["https://www.ebay.com/itm/111111111111"]);
     assert.equal(offers[0].image, "https://i.ebayimg.com/images/g/abc/s-l225.jpg", "the listing's own photo");
     assert.match(headers[0]["X-EBAY-C-ENDUSERCTX"], /zip%3D32832/);
+    assert.ok(urls[0].includes("itemLocationCountry%3AUS"), "US sellers only");
   } finally { globalThis.fetch = original; process.env = env; }
 });
 
