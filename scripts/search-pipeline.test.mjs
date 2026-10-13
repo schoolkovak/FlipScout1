@@ -595,3 +595,17 @@ test("saved eBay listings: sold-out/ended ones dropped, live price used", async 
     assert.equal(r.removed, 2);
   } finally { globalThis.fetch = original; process.env = env; }
 });
+
+test("PSU: desktop units only (no chargers, office/OEM, server or peak-rated junk)", () => {
+  const ok = t => evaluateListing({ title: t, query: "650W PSU", category: "Power Supply / PSU" }).ok;
+  for (const t of ["New--Power Star Yellow 650w-MAX 12cm-Fan ATX Power Supply 20+4pin", "442036-001 HP Workstation xw6600 650W PSU",
+    "Charger for Rattan LM 650W Folding Fat Tire E-Bike", "New SHARK 650W ATX12V Replacement PC Power Supply", "Delta 650W 1U redundant server power supply"])
+    assert.equal(ok(t), false, t);
+  for (const t of ["Thermaltake Smart BM3 80+ Bronze ATX 3.0 650W Semi-Modular", "Gigabyte P650 Power Supply, 80 Plus Bronze, 650w Max.",
+    "650W ATX Power Supply 80 Plus Gold Non-Modular", "SEGOTEP GN650W PSU"])
+    assert.equal(ok(t), true, t);
+  const ok750 = t => evaluateListing({ title: t, query: "750W PSU", category: "Power Supply / PSU" }).ok;
+  assert.equal(ok750("Thermaltake Smart 750W ATX Power Supply"), false, "750W needs an 80 Plus rating");
+  assert.equal(ok750("Rosewill 750W 80+ White ATX Power Supply"), true);
+  assert.equal(ok750("Corsair CX750 750W 80 Plus Bronze"), true);
+});

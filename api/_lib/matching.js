@@ -173,6 +173,25 @@ export function gpuHostSignal(t) {
   return t.match(LAPTOP_LINE_RE)?.[0] || t.match(SYSTEM_SPEC_RE)?.[0] || null;
 }
 
+// Desktop gaming PSUs only. Office/OEM pulls, server units, chargers and
+// no-name "650W-MAX" (peak-rated) boxes are rejected; a listing must name a
+// known PSU brand or an efficiency rating.
+const PSU_BRANDS_RE = /\b(?:corsair|evga|seasonic|thermaltake|cooler ?master|be quiet|msi|gigabyte|aorus|asus|rog|nzxt|fractal|silverstone|antec|montech|rosewill|deepcool|segotep|lian li|super ?flower|xpg|adata|fsp|phanteks|thermalright|apevia|sama|aresgame|golden field|asrock|powerspec|bitfenix|chieftec|enermax|raidmax|gamemax|darkflash|zalman|cougar|arctic|vetroo|okinos|1st player|mag a\d{3})\b/;
+const PSU_RATED_RE = /\b(?:80 ?plus|80 ?\+|bronze|silver|gold|platinum|titanium|cybenetics)\b/;
+const PSU_NOT_DESKTOP_RE = /\b(?:charger|chargers|ac adapter|dc adapter|laptop|notebook|e ?bike|scooter|golf cart|power bank|led driver|server|redundant|hot ?swap|hot ?plug|1u|2u|dps \d+|dell|hp|hewlett|lenovo|acer|optiplex|prodesk|elitedesk|thinkcentre|liteon|lite on|bestec|chicony|hipro|delta electronics|tfx|flex ?atx|replacement (?:pc )?power supply|oem|pull(?:ed)? from)\b/;
+export function psuDesktopVerdict(t) {
+  const bad = t.match(PSU_NOT_DESKTOP_RE);
+  if (bad) return bad[0];
+  const peak = /\b\d{3,4}\s?w\s?max\b|\bmax\s?\d{3,4}\s?w\b|\bpeak\b/.test(t);
+  const brand = PSU_BRANDS_RE.test(t), rated = PSU_RATED_RE.test(t);
+  if (peak && !rated) return "peak-rated (max watts)";
+  if (!brand && !rated) return "no brand or efficiency rating";
+  // 700W and up: must be 80 Plus certified (White, Bronze or better).
+  const watts = Math.max(0, ...[...t.matchAll(/\b(\d{3,4})\s?w(?:att)?s?\b/g)].map(m => Number(m[1])));
+  if (watts >= 700 && !rated && !/\bwhite\b/.test(t)) return "700W+ without 80 Plus rating";
+  return null;
+}
+
 function laptopRe(kind) {
   // SODIMM part numbers: Samsung M471…, SK hynix HMA8…GS / HMAA…GS, Crucial CT…SF…
   return kind === "ram"
@@ -466,6 +485,8 @@ export function evaluateListing({ title, query, category, structuredCondition = 
     if (/\b(?:combo|bundle|with cpu|cpu included)\b/.test(t) || cpuContextKeys(t).size) return reject("bundle-or-combo", "motherboard with CPU");
     if (/\b(?:io shield|i o shield|bios chip|cmos battery|standoffs?)\b/.test(t) && !/\bmotherboard\b/.test(t)) return reject("accessory", "motherboard accessory");
   } else if (kind === "psu") {
+    const desktop = psuDesktopVerdict(t);
+    if (desktop) return reject("not-desktop-psu", desktop);
     if (/\b(?:sleeved|extension|cable kit|cable set|cables only|cable only|replacement cable|tester|adapter)\b/.test(t) && !/\bpower supply\b/.test(stripHostPhrases(t.replace(/\b(?:cable|adapter)s?(?:\s+(?:kit|set))?\s+for\s+.*$/, "")))) return reject("accessory", "psu cable/adapter");
     const qWatt = q.match(/\b(\d{3,4})w\b/)?.[1];
     if (qWatt) {

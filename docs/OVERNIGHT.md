@@ -54,3 +54,5 @@ Restore point: branch `tomato` (commit 56d201c). Say "tomato" to return the site
 - Duplicates: the same store + title + price is shown once (sellers listing several identical units), and saved eBay items are merged by item ID.
 - The refresh re-checks all ~200 models in one run (6 at a time) and applies the shipping rules to older saved store listings too.
 - eBay: US-located sellers only and USD prices only (foreign listings showed converted prices without import charges, e.g. a CA$101.99 RX 580 shown as $51). GPU fan sets "for" a card are rejected.
+- PSUs: desktop units only. Rejects chargers, office/OEM pulls (Dell/HP/Lenovo…), server/redundant units, "replacement PC power supply" and peak-rated "650W-MAX" boxes; needs a known PSU brand or an 80 Plus rating, and 700W+ needs an 80 Plus rating (White or better).
+- Browse sidebar: a "New / Used" box is always shown under "Show" (Only Used is disabled, with a note, on new-only part types).

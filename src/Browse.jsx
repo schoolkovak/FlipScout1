@@ -170,7 +170,7 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
   const loadedAt=Object.values(rows).map(x=>x.searchedAt).filter(Boolean).sort().at(-1);
   const toggle=k=>setOpen(o=>({...o,[k]:!o[k]}));
   const usedGroup=allowsUsed(series.items[0]?.category);
-  useEffect(()=>{if(!usedGroup)setCond("any");},[usedGroup]);
+  useEffect(()=>{if(!usedGroup&&cond==="used")setCond("any");},[usedGroup]);
   // Phones: the sidebar folds into a drawer so the price cards come first.
   const [drawer,setDrawer]=useState(false);
   useEffect(()=>setDrawer(false),[group.id,series.id]);
@@ -200,10 +200,11 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
         <div className="sideHead static"><Zap size={15}/>Show <span className="tip" title="Which listing each card features. Switching never re-searches."><Info size={12}/></span></div>
         <div className="modeRow">{RANK_MODES.map(m=><button key={m.value} className={rank===m.value?"on":""} onClick={()=>setRank(m.value)}>{m.label}</button>)}</div>
       </section>
-      {usedGroup&&<section className="sideBox">
-        <div className="sideHead static"><Filter size={15}/>Condition</div>
-        <div className="modeRow three">{COND_MODES.map(m=><button key={m.value} className={cond===m.value?"on":""} onClick={()=>setCond(m.value)}>{m.label}</button>)}</div>
-      </section>}
+      <section className="sideBox">
+        <div className="sideHead static"><Filter size={15}/>New / Used</div>
+        <div className="modeRow three">{COND_MODES.map(m=><button key={m.value} className={cond===m.value?"on":""} disabled={!usedGroup&&m.value==="used"} onClick={()=>setCond(m.value)}>{m.label}</button>)}</div>
+        {!usedGroup&&<small className="sideNote">New only for this part type.</small>}
+      </section>
       <section className="sideBox">
         <button className="sideHead" onClick={()=>toggle("filters")}><Filter size={15}/>Filters<ChevronDown size={15} className={open.filters?"flip":""}/></button>
         {open.filters&&<>
