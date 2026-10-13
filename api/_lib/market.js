@@ -596,7 +596,8 @@ let ebayTokenCache = { token: null, expiresAt: 0 };
 async function getEbayToken() {
   if (!env("EBAY_CLIENT_ID") || !env("EBAY_CLIENT_SECRET")) return null;
   if (ebayTokenCache.token && Date.now() < ebayTokenCache.expiresAt - 60000) return ebayTokenCache.token;
-  const credentials = Buffer.from(env("EBAY_CLIENT_ID") + ":" + env("EBAY_CLIENT_SECRET")).toString("base64");
+  // Trim: a pasted key with a trailing space/newline is rejected as invalid_client.
+  const credentials = Buffer.from(env("EBAY_CLIENT_ID").trim() + ":" + env("EBAY_CLIENT_SECRET").trim()).toString("base64");
   const data = await providerFetch("ebay", "https://api.ebay.com/identity/v1/oauth2/token", {
     method: "POST",
     headers: { "Authorization": "Basic " + credentials, "Content-Type": "application/x-www-form-urlencoded" },
