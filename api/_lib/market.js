@@ -730,8 +730,9 @@ function dedupe(items) {
   for (const x of items.slice().sort((a, b) => providerPriority(a.provider) - providerPriority(b.provider))) {
     const id = listingIdentity(x);
     const tp = titlePriceKey(x);
-    const sameTitleOtherProvider = seenTitle.has(tp) && seenTitle.get(tp) !== x.provider;
-    if ((id && seenId.has(id)) || sameTitleOtherProvider) { duplicates++; continue; }
+    // Same store + same title + same price = the same offer (a seller listing
+    // several identical units, or one item seen by two sources): show it once.
+    if ((id && seenId.has(id)) || seenTitle.has(tp)) { duplicates++; continue; }
     if (id) seenId.add(id);
     if (!seenTitle.has(tp)) seenTitle.set(tp, x.provider);
     out.push(x);

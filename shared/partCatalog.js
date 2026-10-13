@@ -232,6 +232,8 @@ export const PART_GROUPS = [
   {
     id: "case", label: "Case", icon: "case", series: [
       { id: "budget", label: "Budget Cases", items: [
+        spec("RGB ATX mid tower PC case", "PC Case", [["Form", "ATX mid tower"], ["Lighting", "RGB"]]),
+        spec("RGB Micro ATX PC case", "PC Case", [["Form", "Micro ATX"], ["Lighting", "RGB"]]),
         spec("ATX mid tower PC case", "PC Case", [["Form", "ATX mid tower"]]),
         spec("Micro ATX PC case", "PC Case", [["Form", "Micro ATX"]]),
         spec("Mini ITX PC case", "PC Case", [["Form", "Mini ITX"]])

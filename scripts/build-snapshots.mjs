@@ -16,7 +16,8 @@ import { mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs"
 import { join } from "node:path";
 import { PART_GROUPS } from "../shared/partCatalog.js";
 import { modelSlug } from "../api/_lib/snapshots.js";
-import { buildMarket, rankDeals } from "../api/_lib/market.js";
+import { buildMarket, rankDeals, shippingFields } from "../api/_lib/market.js";
+import { normalizeListingText } from "../api/_lib/matching.js";
 
 const args = Object.fromEntries(process.argv.slice(2).map(a => { const [k, v] = a.replace(/^--/, "").split("="); return [k, v ?? "1"]; }));
 const SITE = (args.site || "https://flip-scout-ebon.vercel.app").replace(/\/$/, "");
@@ -32,7 +33,7 @@ const RUN_LIMIT_MS = Number(args["time-limit"] ?? 20 * 60 * 1000);
 // (Flipper Deals sections are built from these too.)
 const PRIORITY = [
   "GTX 1660 Super", "GTX 1660 Ti", "RTX 3060 12GB", "16GB DDR4 3200", "500GB NVMe SSD", "Ryzen 5 3600", "650W PSU",
-  "ATX mid tower PC case", "RTX 3060 Ti", "RTX 3070", "RTX 2060", "Ryzen 5 2600", "Ryzen 5 5600", "8GB DDR4 3200",
+  "RGB ATX mid tower PC case", "RGB Micro ATX PC case", "ATX mid tower PC case", "RTX 3060 Ti", "RTX 3070", "RTX 2060", "Ryzen 5 2600", "Ryzen 5 5600", "8GB DDR4 3200",
   "650W 80+ Gold PSU", "550W PSU", "GTX 1660", "RX 6600", "RX 580 8GB", "RX 5700 XT", "Ryzen 5 3500X", "Ryzen 5 5600X",
   "Micro ATX PC case", "16GB DDR4 3600", "RTX 2060 Super", "RTX 2070 Super", "GTX 1070", "GTX 1080", "RX 6700 XT",
   "RTX 3080 10GB", "RTX 4060", "Ryzen 7 5700X", "Ryzen 7 5800X3D", "750W 80+ Gold PSU", "500GB SSD",
@@ -62,8 +63,27 @@ function liveUrl(item, free) {
   return SITE + "/api/deals/search?" + qs;
 }
 
+// Merged sets (fresh free-API listings + kept store listings) are cleaned the
+// way the site cleans a live search: one entry per eBay item / per identical
+// store offer, and every price includes shipping (stated or estimated).
+function cleanMerged(items, item) {
+  const seen = new Set();
+  const out = [];
+  for (const x of items) {
+    const ebayId = String(x.url || "").match(/\/itm\/(?:[^/?#]+\/)?(\d{9,15})/)?.[1];
+    const keys = [ebayId ? "ebay:" + ebayId : null, (x.marketplace || "") + "|" + normalizeListingText(x.title) + "|" + Math.round(Number(x.itemPrice) || 0)].filter(Boolean);
+    if (keys.some(k => seen.has(k))) continue;
+    keys.forEach(k => seen.add(k));
+    const y = ebayId ? { ...x, url: "https://www.ebay.com/itm/" + ebayId } : { ...x };
+    if (!y.shippingKnown && y.shippingEstimated === undefined) Object.assign(y, shippingFields(y, y.marketplace, item.category));
+    out.push(y);
+  }
+  return out;
+}
+
 // Re-rank a merged listing set the same way the site does.
 function rerank(items, item) {
+  items = cleanMerged(items, item);
   const market = buildMarket(items);
   const ranked = rankDeals(items, market, { query: item.query, msrp: item.msrp || 0, sortBy: "lowest" });
   return { market, ranked };
@@ -110,8 +130,8 @@ async function main() {
   if (freeApis) {
     const force = args["force-free"] === "1";
     const due = models.filter(m => force || hoursSince(state.models[m.name]?.freeAt) > FREE_STALE_H);
-    await pool(due, 3, async item => {
-      if (Date.now() - started > RUN_LIMIT_MS / 2) return;
+    await pool(due, 6, async item => {
+      if (Date.now() - started > RUN_LIMIT_MS * 0.8) return;
       try {
         const data = await getJson(liveUrl(item, true));
         const fresh = (data.results || []).filter(x => FREE_PROVIDER.test(x.provider || ""));

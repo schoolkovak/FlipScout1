@@ -45,3 +45,11 @@ Restore point: branch `tomato` (commit 56d201c). Say "tomato" to return the site
 - GPU filter: laptops (Razer Blade, ROG Strix SCAR, MSI Raider…), whole PCs (system RAM / SSD sizes / laptop CPUs / screen specs) and bare PCBs ("PCB", "no cooler") are rejected.
 - Out-of-stock/sold check: opening a model page (or a Deal Hunt saved target) asks eBay, in one call, whether the 20 cheapest saved listings are still for sale; sold/ended/out-of-stock ones are hidden and live prices + shipping are used.
 - eBay listings are re-checked every ~2 hours (was 2.5).
+- Flipper Deals now only lists real deals: each listing is compared with that model's current used-market price (median of its saved listings) and must be ≥10% under it; the % and market price are shown.
+  - GPUs: ranked by buyer appeal² ÷ price (newer, popular cards like the RTX 5060 rank above older cheaper cards; very expensive cards can't justify themselves).
+  - Ryzen CPUs: never above $65; ranked by appeal per dollar.
+  - Cases: RGB required, Micro-ATX or larger, no open-air / test bench / Mini-ITX. Added "RGB ATX mid tower" and "RGB Micro ATX" case models.
+  - DDR4: no ECC/server RAM; NVMe: no SATA M.2 drives.
+- Matcher: GPU heatsinks/fans/parts ("For ASUS TUF RX 6700 XT … Heatsink") and laptop RAM by part number (Samsung M471…, SK hynix …GS, Crucial CT…SF…) are rejected.
+- Duplicates: the same store + title + price is shown once (sellers listing several identical units), and saved eBay items are merged by item ID.
+- The refresh re-checks all ~200 models in one run (6 at a time) and applies the shipping rules to older saved store listings too.

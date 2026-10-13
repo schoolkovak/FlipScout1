@@ -174,8 +174,9 @@ export function gpuHostSignal(t) {
 }
 
 function laptopRe(kind) {
+  // SODIMM part numbers: Samsung M471…, SK hynix HMA8…GS / HMAA…GS, Crucial CT…SF…
   return kind === "ram"
-    ? /\b(?:laptop|notebook|so ?dimm|sodimm)\b/
+    ? /\b(?:laptop|notebook|so ?dimm|sodimm|m471\w*|hma\w*gs\w*|ct\d+g4sf\w*)\b/
     : /\b(?:laptop|notebook|mobile|max q|mxm)\b/;
 }
 
@@ -351,6 +352,8 @@ export function evaluateListing({ title, query, category, structuredCondition = 
   if (["gpu", "cpu", "ram", "motherboard", "pc"].includes(kind) && laptopRe(kind).test(t) && !laptopRe(kind).test(q))
     return reject("laptop-or-mobile", t.match(laptopRe(kind))[0]);
   if (kind === "gpu") {
+    // "For ASUS TUF RX 6700 XT ... Heatsink": a part made for that card.
+    if (/^for\b/.test(t) || (/\b(?:heatsink|heat sink|cooling fans?|replacement fans?|fans? replacement|water ?block|shroud)\b/.test(t) && !/\b\d{1,2}\s?gb?\b|\bgddr\d/.test(t))) return reject("accessory", "gpu part");
     // A bare circuit board (no cooler/shroud) is not a working graphics card.
     const bare = t.match(/\b(?:pcb|bare board|board only|core only|no (?:cooler|heatsink|shroud|fans?)|without (?:cooler|heatsink|shroud|fans?))\b/);
     if (bare) return reject("incomplete", bare[0]);
