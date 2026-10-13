@@ -58,3 +58,5 @@ Restore point: branch `tomato` (commit 56d201c). Say "tomato" to return the site
 - Browse sidebar: a "New / Used" box is always shown under "Show" (Only Used is disabled, with a note, on new-only part types).
 - eBay searches are limited to eBay's own category for the part (Graphics Cards, CPUs, Memory, Motherboards, Power Supplies, SSDs, Cases, Monitors), so accessories, laptops and whole PCs mostly never come back; if a category returns nothing the search retries without it.
 - GPU filter also rejects NVLink/SLI bridges, risers, sag brackets, eGPU boxes ("Gaming Box", external graphics) and cable/adapter listings without a VRAM spec.
+- Case pages: filter rows for Size (ATX / Micro ATX / Mini ITX), Lighting (ARGB / RGB / No RGB) and Color (White / Black), read from titles. Case models are now broad searches (ATX mid tower, Micro ATX, Mini ITX, RGB, ARGB, White), and a model only keeps cases matching its size/lighting/color.
+- Monitor pages: filter rows for Size, Resolution, Panel (IPS/VA/OLED/TN) and Refresh rate; added 24", 27", 1440p and 144Hz gaming monitor models.

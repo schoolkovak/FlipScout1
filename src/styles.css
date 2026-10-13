@@ -404,3 +404,7 @@ button.mcImage{border:0;width:100%;cursor:pointer;padding:0}
 .histBox b{color:var(--text)}
 .flipMain .flipDeal{color:#ffd166}
 .modeRow button:disabled{opacity:.35;cursor:not-allowed}
+.facetRows{display:grid;gap:6px;margin:8px 0}
+.chipRow.facet{align-items:center}
+.facetLabel{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);min-width:64px}
+.chip:disabled{opacity:.35;cursor:not-allowed}

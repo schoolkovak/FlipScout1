@@ -493,7 +493,7 @@ test("Flipper Deals sections are computed from saved listings", async () => {
     "models/650w-psu.json": [L("EVGA 650 BR 650W 80+ Bronze Power Supply", 49.99), ...many("Corsair CX650 650W 80+ Bronze", [70, 72, 75], { condition: "used" })],
     "models/750w-80-gold-psu.json": [L("Corsair RM750e 750W 80+ Gold", 79.99), ...many("MSI A750GL 750W 80+ Gold", [99, 100, 105], { condition: "used" })],
     // Cases: RGB, Micro-ATX or bigger, <= $52; no open-air, no Mini-ITX.
-    "models/rgb-atx-mid-tower-pc-case.json": [L("Montech AIR 100 ARGB Micro ATX Mid Tower Case", 49.99), L("Lian Li Lancool 216 RGB ATX Case", 99.99), L("Open Air RGB ATX Test Bench", 25), L("Cooler Master NR200 Mini ITX RGB case", 45), L("Zalman T6 ATX Mid Tower Case", 35)],
+    "models/rgb-gaming-pc-case.json": [L("Montech AIR 100 ARGB Micro ATX Mid Tower Case", 49.99), L("Lian Li Lancool 216 RGB ATX Case", 99.99), L("Open Air RGB ATX Test Bench", 25), L("Cooler Master NR200 Mini ITX RGB case", 45), L("Zalman T6 ATX Mid Tower Case", 35)],
     "models/ryzen-5-3600.json": [L("AMD Ryzen 5 3600 Processor", 55, { condition: "used" }), ...many("AMD Ryzen 5 3600", [70, 72, 75], { condition: "used" })],
     "models/ryzen-7-5800x3d.json": [L("AMD Ryzen 7 5800X3D", 199, { condition: "used" }), ...many("AMD Ryzen 7 5800X3D", [250, 260, 270], { condition: "used" })],
     // GPUs: appeal first, price must still be justified.
@@ -610,4 +610,16 @@ test("PSU: desktop units only (no chargers, office/OEM, server or peak-rated jun
   assert.equal(ok750("Thermaltake Smart 750W ATX Power Supply"), false, "750W needs an 80 Plus rating");
   assert.equal(ok750("Rosewill 750W 80+ White ATX Power Supply"), true);
   assert.equal(ok750("Corsair CX750 750W 80 Plus Bronze"), true);
+});
+
+test("cases: size / lighting / color read from titles; models only keep matching cases", async () => {
+  const { caseAttributes } = await import("../shared/caseAttrs.js");
+  assert.deepEqual(caseAttributes("Montech AIR 903 Base White ATX Mid Tower Case ARGB"), { Size: "ATX", Lighting: "ARGB", Color: "White" });
+  assert.deepEqual(caseAttributes("Thermaltake Versa H18 Black Micro ATX Case"), { Size: "Micro ATX", Lighting: "No RGB", Color: "Black" });
+  assert.deepEqual(caseAttributes("Cooler Master NR200 Mini ITX RGB case"), { Size: "Mini ITX", Lighting: "RGB", Color: "Other" });
+  const ok = (t, q) => evaluateListing({ title: t, query: q, category: "PC Case" }).ok;
+  assert.equal(ok("Corsair 4000D Airflow Black ATX Mid Tower", "White PC case"), false);
+  assert.equal(ok("Montech AIR 903 Base White ATX Mid Tower Case ARGB", "White PC case"), true);
+  assert.equal(ok("Thermaltake Versa H18 Black Micro ATX Case", "ATX mid tower PC case"), false);
+  assert.equal(ok("Zalman T6 ATX Mid Tower Case", "ARGB PC case"), false);
 });

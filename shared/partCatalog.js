@@ -231,18 +231,23 @@ export const PART_GROUPS = [
   },
   {
     id: "case", label: "Case", icon: "case", series: [
-      { id: "budget", label: "Budget Cases", items: [
-        spec("RGB ATX mid tower PC case", "PC Case", [["Form", "ATX mid tower"], ["Lighting", "RGB"]]),
-        spec("RGB Micro ATX PC case", "PC Case", [["Form", "Micro ATX"], ["Lighting", "RGB"]]),
-        spec("ATX mid tower PC case", "PC Case", [["Form", "ATX mid tower"]]),
-        spec("Micro ATX PC case", "PC Case", [["Form", "Micro ATX"]]),
-        spec("Mini ITX PC case", "PC Case", [["Form", "Mini ITX"]])
+      { id: "cases", label: "PC Cases", items: [
+        spec("ATX mid tower PC case", "PC Case", [["Size", "ATX mid tower"]]),
+        spec("Micro ATX PC case", "PC Case", [["Size", "Micro ATX"]]),
+        spec("Mini ITX PC case", "PC Case", [["Size", "Mini ITX"]]),
+        spec("RGB gaming PC case", "PC Case", [["Lighting", "RGB / ARGB"]]),
+        spec("ARGB PC case", "PC Case", [["Lighting", "ARGB"]]),
+        spec("White PC case", "PC Case", [["Color", "White"]])
       ] }
     ]
   },
   {
     id: "monitor", label: "Monitor", icon: "monitor", series: [
       { id: "gaming", label: "Gaming Monitors", items: [
+        spec("24 inch gaming monitor", "Monitor", [["Size", "24\""]]),
+        spec("27 inch gaming monitor", "Monitor", [["Size", "27\""]]),
+        spec("1440p gaming monitor", "Monitor", [["Res", "1440p"]]),
+        spec("144Hz gaming monitor", "Monitor", [["Refresh", "144 Hz+"]]),
         spec("27 inch 1440p 165Hz gaming monitor", "Monitor", [["Size", "27\""], ["Res", "1440p"], ["Refresh", "165 Hz"]]),
         spec("27 inch 1440p 240Hz OLED monitor", "Monitor", [["Size", "27\""], ["Panel", "OLED"], ["Refresh", "240 Hz"]]),
         spec("24 inch 1080p 180Hz gaming monitor", "Monitor", [["Size", "24\""], ["Res", "1080p"], ["Refresh", "180 Hz"]]),

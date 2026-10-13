@@ -118,8 +118,11 @@ export function ScanSkeleton({label="Scanning stores"}){
   </div>;
 }
 
-export default function DealResults({results,isWatched,onWatch,pageSize=24,msrp=null}){
+// facets: optional {list:[{key,values}], of:item=>({key:value})} — extra
+// filter rows (e.g. case Size / Lighting / Color) computed from titles.
+export default function DealResults({results,isWatched,onWatch,pageSize=24,msrp=null,facets=null}){
   const [sortBy,setSortBy]=useState("lowest");
+  const [picked,setPicked]=useState({});
   const [cond,setCond]=useState("all");
   const [stores,setStores]=useState([]);
   const [shown,setShown]=useState(pageSize);
@@ -129,9 +132,14 @@ export default function DealResults({results,isWatched,onWatch,pageSize=24,msrp=
   const storeCounts=useMemo(()=>{const m=new Map();for(const x of all){const k=storeKey(x);m.set(k,{id:k,name:storeLabel(k,x),n:(m.get(k)?.n||0)+1});}return [...m.values()].sort((a,b)=>b.n-a.n);},[all]);
   const sorts=RESULT_SORTS;
   const visible=useMemo(()=>{
-    const list=all.filter(x=>(cond==="all"||conditionGroup(x.condition)===cond)&&(!stores.length||stores.includes(storeKey(x))));
+    const list=all.filter(x=>(cond==="all"||conditionGroup(x.condition)===cond)&&(!stores.length||stores.includes(storeKey(x)))&&(!facets||Object.entries(picked).every(([k,v])=>!v||facets.of(x)[k]===v)));
     return sortDeals(list,sortBy);
-  },[all,cond,stores,sortBy]);
+  },[all,cond,stores,sortBy,picked,facets]);
+  const facetCounts=useMemo(()=>{
+    if(!facets)return null;
+    const m={};for(const x of all){const a=facets.of(x);for(const k in a){m[k]||={};m[k][a[k]]=(m[k][a[k]]||0)+1;}}
+    return m;
+  },[all,facets]);
   const cheapest=visible.length?Math.min(...visible.map(x=>x.totalPrice)):null;
 
   function toggleStore(id){setStores(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]);setShown(pageSize);}
@@ -146,6 +154,11 @@ export default function DealResults({results,isWatched,onWatch,pageSize=24,msrp=
         {CONDITION_FILTERS.filter(x=>x.value==="all"||condCounts[x.value]).map(x=><button key={x.value} className={"chip"+(cond===x.value?" on":"")} onClick={()=>{setCond(x.value);setShown(pageSize);}}>{x.label}<em>{condCounts[x.value]||0}</em></button>)}
       </div>
     </div>
+    {facets&&<div className="facetRows">{facets.list.map(f=><div className="chipRow facet" key={f.key}>
+      <span className="facetLabel">{f.key}</span>
+      <button className={"chip"+(!picked[f.key]?" on":"")} onClick={()=>{setPicked(p=>({...p,[f.key]:""}));setShown(pageSize);}}>Any</button>
+      {f.values.map(v=><button key={v} className={"chip"+(picked[f.key]===v?" on":"")} disabled={!facetCounts?.[f.key]?.[v]} onClick={()=>{setPicked(p=>({...p,[f.key]:p[f.key]===v?"":v}));setShown(pageSize);}}>{v}<em>{facetCounts?.[f.key]?.[v]||0}</em></button>)}
+    </div>)}</div>}
     <div className="chipRow stores">
       {storeCounts.map(s=><button key={s.id} className={"chip store-"+s.id+(stores.includes(s.id)?" on":"")} onClick={()=>toggleStore(s.id)}><i></i>{s.name}<em>{s.n}</em></button>)}
       {stores.length>0&&<button className="chip clear" onClick={()=>setStores([])}>All stores</button>}

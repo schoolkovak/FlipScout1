@@ -97,7 +97,7 @@ export const LISTING_CORPUS = [
   {query:"B650 AM5 motherboard",category:"Motherboard",expect:"reject",title:"MSI B650 Tomahawk + Ryzen 7 7800X3D Combo"},
   // --- Case ---
   {query:"ATX airflow RGB case",category:"PC Case",expect:"keep",title:"Lian Li LANCOOL 216 RGB ATX Mid Tower Airflow Case"},
-  {query:"ATX airflow RGB case",category:"PC Case",expect:"keep",title:"Corsair 4000D Airflow Tempered Glass Mid-Tower ATX PC Case - Black"},
+  {query:"ATX airflow RGB case",category:"PC Case",expect:"reject",title:"Corsair 4000D Airflow Tempered Glass Mid-Tower ATX PC Case - Black"},
   {query:"ATX airflow RGB case",category:"PC Case",expect:"keep",title:"Montech AIR 903 MAX ATX Mid Tower Case, 4 ARGB Case Fans Pre-installed, High Airflow"},
   {query:"ATX airflow RGB case",category:"PC Case",expect:"reject",title:"Lian Li UNI FAN SL120 V2 3 Pack RGB Case Fan"},
   {query:"ATX airflow RGB case",category:"PC Case",expect:"reject",title:"Replacement Tempered Glass Side Panel for Corsair 4000D Airflow"},
