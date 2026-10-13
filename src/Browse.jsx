@@ -211,8 +211,8 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
         <button className="sideHead" onClick={()=>toggle("filters")}><Filter size={15}/>Filters<ChevronDown size={15} className={open.filters?"flip":""}/></button>
         {open.filters&&<>
           {group.id==="gpu"&&<><small className="sideLabel">Minimum VRAM (GB)</small><input inputMode="numeric" placeholder="(Like 12GB)" value={minVram} onChange={e=>setMinVram(e.target.value.replace(/\D/g,""))}/></>}
-          <small className="sideLabel">Sort cards</small>
-          <select value={cardSort} onChange={e=>setCardSort(e.target.value)}><option value="catalog">Model tier</option><option value="price">Price: low to high</option><option value="msrp">Biggest discount vs MSRP</option></select>
+          <small className="sideLabel">Sort models</small>
+          <select value={cardSort} onChange={e=>setCardSort(e.target.value)}><option value="catalog">Catalog order</option><option value="price">Price: low to high</option><option value="msrp">Biggest discount vs MSRP</option></select>
         </>}
       </section>
       <p className="sideNote">Every listing links to a real item page on a trusted store. eBay listings come from eBay's official API, so they are live Buy It Now listings. Sold, for-parts, broken, scam-priced and mismatched listings are removed.</p>

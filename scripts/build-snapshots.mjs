@@ -17,7 +17,8 @@ import { join } from "node:path";
 import { PART_GROUPS } from "../shared/partCatalog.js";
 import { modelSlug } from "../api/_lib/snapshots.js";
 import { buildMarket, rankDeals, shippingFields } from "../api/_lib/market.js";
-import { normalizeListingText } from "../api/_lib/matching.js";
+import { normalizeListingText, evaluateListing } from "../api/_lib/matching.js";
+import { findGreatDeals, sendAlerts } from "./deal-alerts.mjs";
 
 const args = Object.fromEntries(process.argv.slice(2).map(a => { const [k, v] = a.replace(/^--/, "").split("="); return [k, v ?? "1"]; }));
 const SITE = (args.site || "https://flip-scout-ebon.vercel.app").replace(/\/$/, "");
@@ -73,6 +74,8 @@ function cleanMerged(items, item) {
     const ebayId = String(x.url || "").match(/\/itm\/(?:[^/?#]+\/)?(\d{9,15})/)?.[1];
     const keys = [ebayId ? "ebay:" + ebayId : null, (x.marketplace || "") + "|" + normalizeListingText(x.title) + "|" + Math.round(Number(x.itemPrice) || 0)].filter(Boolean);
     if (keys.some(k => seen.has(k))) continue;
+    // Kept listings from earlier runs must still pass today's filters.
+    if (!evaluateListing({ title: x.title, query: item.query, category: item.category }).ok) continue;
     keys.forEach(k => seen.add(k));
     const y = ebayId ? { ...x, url: "https://www.ebay.com/itm/" + ebayId } : { ...x };
     if (!y.shippingKnown && y.shippingEstimated === undefined) Object.assign(y, shippingFields(y, y.marketplace, item.category));
@@ -181,6 +184,18 @@ async function main() {
         if (/out of credits|API key rejected/i.test(JSON.stringify(data.errors || []))) { log.errors.push("paid search stopped: " + JSON.stringify(data.errors).slice(0, 200)); break; }
       } catch (e) { log.errors.push(item.name + ": " + e.message); }
     }
+  }
+
+  // 3. Great-deal alerts from the saved listings (no credits).
+  const topic = process.env.NTFY_TOPIC || "";
+  if (topic && (log.free > 0 || log.paid > 0)) {
+    try {
+      const deals = await findGreatDeals(DATA);
+      const { sent, candidates } = await sendAlerts(deals, { topic, alerted: state.alerted || [] });
+      state.alerted = [...sent, ...(state.alerted || [])].slice(0, 2000);
+      log.alerts = sent.length;
+      console.log(`deal alerts: ${sent.length} sent of ${candidates} deals`);
+    } catch (e) { log.errors.push("alerts: " + e.message); }
   }
 
   const changed = log.free > 0 || log.paid > 0;
