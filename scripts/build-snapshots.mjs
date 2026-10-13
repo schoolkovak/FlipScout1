@@ -108,7 +108,8 @@ async function main() {
 
   // 1. Free refresh (eBay / Best Buy official APIs): every model.
   if (freeApis) {
-    const due = models.filter(m => hoursSince(state.models[m.name]?.freeAt) > FREE_STALE_H);
+    const force = args["force-free"] === "1";
+    const due = models.filter(m => force || hoursSince(state.models[m.name]?.freeAt) > FREE_STALE_H);
     await pool(due, 3, async item => {
       if (Date.now() - started > RUN_LIMIT_MS / 2) return;
       try {

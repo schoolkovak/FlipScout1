@@ -12,6 +12,10 @@ on:
         description: "Max paid search credits per day"
         required: false
         default: ""
+      force_free:
+        description: "Re-check every model on the free APIs now (e.g. after a pricing fix)"
+        type: boolean
+        default: false
 permissions:
   contents: write
 concurrency:
@@ -42,7 +46,8 @@ jobs:
           SITE: ${{ vars.SNAPSHOT_SITE || 'https://flip-scout-ebon.vercel.app' }}
           BUDGET: ${{ github.event.inputs.budget || vars.SNAPSHOT_DAILY_CREDITS || '60' }}
           MAX_PAID: ${{ vars.SNAPSHOT_MAX_PAID_PER_RUN || '6' }}
-        run: node scripts/build-snapshots.mjs --site="$SITE" --data=snapdata --budget="$BUDGET" --max-paid="$MAX_PAID"
+          FORCE_FREE: ${{ github.event.inputs.force_free == 'true' && '1' || '0' }}
+        run: node scripts/build-snapshots.mjs --site="$SITE" --data=snapdata --budget="$BUDGET" --max-paid="$MAX_PAID" --force-free="$FORCE_FREE"
       - name: Publish saved listings
         if: steps.refresh.outputs.changed == 'true'
         run: |
