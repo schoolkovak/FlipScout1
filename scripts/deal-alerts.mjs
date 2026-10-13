@@ -33,8 +33,10 @@ export async function findGreatDeals(dataDir) {
     const s = await flipperSection(id, read);
     for (const x of s?.listings || []) {
       if (x.underPct == null || x.underPct < ALERT_MIN_PCT || !x.market || !x.url) continue;
+      // A launch MSRP under a quarter of today's used price is a data error
+      // (e.g. "$5"), so it can't block a real deal.
       const launch = await msrp(x.model);
-      if (launch && x.totalPrice > launch) continue;
+      if (launch && launch >= x.market * 0.25 && x.totalPrice > launch) continue;
       const price = x.perPair || x.totalPrice;
       // Estimated profit = what it resells for on the used market minus what
       // you pay (before selling fees; shipping and tax-free local resale).
