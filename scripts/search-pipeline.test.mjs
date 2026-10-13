@@ -638,10 +638,81 @@ test("deal alerts: great deals from saved listings, each sent once, with est. pr
   assert.equal(deals[0].profit, 85, "used market $345 − $260");
   const posts = [];
   const fakeFetch = async (url, opts) => { posts.push({ url, opts }); return { ok: true }; };
-  const first = await sendAlerts(deals, { topic: "t", fetchImpl: fakeFetch });
+  const noon = new Date("2026-10-13T16:00:00Z");
+  const first = await sendAlerts(deals, { topic: "t", fetchImpl: fakeFetch, now: noon });
   assert.equal(first.sent.length, 1);
   assert.match(posts[0].opts.body, /Est\. profit ~\$85/);
   assert.equal(posts[0].opts.headers.Click, deals[0].url);
-  const again = await sendAlerts(deals, { topic: "t", alerted: first.sent, fetchImpl: fakeFetch });
+  const again = await sendAlerts(deals, { topic: "t", alerted: first.sent, fetchImpl: fakeFetch, now: noon });
   assert.equal(again.sent.length, 0, "never alerted twice");
+  // Quiet hours: nothing between 3am and 8am Eastern.
+  const night = await sendAlerts(deals, { topic: "t", fetchImpl: fakeFetch, now: new Date("2026-10-13T09:30:00Z") });
+  assert.equal(night.sent.length, 0);
+  assert.equal(night.quiet, true);
+  // Sold-out (not confirmed by eBay) or price went up: not sent.
+  const soldOut = await sendAlerts(deals, { topic: "t", fetchImpl: fakeFetch, now: noon, verify: async () => new Map() });
+  assert.equal(soldOut.sent.length, 0);
+  const pricier = await sendAlerts(deals, { topic: "t", fetchImpl: fakeFetch, now: noon, verify: async urls => new Map(urls.map(u => [u, 300])) });
+  assert.equal(pricier.sent.length, 0);
+  const live = await sendAlerts(deals, { topic: "t", fetchImpl: fakeFetch, now: noon, verify: async urls => new Map(urls.map(u => [u, 260])) });
+  assert.equal(live.sent.length, 1);
+});
+
+test("deal alerts: skip anything over its MSRP (GPUs over $500 are fine)", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { findGreatDeals } = await import("./deal-alerts.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "fs-alerts2-"));
+  mkdirSync(join(dir, "models"));
+  const L = (t, p) => ({ id: t + p, title: t, totalPrice: p, itemPrice: p, condition: "used", url: "https://www.ebay.com/itm/" + (200000000000 + p), source: "eBay", marketplace: "ebay" });
+  writeFileSync(join(dir, "models", "rtx-4070.json"), JSON.stringify({ msrp: 599, results: [L("RTX 4070 12GB", 569), L("RTX 4070 12GB a", 760), L("RTX 4070 12GB b", 770), L("RTX 4070 12GB c", 780)] }));
+  writeFileSync(join(dir, "models", "rtx-5060.json"), JSON.stringify({ msrp: 299, results: [L("RTX 5060 8GB", 320), L("RTX 5060 8GB a", 420), L("RTX 5060 8GB b", 430), L("RTX 5060 8GB c", 440)] }));
+  const deals = await findGreatDeals(dir);
+  assert.deepEqual(deals.map(d => d.model), ["RTX 4070"], "the $569 4070 (under its $599 MSRP) alerts; the $320 5060 (over $299 MSRP) doesn't");
+});
+
+test("newegg: search-page JSON becomes real listings and combo deals", async () => {
+  const { neweggOffers, neweggCombos, neweggItemUrl } = await import("./newegg.mjs");
+  const cell = (item, title, price, extra = {}) => ({ ItemCell: { Item: item, FinalPrice: price, Instock: true, Active: "1", ShippingCharge: 0.01, ShipFromCountryName: "United States", Description: { Title: title, UrlKeywords: "slug" }, Feature: { IsNew: true }, Seller: { SellerName: null }, Image: { ItemCellImageName: "a.jpg" }, ...extra } });
+  const offers = neweggOffers({ Products: [
+    cell("14-932-658", "GIGABYTE RTX 3060 12GB", 259.99),
+    cell("9SIBTK0KCS5957", "MSI RTX 3060 12GB", 249, { ParentItem: "14-932-433", Seller: { SellerName: "roboshine" } }),
+    cell("14-111-111", "Sold out RTX 3060", 199, { Instock: false }),
+    cell("9SIXXXX", "Overseas RTX 3060", 150, { ShipFromCountryName: "China" }),
+    cell("11-222-333", "Refurb RTX 3060", 210, { Feature: { IsRefurbished: true } })
+  ] });
+  assert.deepEqual(offers.map(o => o.itemPrice), [259.99, 249, 210]);
+  assert.equal(offers[0].url, "https://www.newegg.com/slug/p/N82E16814932658");
+  assert.equal(offers[1].url, "https://www.newegg.com/slug/p/N82E16814932433?Item=9SIBTK0KCS5957");
+  assert.equal(offers[1].seller, "roboshine");
+  assert.equal(offers[2].structuredCondition, "refurbished");
+  assert.equal(offers[0].shippingKnown, false, "0.01 placeholder is not a stated shipping price");
+  assert.equal(neweggItemUrl("2AM-009W-00096"), "https://www.newegg.com/p/2AM-009W-00096");
+  const it = (n, t, p) => ({ ItemNumber: n, Count: 1, IsGift: false, ItemInfo: { FinalPrice: p, Instock: true, Description: { Title: t } } });
+  const combos = neweggCombos({ Products: [
+    { IsCombo: true, ComboCell: { ComboID: "4888188", StockForCombo: 1, ComboDiscountAmount: 80, SolutionDescription: "CPU Motherboard Combo", Items: [it("19-118-628", "Intel Core Ultra 7 270K Plus Processor", 330), it("13-145-526", "GIGABYTE Z890 AORUS ELITE ATX LGA 1851 Motherboard", 249.99)] } },
+    { IsCombo: true, ComboCell: { ComboID: "1", StockForCombo: 1, ComboDiscountAmount: 0, Items: [it("a", "Case", 80), it("b", "PSU", 90)] } }
+  ] });
+  assert.equal(combos.length, 1, "combos without a discount are skipped");
+  assert.equal(combos[0].separate, 579.99);
+  assert.equal(combos[0].comboPrice, 499.99);
+  assert.equal(combos[0].savings, 80);
+  assert.deepEqual(combos[0].kinds, ["cpu", "motherboard"]);
+  assert.equal(combos[0].url, "https://www.newegg.com/Product/ComboDealDetails?ItemList=Combo.4888188");
+});
+
+test("box-only listings are rejected; cards that come with a box are kept", async () => {
+  const { evaluateListing, BOX_SCAM_DESCRIPTION_RE } = await import("../api/_lib/matching.js");
+  const ok = t => evaluateListing({ title: t, query: "RTX 3070", category: "GPU" }).ok;
+  assert.equal(ok("EVGA GeForce RTX 3070 FTW3 Ultra 8GB GDDR6 Ray Tracing DLSS PCIe 4.0 Box"), false);
+  assert.equal(ok("Box for EVGA RTX 3070 FTW3"), false);
+  assert.equal(ok("EVGA RTX 3070 FTW3 just the box"), false);
+  assert.equal(ok("EVGA RTX 3070 XC3 Box and contents shown"), false);
+  assert.equal(ok("MSI GeForce RTX 3070 VENTUS 3X OC 8GB GDDR6 Graphics Card w/ Original Box"), true);
+  assert.equal(ok("MSI GeForce RTX 3070 GAMING Z Trio LHR 8GB GDDR6 Graphics Card New In Box"), true);
+  assert.equal(ok("EVGA RTX 3070 FTW3 Ultra Open Box"), true);
+  assert.equal(ok("EVGA RTX 3070 FTW3 Ultra No Box"), true);
+  assert.ok(BOX_SCAM_DESCRIPTION_RE.test("This auction is for the box and the contents shown in the picture"));
+  assert.ok(!BOX_SCAM_DESCRIPTION_RE.test("Works great, comes with the original box and all accessories."));
 });

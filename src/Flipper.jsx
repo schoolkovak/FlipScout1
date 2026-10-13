@@ -1,16 +1,17 @@
 import React,{useEffect,useState} from "react";
-import {MemoryStick,HardDrive,Box,Plug,Cpu,Flame,ExternalLink,Info} from "lucide-react";
+import {MemoryStick,HardDrive,Box,Plug,Cpu,Flame,ExternalLink,Info,Package} from "lucide-react";
 import {PriceTotal,money} from "./DealResults.jsx";
 
 // Flipper Deals: the parts a gaming-PC flipper buys most, ranked the way a
 // flipper shops. Built from saved listings, so opening it costs no credits.
-const ICONS={ddr4:MemoryStick,nvme500:HardDrive,cases:Box,psu:Plug,ryzen:Cpu,gpu:Flame};
+const ICONS={ddr4:MemoryStick,nvme500:HardDrive,cases:Box,psu:Plug,ryzen:Cpu,gpu:Flame,combos:Package};
 const BLURB={
   ddr4:"8GB DDR4 sticks at 3000MHz or faster, under $65 per pair (2×8GB) and at least 10% under the going price. Lots and kits are split into a per-pair price.",
   nvme500:"500GB / 512GB NVMe M.2 SSDs at least 10% under the going used price, cheapest first.",
   cases:"RGB cases at $52 or less, Micro-ATX or bigger. No open-air frames, test benches or Mini-ITX.",
   psu:"550W / 650W first, then 750W, at least 10% under the going price for that wattage. 80+ Bronze and Gold ranked ahead of everything else.",
   ryzen:"Ryzen chips at $65 or less (shipping included), at least 10% under their own used market price, ranked by buyer appeal per dollar.",
+  combos:"Newegg bundles (CPU + motherboard, case + PSU, GPU + PSU…) that cost less than buying the parts separately, biggest % saved first. Total includes FL sales tax. Checked every few hours.",
   gpu:"Ranked by what buyers want: newer, popular cards (RTX 50 / 40, RX 9000) rank high as long as the price is justified. Every card is at least 10% under its own used market price."
 };
 const KEY="fs-flipper-v1";
@@ -25,6 +26,11 @@ function Deal({x}){
 function Extra({id,x}){
   if(id==="ddr4")return <span className="flipTag">{money(x.perPair,2)} per 2×8GB · {x.sticks} stick{x.sticks>1?"s":""} · {x.speed}MHz</span>;
   if(id==="psu")return <span className="flipTag">{x.tag}</span>;
+  if(id==="combos")return <>
+    <span className="flipTag">{x.tag}{x.freeGift?" · free gift included":""}</span>
+    <span className="flipDeal">Save {money(x.savings,2)} ({x.savingsPct}%) vs {money(x.separate,2)} separately · {money(x.totalAfterTax,2)} total after tax</span>
+    {x.parts?.length>0&&<span className="flipParts">{x.parts.map((p,i)=><span key={i}>{p.gift?"🎁 ":""}{p.count>1?p.count+"× ":""}{p.title.slice(0,70)}{p.gift?" (free)":" — "+money(p.price,2)}</span>)}</span>}
+  </>;
   if(id==="ryzen"||id==="gpu")return <span className="flipTag">{x.model} · buyer appeal {x.appeal}/10</span>;
   return null;
 }

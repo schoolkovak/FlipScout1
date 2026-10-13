@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { evaluateListing, normalizeListingText, categoryKind } from "./matching.js";
+import { evaluateListing, normalizeListingText, categoryKind, boxOnlyTitle, BOX_SCAM_DESCRIPTION_RE } from "./matching.js";
 import { SNIPER_MARKETPLACES, allowsUsed } from "../../shared/sniper.js";
 import { sortDeals } from "../../shared/dealSort.js";
 import { isTrustedMerchant, listingLink } from "./stores.js";
@@ -693,7 +693,12 @@ export async function checkEbayAvailability(items, { limit = 20 } = {}) {
     if (!it) { if (ref.exact) gone.add(x); continue; }
     const status = it.estimatedAvailabilities?.[0]?.estimatedAvailabilityStatus;
     const ended = it.itemEndDate && Date.parse(it.itemEndDate) < Date.now();
-    if (status === "OUT_OF_STOCK" || ended || (it.buyingOptions || []).includes("AUCTION")) { gone.add(x); continue; }
+    const qty = it.estimatedAvailabilities?.[0]?.estimatedAvailableQuantity;
+    // Box-only bait the title hides: "This auction is for the box and the
+    // contents shown in the picture."
+    const desc = (it.shortDescription || "") + " " + String(it.description || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").slice(0, 20000);
+    if (BOX_SCAM_DESCRIPTION_RE.test(desc) || boxOnlyTitle(normalizeListingText(it.title || ""))) { gone.add(x); continue; }
+    if (status === "OUT_OF_STOCK" || qty === 0 || ended || (it.buyingOptions || []).includes("AUCTION")) { gone.add(x); continue; }
     const price = Number(it.price?.value);
     const ship = it.shippingOptions?.[0]?.shippingCost?.value;
     const i = out.indexOf(x);

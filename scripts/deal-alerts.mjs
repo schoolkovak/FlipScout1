@@ -5,19 +5,36 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { flipperSection, FLIPPER_SECTIONS } from "../api/_lib/flipper.js";
+import { modelPath } from "../api/_lib/snapshots.js";
 
-export const ALERT_MIN_PCT = 15;
-const MAX_PER_RUN = 6;
+export const ALERT_MIN_PCT = 10;
+const MAX_PER_RUN = 10;
+// No pushes overnight (US Eastern, where the user lives); deals found then
+// are sent at 8am if they're still for sale.
+export const QUIET_HOURS = { from: 3, to: 8, tz: "America/New_York" };
+export function inQuietHours(date = new Date(), q = QUIET_HOURS) {
+  const h = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: q.tz }).format(date));
+  return h >= q.from && h < q.to;
+}
 
 const money = n => "$" + Number(n).toFixed(2).replace(/\.00$/, "");
 
 export async function findGreatDeals(dataDir) {
   const read = async path => { try { return JSON.parse(readFileSync(join(dataDir, path), "utf8")); } catch { return null; } };
   const deals = [];
+  // Never alert on anything priced above its model's launch MSRP.
+  const msrpOf = new Map();
+  const msrp = async model => {
+    if (!model) return 0;
+    if (!msrpOf.has(model)) msrpOf.set(model, Number((await read(modelPath(model)))?.msrp) || 0);
+    return msrpOf.get(model);
+  };
   for (const id of Object.keys(FLIPPER_SECTIONS)) {
     const s = await flipperSection(id, read);
     for (const x of s?.listings || []) {
       if (x.underPct == null || x.underPct < ALERT_MIN_PCT || !x.market || !x.url) continue;
+      const launch = await msrp(x.model);
+      if (launch && x.totalPrice > launch) continue;
       const price = x.perPair || x.totalPrice;
       // Estimated profit = what it resells for on the used market minus what
       // you pay (before selling fees; shipping and tax-free local resale).
@@ -28,9 +45,19 @@ export async function findGreatDeals(dataDir) {
   return deals.sort((a, b) => b.profit - a.profit);
 }
 
-export async function sendAlerts(deals, { topic, alerted = [], fetchImpl = fetch, server = "https://ntfy.sh" } = {}) {
+// verify(urls) → Map(url → current total price) of eBay listings eBay
+// confirms are still for sale. A deal is pushed only when its listing is
+// confirmed live and its price hasn't gone up.
+export async function sendAlerts(deals, { topic, alerted = [], fetchImpl = fetch, server = "https://ntfy.sh", verify = null, now = new Date() } = {}) {
+  if (inQuietHours(now)) return { sent: [], candidates: deals.length, quiet: true };
   const seen = new Set(alerted);
-  const fresh = deals.filter(d => !seen.has(d.key)).slice(0, MAX_PER_RUN);
+  let fresh = deals.filter(d => !seen.has(d.key)).slice(0, MAX_PER_RUN * 3);
+  if (verify) {
+    const ebay = fresh.filter(d => /ebay\.com\/itm\//.test(d.url)).map(d => d.url);
+    const live = ebay.length ? await verify(ebay).catch(() => new Map()) : new Map();
+    fresh = fresh.filter(d => !/ebay\.com\/itm\//.test(d.url) || (live.has(d.url) && live.get(d.url) <= d.price + 0.5));
+  }
+  fresh = fresh.slice(0, MAX_PER_RUN);
   const sent = [];
   for (const d of fresh) {
     const body = `${money(d.price)} incl. shipping · used market ~${money(d.market)} (${d.underPct}% under)\nEst. profit ~${money(d.profit)}${d.perPair ? " (" + money(d.perPair) + " per 2×8GB)" : ""}\n${d.title}`;

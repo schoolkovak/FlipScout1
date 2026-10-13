@@ -19,6 +19,7 @@ import { modelSlug } from "../api/_lib/snapshots.js";
 import { buildMarket, rankDeals, shippingFields } from "../api/_lib/market.js";
 import { normalizeListingText, evaluateListing } from "../api/_lib/matching.js";
 import { findGreatDeals, sendAlerts } from "./deal-alerts.mjs";
+import { neweggListings, fetchNeweggCombos, NEWEGG_PROVIDER } from "./newegg.mjs";
 
 const args = Object.fromEntries(process.argv.slice(2).map(a => { const [k, v] = a.replace(/^--/, "").split("="); return [k, v ?? "1"]; }));
 const SITE = (args.site || "https://flip-scout-ebon.vercel.app").replace(/\/$/, "");
@@ -29,6 +30,11 @@ const CREDITS_PER_MODEL_GUESS = 12; // worst case for one snapshot-mode search
 const PAID_STALE_H = { priority: 48, normal: 24 * 7 };
 const FREE_STALE_H = 1.9; // eBay allows 5,000 calls/day: ~200 models every 2 h ≈ 2,400
 const RUN_LIMIT_MS = Number(args["time-limit"] ?? 20 * 60 * 1000);
+// Newegg store pages (free, read politely one at a time): each model about
+// every 6 hours, at most NEWEGG_PER_RUN models per run.
+const NEWEGG_STALE_H = 6;
+const NEWEGG_PER_RUN = Number(args["newegg-per-run"] ?? 45);
+const NEWEGG_GAP_MS = 1500;
 
 // Parts a gaming-PC flipper buys and sells most: refreshed first.
 // (Flipper Deals sections are built from these too.)
@@ -92,6 +98,15 @@ function rerank(items, item) {
   return { market, ranked };
 }
 
+// Up to 200 listings per model, cheapest first — plus up to 40 more from
+// stores other than eBay, so new store stock still shows on models with
+// hundreds of cheaper used eBay listings.
+function capResults(ranked) {
+  const top = ranked.slice(0, 200);
+  const extra = ranked.slice(200).filter(x => x.marketplace !== "ebay").slice(0, 40);
+  return [...top, ...extra];
+}
+
 // Each save adds a point to the model's price history (lowest new / used /
 // overall price), so the model page can chart prices without new searches.
 function saveModel(item, payload) {
@@ -143,13 +158,56 @@ async function main() {
         const merged = [...fresh, ...kept];
         if (!merged.length) return;
         const { market, ranked } = rerank(merged, item);
-        const payload = { ...(old || data), available: true, searchedAt: now(), market, resultCount: ranked.length, results: ranked.slice(0, 200), providers: data.providers, coverage: data.coverage };
+        const payload = { ...(old || data), available: true, searchedAt: now(), market, resultCount: ranked.length, results: capResults(ranked), providers: data.providers, coverage: data.coverage };
         saveModel(item, payload);
         (state.models[item.name] ||= {}).freeAt = now();
         state.models[item.name].count = ranked.length;
         log.free++;
       } catch (e) { log.errors.push(item.name + ": " + e.message); }
     });
+  }
+
+  // 1b. Newegg store listings (new, open-box and refurbished stock — often
+  // cheaper than used for cases, PSUs, coolers...). Priority models first.
+  if (args.newegg !== "0") {
+    const prio = new Set(PRIORITY);
+    const due = models
+      .map(m => ({ m, age: hoursSince(state.models[m.name]?.neweggAt), p: prio.has(m.name) }))
+      .filter(x => args["force-free"] === "1" || x.age > NEWEGG_STALE_H)
+      .sort((a, b) => (b.p - a.p) || (b.age - a.age))
+      .slice(0, NEWEGG_PER_RUN).map(x => x.m);
+    let fails = 0;
+    for (const item of due) {
+      if (Date.now() - started > RUN_LIMIT_MS * 0.9 || fails >= 3) break;
+      try {
+        const fresh = await neweggListings(item);
+        const old = existing(item);
+        const kept = (old?.results || []).filter(x => x.provider !== NEWEGG_PROVIDER);
+        const merged = [...fresh, ...kept];
+        const st = (state.models[item.name] ||= {});
+        st.neweggAt = now(); st.newegg = fresh.length;
+        fails = 0;
+        log.newegg = (log.newegg || 0) + 1;
+        if (merged.length && (fresh.length || old?.results?.some(x => x.provider === NEWEGG_PROVIDER))) {
+          const { market, ranked } = rerank(merged, item);
+          saveModel(item, { ...(old || {}), available: true, searchedAt: old?.searchedAt || now(), market, resultCount: ranked.length, results: capResults(ranked) });
+        }
+      } catch (e) { fails++; log.errors.push("newegg " + item.name + ": " + e.message); }
+      await new Promise(r => setTimeout(r, NEWEGG_GAP_MS));
+    }
+    if (log.newegg) console.log(`newegg: ${log.newegg} models checked`);
+    // Newegg combo deals (Flipper Deals), about every 6 hours.
+    if (args["force-free"] === "1" || hoursSince(state.combosAt) > NEWEGG_STALE_H) {
+      try {
+        const combos = await fetchNeweggCombos();
+        if (combos.length) {
+          writeFileSync(join(DATA, "combos.json"), JSON.stringify({ updatedAt: now(), combos }));
+          state.combosAt = now();
+          log.combos = combos.length;
+          console.log(`newegg combos: ${combos.length}`);
+        }
+      } catch (e) { log.errors.push("newegg combos: " + e.message); }
+    }
   }
 
   // 2. Paid refresh: priority models first, then the stalest, within budget.
@@ -173,9 +231,11 @@ async function main() {
         const old = existing(item);
         if (results.length || !old) {
           // Keep free-API listings from the last free run if this one lacked them.
-          const freeOld = results.some(x => FREE_PROVIDER.test(x.provider || "")) ? [] : (old?.results || []).filter(x => FREE_PROVIDER.test(x.provider || ""));
+          // (and always keep the saved Newegg listings).
+          const hasFree = results.some(x => FREE_PROVIDER.test(x.provider || ""));
+          const freeOld = (old?.results || []).filter(x => x.provider === NEWEGG_PROVIDER || (!hasFree && FREE_PROVIDER.test(x.provider || "")));
           const { market, ranked } = freeOld.length ? rerank([...results, ...freeOld], item) : { market: data.market, ranked: results };
-          saveModel(item, { ...data, available: ranked.length > 0, market, resultCount: ranked.length, results: ranked.slice(0, 200), searchedAt: now() });
+          saveModel(item, { ...data, available: ranked.length > 0, market, resultCount: ranked.length, results: capResults(ranked), searchedAt: now() });
         }
         const st = (state.models[item.name] ||= {});
         st.paidAt = now(); st.credits = spent; st.count = results.length;
@@ -188,17 +248,27 @@ async function main() {
 
   // 3. Great-deal alerts from the saved listings (no credits).
   const topic = process.env.NTFY_TOPIC || "";
-  if (topic && (log.free > 0 || log.paid > 0)) {
+  if (topic && (log.free > 0 || log.paid > 0 || log.newegg > 0)) {
     try {
       const deals = await findGreatDeals(DATA);
-      const { sent, candidates } = await sendAlerts(deals, { topic, alerted: state.alerted || [] });
+      // Ask eBay (through the site) which deal listings are still for sale.
+      const verify = async urls => {
+        const live = new Map();
+        for (let i = 0; i < urls.length; i += 20) {
+          const r = await getJson(SITE + "/api/deals/search?q=check&check=" + encodeURIComponent(urls.slice(i, i + 20).join(",")), 30000);
+          for (const x of r.live || []) live.set(x.url, x.totalPrice);
+        }
+        return live;
+      };
+      const { sent, candidates, quiet } = await sendAlerts(deals, { topic, alerted: state.alerted || [], verify });
+      if (quiet) console.log("deal alerts: quiet hours, none sent");
       state.alerted = [...sent, ...(state.alerted || [])].slice(0, 2000);
       log.alerts = sent.length;
       console.log(`deal alerts: ${sent.length} sent of ${candidates} deals`);
     } catch (e) { log.errors.push("alerts: " + e.message); }
   }
 
-  const changed = log.free > 0 || log.paid > 0;
+  const changed = log.free > 0 || log.paid > 0 || log.newegg > 0 || log.combos > 0;
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, "changed=" + changed + "\n");
   if (!changed) { console.log("nothing to refresh this run", JSON.stringify(log)); return; }
   state.runs = [log, ...(state.runs || [])].slice(0, 30);
