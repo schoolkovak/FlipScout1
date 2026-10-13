@@ -33,6 +33,10 @@ export async function findGreatDeals(dataDir) {
     const s = await flipperSection(id, read);
     for (const x of s?.listings || []) {
       if (x.underPct == null || x.underPct < ALERT_MIN_PCT || !x.market || !x.url) continue;
+      // Only alert against a real used-market price: at least 5 used comps.
+      // Cases are skipped — their "market" mixes every case model, so any
+      // cheap new case looked 50% under it.
+      if (id === "cases" || id === "combos" || (x.usedComps ?? 0) < 5) continue;
       // A launch MSRP under a quarter of today's used price is a data error
       // (e.g. "$5"), so it can't block a real deal.
       const launch = await msrp(x.model);
