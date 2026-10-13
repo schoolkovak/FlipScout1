@@ -4,33 +4,31 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-node@v4
-        with: { node-version: 22 }
       - run: |
           cat > p.mjs <<'JS'
           const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36";
           const H = { "user-agent": UA, "accept": "text/html", "accept-language": "en-US,en;q=0.9" };
           const state = t => JSON.parse(t.match(/window\.__initialState__\s*=\s*(\{[\s\S]*?\});?\s*<\/script>/)[1]);
-          let t = await (await fetch("https://www.newegg.com/p/pl?d=rtx+3060+12gb&N=4131", {headers:H})).text();
+          const go = async u => { const r = await fetch(u,{headers:H}); const t = await r.text(); console.log("GET", u, r.status, t.length); return t; };
+          let t = await go("https://www.newegg.com/p/pl?d=rgb+atx+pc+case");
           let s = state(t);
-          const P = s.Products;
-          console.log("n", P.length, "itemcell keys", Object.keys(P[0].ItemCell).join(","));
-          for (const p of P.slice(0,12)) { const c = p.ItemCell||{}; console.log(JSON.stringify({combo:p.IsCombo, group:p.IsGroupItem, item:c.Item, title:c.Description?.Title?.slice(0,70), final:c.FinalPrice, unit:c.UnitCost, instock:c.Instock, ship:c.ShippingInfo||c.Shipping||c.FreeShippingFlag, seller:c.Seller||c.SellerName, feat:{n:c.Feature?.IsNew,r:c.Feature?.IsRefurbished,o:c.Feature?.IsOpenBoxed,sbn:c.Feature?.ShipByNewegg}, nm: c.NeweggItemNumber, url: c.UrlKeywords?.slice(0,30), gift: c.AnyFreeGift, rebate:c.MailinRebateCollection?1:0 })); }
-          const hrefs = [...t.matchAll(/class="item-title"[^>]*href="([^"]+)"|href="([^"]+)"[^>]*class="item-title"/g)].slice(0,6).map(m=>m[1]||m[2]); console.log("hrefs", hrefs);
-          const c0 = P[0].ItemCell; for (const k of Object.keys(c0)) if (/ship|seller|price|free|gift|stock|qty|url|number/i.test(k)) console.log(k, JSON.stringify(c0[k]).slice(0,300));
-          // used/refurb filter?
-          t = await (await fetch("https://www.newegg.com/Combo-Deals/EventSaleStore/ID-10011", {headers:H})).text();
+          for (const p of s.Products.slice(0,10)) { const c=p.ItemCell; if(!c) continue; console.log(c.Item, c.FinalPrice, "ship", c.ShippingCharge, c.ShippingFeeType, c.ShippingFeeFlatRate, c.DefaultShipVia, c.Seller?.SellerName); }
+          // shipping text in html
+          for (const m of [...t.matchAll(/class="price-ship"[^>]*>([^<]*)</g)].slice(0,10)) console.log("shiptext", m[1]);
+          for (const m of [...t.matchAll(/href="(https:\/\/www\.newegg\.com\/[^"]*\/p\/[^"]+)"/g)].slice(0,6)) console.log("href", m[1]);
+          const a = s.Products.find(p=>/^\d\d-/.test(p.ItemCell?.Item||"")); const b = s.Products.find(p=>/^9SI/.test(p.ItemCell?.Item||""));
+          for (const p of [a,b]) if (p) { const id=p.ItemCell.Item; const u = /^\d/.test(id) ? "https://www.newegg.com/p/N82E168"+id.replace(/-/g,"") : "https://www.newegg.com/p/"+id; const r = await fetch(u,{headers:H,redirect:"manual"}); console.log("link", u, r.status, r.headers.get("location")); const r2 = await fetch(u,{headers:H}); const tt = await r2.text(); console.log(" final", r2.status, r2.url, /Add to cart/i.test(tt), (tt.match(/<title>([^<]*)/)||[])[1]); }
+          for (const q of ["combo ryzen 5", "cpu motherboard combo", "power supply combo"]) {
+            t = await go("https://www.newegg.com/p/pl?d="+encodeURIComponent(q));
+            s = state(t); const cc = s.Products.filter(x=>x.IsCombo||x.ComboCell);
+            console.log("combo search", q, s.Products.length, cc.length);
+            if (cc[0]) console.log(JSON.stringify(cc[0]).slice(0,6000));
+          }
+          t = await go("https://www.newegg.com/Combo-Deals/EventSaleStore/ID-10011");
           s = state(t);
-          console.log("PD", JSON.stringify(Object.keys(s.ProductDeals||{})), Array.isArray(s.ProductDeals)?s.ProductDeals.length:"");
-          const pd = s.ProductDeals; const arr = Array.isArray(pd)?pd:(pd?.Products||pd?.ProductDealList||Object.values(pd||{}).find(Array.isArray)||[]);
-          console.log("deals", arr.length, arr[0] && Object.keys(arr[0]).join(","));
-          const combos = arr.filter(x=>x.IsCombo||x.ComboCell);
-          console.log("combos", combos.length);
-          console.log(JSON.stringify(combos[0]).slice(0,5000));
-          console.log("DC", JSON.stringify(s.DynamicCombo).slice(0,1500));
-          const tn = s.TopNavigationCellList||[]; console.log("nav", JSON.stringify(tn).slice(0,1500));
-          // Combo search page
-          t = await (await fetch("https://www.newegg.com/p/pl?d=combo+ryzen", {headers:H})).text();
-          s = state(t); const cc = s.Products.filter(x=>x.IsCombo||x.ComboCell); console.log("combo search", s.Products.length, cc.length); if (cc[0]) console.log(JSON.stringify(cc[0].ComboCell).slice(0,4000));
+          console.log(JSON.stringify(s.ProductDeals[0]).slice(0,800));
+          console.log("TotalRecordCount", s.TotalRecordCount, "nav", JSON.stringify(s.NavigationList).slice(0,1200));
+          const idx = [...t.matchAll(/ComboDealDetails\?ItemList=Combo\.(\d+)/g)].map(m=>m[1]); console.log("combo links", idx.length, [...new Set(idx)].slice(0,10));
+          if (idx[0]) { const u="https://www.newegg.com/Product/ComboDealDetails?ItemList=Combo."+idx[0]; const tt = await go(u); try { const cs = state(tt); console.log("combo detail keys", Object.keys(cs).join(",")); console.log(JSON.stringify(cs).slice(0,6000)); } catch(e) { console.log("no state", tt.slice(0,300)); } }
           JS
           node p.mjs
