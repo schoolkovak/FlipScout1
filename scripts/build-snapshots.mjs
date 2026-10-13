@@ -19,6 +19,8 @@ import { modelSlug } from "../api/_lib/snapshots.js";
 import { buildMarket, rankDeals, shippingFields } from "../api/_lib/market.js";
 import { normalizeListingText, evaluateListing } from "../api/_lib/matching.js";
 import { findGreatDeals, sendAlerts } from "./deal-alerts.mjs";
+import { flipperSection, FLIPPER_SECTIONS } from "../api/_lib/flipper.js";
+import { readdirSync } from "node:fs";
 import { neweggListings, fetchNeweggCombos, NEWEGG_PROVIDER } from "./newegg.mjs";
 
 const args = Object.fromEntries(process.argv.slice(2).map(a => { const [k, v] = a.replace(/^--/, "").split("="); return [k, v ?? "1"]; }));
@@ -246,20 +248,48 @@ async function main() {
     }
   }
 
+  // 2b. Flipper Deals show saved listings: ask eBay whether the top ones are
+  // still for sale (sold out, ended, box-only → removed from the saved data).
+  const checkEbay = async urls => {
+    const live = new Map(), gone = new Set();
+    for (let i = 0; i < urls.length; i += 20) {
+      const r = await getJson(SITE + "/api/deals/search?q=check&check=" + encodeURIComponent(urls.slice(i, i + 20).join(",")), 45000);
+      for (const x of r.live || []) live.set(x.url, x.totalPrice);
+      for (const u of r.gone || []) gone.add(u);
+    }
+    return { live, gone };
+  };
+  if (freeApis && (log.free > 0 || log.newegg > 0)) {
+    try {
+      const read = async path => readJson(join(DATA, path), null);
+      const urls = new Set();
+      for (const id of Object.keys(FLIPPER_SECTIONS)) {
+        const sec = await flipperSection(id, read);
+        for (const x of (sec?.listings || []).slice(0, 10)) if (/ebay\.com\/itm\/\d+$/.test(x.url || "")) urls.add(x.url);
+      }
+      const { gone } = await checkEbay([...urls]);
+      if (gone.size) {
+        for (const f of readdirSync(join(DATA, "models"))) {
+          const file = join(DATA, "models", f);
+          const snap = readJson(file, null);
+          if (!snap?.results?.some(x => gone.has(x.url))) continue;
+          snap.results = snap.results.filter(x => !gone.has(x.url));
+          snap.resultCount = snap.results.length;
+          writeFileSync(file, JSON.stringify(snap));
+        }
+      }
+      log.flipChecked = urls.size; log.flipGone = gone.size;
+      console.log(`flipper live check: ${urls.size} eBay listings checked, ${gone.size} sold out/removed`);
+    } catch (e) { log.errors.push("flipper live check: " + e.message); }
+  }
+
   // 3. Great-deal alerts from the saved listings (no credits).
   const topic = process.env.NTFY_TOPIC || "";
   if (topic && (log.free > 0 || log.paid > 0 || log.newegg > 0)) {
     try {
       const deals = await findGreatDeals(DATA);
       // Ask eBay (through the site) which deal listings are still for sale.
-      const verify = async urls => {
-        const live = new Map();
-        for (let i = 0; i < urls.length; i += 20) {
-          const r = await getJson(SITE + "/api/deals/search?q=check&check=" + encodeURIComponent(urls.slice(i, i + 20).join(",")), 30000);
-          for (const x of r.live || []) live.set(x.url, x.totalPrice);
-        }
-        return live;
-      };
+      const verify = async urls => (await checkEbay(urls)).live;
       const { sent, candidates, quiet } = await sendAlerts(deals, { topic, alerted: state.alerted || [], verify });
       if (quiet) console.log("deal alerts: quiet hours, none sent");
       state.alerted = [...sent, ...(state.alerted || [])].slice(0, 2000);

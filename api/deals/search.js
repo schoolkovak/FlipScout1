@@ -22,9 +22,12 @@ export default async function handler(req, res) {
   // confirms are still for sale right now, with their current price.
   if (isGet && q.check) {
     const urls = String(q.check).split(",").map(u => u.trim()).filter(u => /^https:\/\/www\.ebay\.com\/itm\/\d{9,15}$/.test(u)).slice(0, 20);
-    const r = await checkEbayAvailability(urls.map(url => ({ url, marketplace: "ebay", totalPrice: 0, itemPrice: 0 })));
+    const r = await checkEbayAvailability(urls.map(url => ({ url, marketplace: "ebay", totalPrice: 0, itemPrice: 0 })), { limit: 20 });
     res.setHeader?.("Cache-Control", "no-store");
-    return res.status(200).json({ checked: r.checked, error: r.error, live: r.items.filter(x => x.liveChecked).map(x => ({ url: x.url, itemPrice: x.itemPrice, shipping: x.shipping, totalPrice: x.totalPrice })) });
+    const kept = new Set(r.items.map(x => x.url));
+    return res.status(200).json({ checked: r.checked, error: r.error,
+      live: r.items.filter(x => x.liveChecked).map(x => ({ url: x.url, itemPrice: x.itemPrice, shipping: x.shipping, totalPrice: x.totalPrice })),
+      gone: urls.filter(u => !kept.has(u)) });
   }
   if (isGet) req.body = { query: q.q, category: q.category, condition: q.condition, msrp: q.msrp };
   const live = isGet && q.live === "1";

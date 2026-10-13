@@ -181,11 +181,27 @@ const gpus = read => appeal(read, catalogNames("gpu", () => true), GPUS, { appea
 // Bundles with at least one flip part (CPU, motherboard, PSU, GPU, RAM, SSD,
 // case), ranked by % saved. Total = combo price + shipping + FL sales tax.
 const COMBO_TAX = 0.07;
+// Same part detection as the builder (scripts/newegg.mjs), re-run here so
+// saved combos follow today's rules.
+const COMBO_KIND = [
+  ["other", /\b(?:thermal (?:paste|compound|pad)|paste|compound|spreader|contact frame|sealing frame|bracket|cable|fan|cooler|aio|heatsink|workstation|pro b\d0)\b/i],
+  ["cpu", /\b(?:ryzen \d|core i[3579]|core ultra \d)\b.*\b(?:processor|cpu)\b|\bprocessor\b.*\b(?:ryzen|core)\b/i],
+  ["gpu", /\b(?:geforce|radeon rx|rtx \d{4}|graphics card|video card|arc [ab]\d{3})\b/i],
+  ["motherboard", /\bmotherboard\b|\b[abxzh]\d{3}[a-z]?\b.*\b(?:atx|am[45]|lga ?\d{4})\b/i],
+  ["psu", /\bpower suppl(?:y|ies)\b|\bpsu\b/i],
+  ["ram", /\bddr[45]\b.*\b(?:memory|ram|dimm)\b|\bmemory kit\b/i],
+  ["ssd", /\b(?:ssd|nvme)\b/i],
+  ["case", /\b(?:pc case|computer case|mid[- ]tower|full tower)\b/i]
+];
+const comboKind = t => COMBO_KIND.find(([, re]) => re.test(String(t || "")))?.[0] || "other";
 const COMBO_PARTS = new Set(["cpu", "motherboard", "psu", "gpu", "ram", "ssd", "case"]);
 async function combos(read) {
   const data = await read("combos.json");
   const list = (data?.combos || [])
-    .filter(c => c.comboPrice > 0 && c.comboPrice <= 1500 && c.savings >= 5 && (c.kinds || []).some(k => COMBO_PARTS.has(k)))
+    // Every paid item must be a flip part (no paste/cable add-ons), and the
+    // combo must save at least $10.
+    .filter(c => c.comboPrice > 0 && c.comboPrice <= 1500 && c.savings >= 10 && (c.items || []).filter(x => !x.gift).every(x => COMBO_PARTS.has(comboKind(x.title))))
+    .map(c => ({ ...c, kinds: [...new Set((c.items || []).filter(x => !x.gift).map(x => comboKind(x.title)))] }))
     .map(c => {
       const tax = Math.round(c.comboPrice * COMBO_TAX * 100) / 100;
       return {

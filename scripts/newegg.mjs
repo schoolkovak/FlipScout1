@@ -102,14 +102,15 @@ export async function neweggListings(item, opts = {}) {
 // at least one PC part a flipper buys are kept.
 export const COMBO_QUERIES = ["cpu motherboard combo", "amd ryzen motherboard combo", "power supply combo", "cpu combo", "graphics card combo", "case power supply combo", "memory combo", "ssd combo"];
 const PART_KIND = [
-  ["cpu", /\b(?:ryzen|core i[3579]|core ultra|processor|cpu)\b/i],
-  ["gpu", /\b(?:geforce|radeon|graphics card|video card|arc [ab]\d{3})\b/i],
-  ["motherboard", /\bmotherboard|\b[abxzh]\d{3}[a-z]?\b.*\b(?:atx|am[45]|lga)\b/i],
-  ["psu", /\bpower supply|\bpsu\b|\b\d{3,4}\s?w\b.*\b(?:modular|80\+?|gold|bronze)\b/i],
+  // Thermal paste, coolers and brackets mention "processor"/"CPU" but aren't one.
+  ["other", /\b(?:thermal (?:paste|compound|pad)|paste|compound|spreader|contact frame|sealing frame|bracket|cable|fan|cooler|aio|heatsink)\b/i],
+  ["cpu", /\b(?:ryzen \d|core i[3579]|core ultra \d)\b.*\b(?:processor|cpu)\b|\bprocessor\b.*\b(?:ryzen|core)\b/i],
+  ["gpu", /\b(?:geforce|radeon rx|rtx \d{4}|graphics card|video card|arc [ab]\d{3})\b/i],
+  ["motherboard", /\bmotherboard\b|\b[abxzh]\d{3}[a-z]?\b.*\b(?:atx|am[45]|lga ?\d{4})\b/i],
+  ["psu", /\bpower suppl(?:y|ies)\b|\bpsu\b/i],
   ["ram", /\bddr[45]\b.*\b(?:memory|ram|dimm)\b|\bmemory kit\b/i],
-  ["ssd", /\b(?:ssd|nvme|m\.2)\b/i],
-  ["case", /\b(?:pc case|computer case|mid[- ]tower|full tower)\b/i],
-  ["cooler", /\b(?:cpu cooler|aio|liquid cooler|air cooler)\b/i]
+  ["ssd", /\b(?:ssd|nvme)\b/i],
+  ["case", /\b(?:pc case|computer case|mid[- ]tower|full tower)\b/i]
 ];
 export function comboPartKind(title) {
   const t = String(title || "");
