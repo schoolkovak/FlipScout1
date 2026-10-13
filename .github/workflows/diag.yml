@@ -1,0 +1,43 @@
+name: diag
+on: push
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: |
+          cat > p.mjs <<'JS'
+          const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36";
+          const H = { "user-agent": UA, "accept": "text/html,application/xhtml+xml", "accept-language": "en-US,en;q=0.9" };
+          async function get(u){ const r = await fetch(u,{headers:H}); const t = await r.text(); console.log("\n=====", u, r.status, t.length); return t; }
+          // Newegg
+          let t = await get("https://www.newegg.com/p/pl?d=rgb+atx+pc+case");
+          let m = t.match(/window\.__initialState__\s*=\s*(\{[\s\S]*?\});?\s*<\/script>/);
+          if (m) { const s = JSON.parse(m[1]); console.log("keys", Object.keys(s)); 
+            const walk=(o,p,d)=>{ if(d>4||!o||typeof o!=="object")return; for(const k of Object.keys(o)){ const v=o[k]; if(Array.isArray(v)&&v.length>3&&typeof v[0]==="object") console.log("ARR",p+"."+k,v.length,Object.keys(v[0]).slice(0,30).join(",")); else walk(v,p+"."+k,d+1);} };
+            walk(s,"",0);
+            const arr = s.Products || s.ProductListData?.Products;
+            const find=(o,d)=>{ if(d>5||!o||typeof o!=="object")return null; for(const k of Object.keys(o)){ if(Array.isArray(o[k])&&o[k][0]?.ItemCell) return o[k]; const r=find(o[k],d+1); if(r) return r;} return null; };
+            const items = find(s,0) || [];
+            console.log("items", items.length);
+            console.log(JSON.stringify(items[0]).slice(0,6000));
+            console.log(JSON.stringify(items[5]?.ItemCell?.FinalPrice), JSON.stringify(items[5]?.ItemCell?.Description?.Title));
+          } else console.log("no initialState", t.slice(0,500));
+          // Newegg combos
+          t = await get("https://www.newegg.com/Combo-Deals/EventSaleStore/ID-10011");
+          m = t.match(/window\.__initialState__\s*=\s*(\{[\s\S]*?\});?\s*<\/script>/);
+          if (m) { const s = JSON.parse(m[1]); console.log("combo keys", Object.keys(s)); const i=t.indexOf("ComboCell"); console.log(t.slice(i-200,i+3000)); }
+          else { const i=t.indexOf("Combo"); console.log(t.slice(i, i+2000)); }
+          // Amazon
+          t = await get("https://www.amazon.com/s?k=rgb+atx+pc+case");
+          console.log("amazon captcha?", /captcha|robot/i.test(t), (t.match(/data-component-type="s-search-result"/g)||[]).length);
+          // Walmart
+          t = await get("https://www.walmart.com/search?q=rgb+atx+pc+case");
+          console.log("walmart next?", /__NEXT_DATA__/.test(t), /robot|captcha|blocked/i.test(t.slice(0,3000)));
+          // Micro Center
+          t = await get("https://www.microcenter.com/search/search_results.aspx?Ntt=rgb+atx+case");
+          console.log("mc products", (t.match(/class="product_wrapper"/g)||[]).length);
+          // Amazon robots
+          JS
+          node p.mjs
