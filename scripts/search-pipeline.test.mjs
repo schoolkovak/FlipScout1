@@ -398,7 +398,9 @@ test("GPU: laptops, whole PCs and bare PCBs are not shown as graphics cards", ()
     "Nvidia RTX 5090 MSI Raider 18 HX AI A2XWJG-416US 18\" QHD+ 240hz, 64gb Ddr5 2tb",
     "ASUS ROG EDITION 20 RTX 5090 Gaming PC | 9950X3D2 | 96GB RAM CL28 | 6TB SSD",
     "MSI GeForce RTX 5070 Ti 16GB PCB only - no cooler",
-    "Gigabyte RTX 5070 Ti Gaming OC 16G graphics card PCB"
+    "Gigabyte RTX 5070 Ti Gaming OC 16G graphics card PCB",
+    "2pcs Cooling Fan Video Graphics Card for MSI RX5500XT 8GB MECH OC Graphics Card RTX 5090",
+    "For ASUS TUF RX6700XT/6800XT/6900XT/6950XT GAMING Series Graphics Card Heatsink RTX 5090"
   ]) assert.equal(no(t).ok, false, t);
   for (const t of [
     "NVIDIA RTX 5090 32GB 575W pulled from NEW DELL Alienware Area-51 0 Hours",
