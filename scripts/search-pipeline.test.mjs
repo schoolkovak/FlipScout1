@@ -719,3 +719,20 @@ test("box-only listings are rejected; cards that come with a box are kept", asyn
   assert.ok(BOX_SCAM_DESCRIPTION_RE.test("This auction is for the box and the contents shown in the picture"));
   assert.ok(!BOX_SCAM_DESCRIPTION_RE.test("Works great, comes with the original box and all accessories."));
 });
+
+test("amazon: search-page results become real product listings", async () => {
+  const { amazonOffers } = await import("./amazon.mjs");
+  const card = (asin, title, price, extra = "") => `<div data-asin="${asin}" data-component-type="s-search-result" class="s-result-item"><img class="s-image" src="https://m.media-amazon.com/images/I/${asin}.jpg"><h2 class="a-size-mini"><a><span>${title}</span></a></h2>${price ? `<span class="a-price" data-a-size="xl"><span class="a-offscreen">$${price}</span></span><span class="a-price a-text-price"><span class="a-offscreen">$999.99</span></span>` : ""}${extra}</div>`;
+  const html = card("B0FSTL4VDZ", "ASRock PRO-650G Power Supply - 650W 80 Plus Gold", "49.99", "<span>FREE delivery Thu</span>")
+    + card("B0991TZ399", "MSI MAG A650BN 650W 80+ Bronze", "59.99", "<span>$6.99 delivery</span>")
+    + card("B0NOPRICE1", "Unavailable 650W PSU", "")
+    + card("B0RENEWED1", "MSI RTX 3070 Gaming X Trio (Renewed)", "1,299.00");
+  const o = amazonOffers(html);
+  assert.deepEqual(o.map(x => x.providerItemId), ["B0FSTL4VDZ", "B0991TZ399", "B0RENEWED1"], "no price → skipped");
+  assert.equal(o[0].url, "https://www.amazon.com/dp/B0FSTL4VDZ");
+  assert.equal(o[0].itemPrice, 49.99, "the sale price, not the strike-through list price");
+  assert.equal(o[0].shippingKnown, true); assert.equal(o[0].shipping, 0);
+  assert.equal(o[1].shipping, 6.99); assert.equal(o[1].totalPrice, 66.98);
+  assert.equal(o[2].itemPrice, 1299); assert.equal(o[2].structuredCondition, "renewed");
+  assert.equal(o[0].image, "https://m.media-amazon.com/images/I/B0FSTL4VDZ.jpg");
+});
