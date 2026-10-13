@@ -607,6 +607,11 @@ async function getEbayToken() {
   return ebayTokenCache.token;
 }
 
+function ebayItemUrl(url) {
+  const id = String(url || "").match(/\/itm\/(?:[^/?#]+\/)?(\d{9,15})/)?.[1];
+  return id ? "https://www.ebay.com/itm/" + id : url || null;
+}
+
 export async function searchEbay(input) {
   const token = await getEbayToken();
   if (!token) return [];
@@ -624,7 +629,9 @@ export async function searchEbay(input) {
     const shippingKnown = shipValue !== undefined && shipValue !== null;
     return offer({
       provider: "eBay Browse API", providerItemId: x.itemId || null, marketplace: "ebay", seller: x.seller?.username || "eBay seller",
-      title: x.title || "", url: x.itemWebUrl || null, itemPrice: Number(x.price?.value || 0),
+      // Clean item link (drops eBay's search-tracking query) so one listing
+      // found by several searches is recognized as the same listing.
+      title: x.title || "", url: ebayItemUrl(x.itemWebUrl), itemPrice: Number(x.price?.value || 0),
       shipping: shippingKnown ? Number(shipValue) : 0, shippingKnown,
       structuredCondition: x.condition || "", sellerFeedback: Number(x.seller?.feedbackPercentage || 0) || null,
       freshness: x.itemCreationDate || null
