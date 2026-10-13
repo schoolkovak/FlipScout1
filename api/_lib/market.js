@@ -616,7 +616,9 @@ export async function searchEbay(input) {
   const token = await getEbayToken();
   if (!token) return [];
   const condition = input.condition || "any";
-  const filters = ["buyingOptions:{FIXED_PRICE}"];
+  // US sellers only: foreign listings show converted prices plus import
+  // charges on eBay, so the price we'd show isn't what the buyer pays.
+  const filters = ["buyingOptions:{FIXED_PRICE}", "itemLocationCountry:US"];
   if (condition === "new") filters.push("conditions:{NEW}");
   else if (condition === "used") filters.push("conditions:{USED}");
   else filters.push("conditionIds:{" + (EBAY_CONDITION_IDS[condition] || EBAY_CONDITION_IDS.any) + "}");
@@ -627,7 +629,7 @@ export async function searchEbay(input) {
     headers: { "Authorization": "Bearer " + token, "X-EBAY-C-MARKETPLACE-ID": "EBAY_US", "X-EBAY-C-ENDUSERCTX": "contextualLocation=country%3DUS%2Czip%3D" + (env("EBAY_SHIP_TO_ZIP") || "32832") }
   }, [token]);
   // Buy It Now only: auctions (even with a Buy It Now option) are skipped.
-  return (data.itemSummaries || []).filter(x => !(x.buyingOptions || []).includes("AUCTION")).map(x => {
+  return (data.itemSummaries || []).filter(x => !(x.buyingOptions || []).includes("AUCTION") && (!x.price?.currency || x.price.currency === "USD") && (!x.itemLocation?.country || x.itemLocation.country === "US")).map(x => {
     const shipValue = x.shippingOptions?.[0]?.shippingCost?.value;
     const shippingKnown = shipValue !== undefined && shipValue !== null;
     return offer({

@@ -398,7 +398,9 @@ test("GPU: laptops, whole PCs and bare PCBs are not shown as graphics cards", ()
     "Nvidia RTX 5090 MSI Raider 18 HX AI A2XWJG-416US 18\" QHD+ 240hz, 64gb Ddr5 2tb",
     "ASUS ROG EDITION 20 RTX 5090 Gaming PC | 9950X3D2 | 96GB RAM CL28 | 6TB SSD",
     "MSI GeForce RTX 5070 Ti 16GB PCB only - no cooler",
-    "Gigabyte RTX 5070 Ti Gaming OC 16G graphics card PCB"
+    "Gigabyte RTX 5070 Ti Gaming OC 16G graphics card PCB",
+    "2pcs Cooling Fan Video Graphics Card for MSI RX5500XT 8GB MECH OC Graphics Card RTX 5090",
+    "For ASUS TUF RX6700XT/6800XT/6900XT/6950XT GAMING Series Graphics Card Heatsink RTX 5090"
   ]) assert.equal(no(t).ok, false, t);
   for (const t of [
     "NVIDIA RTX 5090 32GB 575W pulled from NEW DELL Alienware Area-51 0 Hours",
@@ -554,13 +556,14 @@ test("eBay Browse API: auctions are skipped, Buy It Now kept, links cleaned", as
   const env = { ...process.env };
   process.env.EBAY_CLIENT_ID = "id"; process.env.EBAY_CLIENT_SECRET = "secret";
   const original = globalThis.fetch;
-  const headers = [];
+  const headers = [], urls = [];
   globalThis.fetch = async (url, opts) => {
     if (String(url).includes("/oauth2/token")) return { ok: true, status: 200, json: async () => ({ access_token: "t", expires_in: 7200 }) };
-    headers.push(opts.headers);
+    headers.push(opts.headers); urls.push(String(url));
     return { ok: true, status: 200, json: async () => ({ itemSummaries: [
       { itemId: "v1|1|0", title: "EVGA GTX 1660 Super", price: { value: "99" }, buyingOptions: ["FIXED_PRICE"], itemWebUrl: "https://www.ebay.com/itm/111111111111?_skw=x&hash=y", image: { imageUrl: "https://i.ebayimg.com/images/g/abc/s-l225.jpg" } },
-      { itemId: "v1|2|0", title: "MSI GTX 1660 Super", price: { value: "60" }, buyingOptions: ["AUCTION", "FIXED_PRICE"], itemWebUrl: "https://www.ebay.com/itm/222222222222" }
+      { itemId: "v1|2|0", title: "MSI GTX 1660 Super", price: { value: "60" }, buyingOptions: ["AUCTION", "FIXED_PRICE"], itemWebUrl: "https://www.ebay.com/itm/222222222222" },
+      { itemId: "v1|3|0", title: "ASUS GTX 1660 Super", price: { value: "51", currency: "USD" }, buyingOptions: ["FIXED_PRICE"], itemLocation: { country: "CA" }, itemWebUrl: "https://www.ebay.com/itm/333333333333" }
     ] }) };
   };
   try {
@@ -568,6 +571,7 @@ test("eBay Browse API: auctions are skipped, Buy It Now kept, links cleaned", as
     assert.deepEqual(offers.map(o => o.url), ["https://www.ebay.com/itm/111111111111"]);
     assert.equal(offers[0].image, "https://i.ebayimg.com/images/g/abc/s-l225.jpg", "the listing's own photo");
     assert.match(headers[0]["X-EBAY-C-ENDUSERCTX"], /zip%3D32832/);
+    assert.ok(urls[0].includes("itemLocationCountry%3AUS"), "US sellers only");
   } finally { globalThis.fetch = original; process.env = env; }
 });
 

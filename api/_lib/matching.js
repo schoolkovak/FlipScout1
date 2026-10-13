@@ -353,6 +353,8 @@ export function evaluateListing({ title, query, category, structuredCondition = 
     return reject("laptop-or-mobile", t.match(laptopRe(kind))[0]);
   if (kind === "gpu") {
     // "For ASUS TUF RX 6700 XT ... Heatsink": a part made for that card.
+    // "2pcs Cooling Fan ... for MSI RX5500XT 8GB": fans made for that card.
+    if (/\b(?:\d\s?pcs|cooling fans?|replacement fans?|graphics card fans?|video card fans?|gpu fans?|fan set|fans? kit)\b/.test(t) && /\bfor\b/.test(t)) return reject("accessory", "gpu fans");
     if (/^for\b/.test(t) || (/\b(?:heatsink|heat sink|cooling fans?|replacement fans?|fans? replacement|water ?block|shroud)\b/.test(t) && !/\b\d{1,2}\s?gb?\b|\bgddr\d/.test(t))) return reject("accessory", "gpu part");
     // A bare circuit board (no cooler/shroud) is not a working graphics card.
     const bare = t.match(/\b(?:pcb|bare board|board only|core only|no (?:cooler|heatsink|shroud|fans?)|without (?:cooler|heatsink|shroud|fans?))\b/);
