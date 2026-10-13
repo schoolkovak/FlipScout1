@@ -19,7 +19,7 @@ import { modelSlug } from "../api/_lib/snapshots.js";
 import { buildMarket, rankDeals, shippingFields } from "../api/_lib/market.js";
 import { normalizeListingText, evaluateListing } from "../api/_lib/matching.js";
 import { findGreatDeals, sendAlerts } from "./deal-alerts.mjs";
-import { neweggListings, NEWEGG_PROVIDER } from "./newegg.mjs";
+import { neweggListings, fetchNeweggCombos, NEWEGG_PROVIDER } from "./newegg.mjs";
 
 const args = Object.fromEntries(process.argv.slice(2).map(a => { const [k, v] = a.replace(/^--/, "").split("="); return [k, v ?? "1"]; }));
 const SITE = (args.site || "https://flip-scout-ebon.vercel.app").replace(/\/$/, "");
@@ -196,6 +196,18 @@ async function main() {
       await new Promise(r => setTimeout(r, NEWEGG_GAP_MS));
     }
     if (log.newegg) console.log(`newegg: ${log.newegg} models checked`);
+    // Newegg combo deals (Flipper Deals), about every 6 hours.
+    if (args["force-free"] === "1" || hoursSince(state.combosAt) > NEWEGG_STALE_H) {
+      try {
+        const combos = await fetchNeweggCombos();
+        if (combos.length) {
+          writeFileSync(join(DATA, "combos.json"), JSON.stringify({ updatedAt: now(), combos }));
+          state.combosAt = now();
+          log.combos = combos.length;
+          console.log(`newegg combos: ${combos.length}`);
+        }
+      } catch (e) { log.errors.push("newegg combos: " + e.message); }
+    }
   }
 
   // 2. Paid refresh: priority models first, then the stalest, within budget.
@@ -239,14 +251,24 @@ async function main() {
   if (topic && (log.free > 0 || log.paid > 0 || log.newegg > 0)) {
     try {
       const deals = await findGreatDeals(DATA);
-      const { sent, candidates } = await sendAlerts(deals, { topic, alerted: state.alerted || [] });
+      // Ask eBay (through the site) which deal listings are still for sale.
+      const verify = async urls => {
+        const live = new Map();
+        for (let i = 0; i < urls.length; i += 20) {
+          const r = await getJson(SITE + "/api/deals/search?q=check&check=" + encodeURIComponent(urls.slice(i, i + 20).join(",")), 30000);
+          for (const x of r.live || []) live.set(x.url, x.totalPrice);
+        }
+        return live;
+      };
+      const { sent, candidates, quiet } = await sendAlerts(deals, { topic, alerted: state.alerted || [], verify });
+      if (quiet) console.log("deal alerts: quiet hours, none sent");
       state.alerted = [...sent, ...(state.alerted || [])].slice(0, 2000);
       log.alerts = sent.length;
       console.log(`deal alerts: ${sent.length} sent of ${candidates} deals`);
     } catch (e) { log.errors.push("alerts: " + e.message); }
   }
 
-  const changed = log.free > 0 || log.paid > 0 || log.newegg > 0;
+  const changed = log.free > 0 || log.paid > 0 || log.newegg > 0 || log.combos > 0;
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, "changed=" + changed + "\n");
   if (!changed) { console.log("nothing to refresh this run", JSON.stringify(log)); return; }
   state.runs = [log, ...(state.runs || [])].slice(0, 30);

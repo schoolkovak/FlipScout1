@@ -693,7 +693,8 @@ export async function checkEbayAvailability(items, { limit = 20 } = {}) {
     if (!it) { if (ref.exact) gone.add(x); continue; }
     const status = it.estimatedAvailabilities?.[0]?.estimatedAvailabilityStatus;
     const ended = it.itemEndDate && Date.parse(it.itemEndDate) < Date.now();
-    if (status === "OUT_OF_STOCK" || ended || (it.buyingOptions || []).includes("AUCTION")) { gone.add(x); continue; }
+    const qty = it.estimatedAvailabilities?.[0]?.estimatedAvailableQuantity;
+    if (status === "OUT_OF_STOCK" || qty === 0 || ended || (it.buyingOptions || []).includes("AUCTION")) { gone.add(x); continue; }
     const price = Number(it.price?.value);
     const ship = it.shippingOptions?.[0]?.shippingCost?.value;
     const i = out.indexOf(x);

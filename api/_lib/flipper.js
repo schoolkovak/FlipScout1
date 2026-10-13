@@ -177,13 +177,38 @@ async function appeal(read, names, table, { maxPrice = Infinity, appealPower = 1
 const ryzen = read => appeal(read, catalogNames("cpu", n => /^Ryzen/.test(n)), CPUS, { maxPrice: 65 });
 const gpus = read => appeal(read, catalogNames("gpu", () => true), GPUS, { appealPower: 2 });
 
+// ---- Newegg combo deals (saved by the builder in combos.json) --------------
+// Bundles with at least one flip part (CPU, motherboard, PSU, GPU, RAM, SSD,
+// case), ranked by % saved. Total = combo price + shipping + FL sales tax.
+const COMBO_TAX = 0.07;
+const COMBO_PARTS = new Set(["cpu", "motherboard", "psu", "gpu", "ram", "ssd", "case"]);
+async function combos(read) {
+  const data = await read("combos.json");
+  const list = (data?.combos || [])
+    .filter(c => c.comboPrice > 0 && c.comboPrice <= 1500 && c.savings >= 5 && (c.kinds || []).some(k => COMBO_PARTS.has(k)))
+    .map(c => {
+      const tax = Math.round(c.comboPrice * COMBO_TAX * 100) / 100;
+      return {
+        id: c.id, title: c.title, url: c.url, image: c.image, source: "Newegg", marketplace: "newegg", condition: "new",
+        itemPrice: c.comboPrice, shipping: c.shipping || 0, shippingKnown: true, totalPrice: Math.round((c.comboPrice + (c.shipping || 0)) * 100) / 100,
+        separate: c.separate, savings: c.savings, savingsPct: c.savingsPct, freeGift: !!c.freeGift, promo: c.promo || null,
+        tax, totalAfterTax: Math.round((c.comboPrice + (c.shipping || 0) + tax) * 100) / 100,
+        parts: (c.items || []).map(x => ({ title: x.title, kind: x.kind, price: x.price, count: x.count, gift: !!x.gift, url: x.url })),
+        tag: (c.kinds || []).filter(k => COMBO_PARTS.has(k)).map(k => k === "psu" ? "PSU" : k === "cpu" ? "CPU" : k === "gpu" ? "GPU" : k === "ram" ? "RAM" : k === "ssd" ? "SSD" : k[0].toUpperCase() + k.slice(1)).join(" + ")
+      };
+    })
+    .sort((a, b) => b.savingsPct - a.savingsPct || b.savings - a.savings);
+  return { listings: list, searchedAt: data?.updatedAt || null, missing: data ? [] : ["Newegg combos"] };
+}
+
 export const FLIPPER_SECTIONS = {
   ddr4: { title: "DDR4 bulk 8GB sticks", run: ddr4 },
   nvme500: { title: "500GB NVMe SSDs", run: nvme500 },
   cases: { title: "RGB cases under $52 (Micro-ATX+)", run: cases },
   psu: { title: "PSUs 550–750W Bronze/Gold", run: psus },
   ryzen: { title: "Ryzen CPUs under $65", run: ryzen },
-  gpu: { title: "GPUs buyers want — appeal for the money", run: gpus }
+  gpu: { title: "GPUs buyers want — appeal for the money", run: gpus },
+  combos: { title: "Newegg combo deals", run: combos }
 };
 
 export async function flipperSection(id, read) {
