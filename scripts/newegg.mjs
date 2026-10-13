@@ -103,7 +103,7 @@ export async function neweggListings(item, opts = {}) {
 export const COMBO_QUERIES = ["cpu motherboard combo", "amd ryzen motherboard combo", "power supply combo", "cpu combo", "graphics card combo", "case power supply combo", "memory combo", "ssd combo"];
 const PART_KIND = [
   // Thermal paste, coolers and brackets mention "processor"/"CPU" but aren't one.
-  ["other", /\b(?:thermal (?:paste|compound|pad)|paste|compound|spreader|contact frame|sealing frame|bracket|cable|fan|cooler|aio|heatsink)\b/i],
+  ["other", /\b(?:thermal (?:paste|compound|pad)|paste|compound|spreader|contact frame|sealing frame|bracket|cable|fan|cooler|aio|heatsink|workstation|enclosure|adapter|dock|docking|caddy|reader)\b/i],
   ["cpu", /\b(?:ryzen \d|core i[3579]|core ultra \d)\b.*\b(?:processor|cpu)\b|\bprocessor\b.*\b(?:ryzen|core)\b/i],
   ["gpu", /\b(?:geforce|radeon rx|rtx \d{4}|graphics card|video card|arc [ab]\d{3})\b/i],
   ["motherboard", /\bmotherboard\b|\b[abxzh]\d{3}[a-z]?\b.*\b(?:atx|am[45]|lga ?\d{4})\b/i],

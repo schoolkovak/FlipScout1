@@ -74,9 +74,12 @@ function usedMarket(rows, price = x => x.totalPrice) {
   const used = rows.filter(x => USED.has(x.condition)).map(price);
   return median(used.length >= 3 ? used : rows.map(price));
 }
-function dealFields(price, market) {
-  if (!market) return { market: null, underPct: null };
-  return { market: Math.round(market * 100) / 100, underPct: Math.round((market - price) / market * 100) };
+// usedComps = how many used listings the market price comes from (with
+// fewer than 3 it falls back to all listings, mostly new retail prices).
+const usedCount = rows => rows.filter(x => USED.has(x.condition)).length;
+function dealFields(price, market, usedComps = 0) {
+  if (!market) return { market: null, underPct: null, usedComps };
+  return { market: Math.round(market * 100) / 100, underPct: Math.round((market - price) / market * 100), usedComps };
 }
 // Ignore bait/scam prices far under market.
 const sane = (price, market) => !market || price >= market * 0.4;
@@ -90,7 +93,7 @@ async function ddr4(read) {
     .filter(x => !/\b(?:ecc|rdimm|registered|reg|server|buffered)\b/.test(normalizeListingText(x.title)));
   const market = usedMarket(all, x => x.perPair);
   const listings = all.filter(x => x.perPair > 8 && x.perPair < 65 && sane(x.perPair, market))
-    .map(x => ({ ...x, ...dealFields(x.perPair, market) }))
+    .map(x => ({ ...x, ...dealFields(x.perPair, market, usedCount(all)) }))
     .filter(x => x.underPct == null || x.underPct >= DEAL_MIN_PCT)
     .sort((a, b) => a.perPair - b.perPair);
   return { ...s, listings };
@@ -101,7 +104,7 @@ async function nvme500(read) {
   const s = await saved(["500GB NVMe SSD", "500GB SSD"], read);
   const all = uniqueById(s.rows).filter(x => { const t = normalizeListingText(x.title); return /\b(nvme|pcie)\b/.test(t) && !/\bsata\b/.test(t) && /\b(500|512)\s?gb\b/.test(t); });
   const market = usedMarket(all);
-  const listings = all.filter(x => sane(x.totalPrice, market)).map(x => ({ ...slim(x), ...dealFields(x.totalPrice, market) }))
+  const listings = all.filter(x => sane(x.totalPrice, market)).map(x => ({ ...slim(x), ...dealFields(x.totalPrice, market, usedCount(all)) }))
     .filter(x => x.underPct == null || x.underPct >= DEAL_MIN_PCT)
     .sort((a, b) => a.totalPrice - b.totalPrice);
   return { ...s, listings };
@@ -122,7 +125,7 @@ async function cases(read) {
   const all = uniqueById(s.rows).filter(x => flipCaseOk(x.title));
   const market = usedMarket(all);
   const listings = all.filter(x => x.totalPrice <= 52 && sane(x.totalPrice, market))
-    .map(x => ({ ...slim(x), ...dealFields(x.totalPrice, market) }))
+    .map(x => ({ ...slim(x), ...dealFields(x.totalPrice, market, usedCount(all)) }))
     .sort((a, b) => a.totalPrice - b.totalPrice);
   return { ...s, listings };
 }
@@ -136,7 +139,7 @@ async function psus(read) {
   const all = uniqueById(s.rows).map(x => ({ ...slim(x), watts: watts(x), rating: psuRating(x.title) })).filter(x => [550, 650, 750].includes(x.watts));
   const marketBy = Object.fromEntries([550, 650, 750].map(w => [w, usedMarket(all.filter(x => x.watts === w))]));
   const listings = all.filter(x => sane(x.totalPrice, marketBy[x.watts]))
-    .map(x => ({ ...x, ...dealFields(x.totalPrice, marketBy[x.watts]), tag: x.watts + "W" + (x.rating ? " " + x.rating[0].toUpperCase() + x.rating.slice(1) : "") }))
+    .map(x => ({ ...x, ...dealFields(x.totalPrice, marketBy[x.watts], usedCount(all.filter(y => y.watts === x.watts))), tag: x.watts + "W" + (x.rating ? " " + x.rating[0].toUpperCase() + x.rating.slice(1) : "") }))
     .filter(x => x.underPct == null || x.underPct >= DEAL_MIN_PCT)
     .sort((a, b) => rank(a) - rank(b) || wRank(a.watts) - wRank(b.watts) || a.totalPrice - b.totalPrice);
   return { ...s, listings };
@@ -162,13 +165,13 @@ async function appeal(read, names, table, { maxPrice = Infinity, appealPower = 1
     const market = usedMarket(snap.results);
     const deals = snap.results
       .filter(x => x.totalPrice <= maxPrice && sane(x.totalPrice, market))
-      .map(x => ({ x, ...dealFields(x.totalPrice, market) }))
+      .map(x => ({ x, ...dealFields(x.totalPrice, market, usedCount(snap.results)) }))
       .filter(d => d.underPct == null || d.underPct >= DEAL_MIN_PCT)
       .sort((a, b) => a.x.totalPrice - b.x.totalPrice).slice(0, 3);
     for (const d of deals) {
       const appealPer100 = Math.round(meta.appeal / d.x.totalPrice * 10000) / 100;
       const score = Math.round(Math.pow(meta.appeal, appealPower) / d.x.totalPrice * (1 + Math.max(0, d.underPct || 0) / 200) * 10000) / 100;
-      rows.push({ ...slim(d.x), model: name, appeal: meta.appeal, appealPer100, market: d.market, underPct: d.underPct, score });
+      rows.push({ ...slim(d.x), model: name, appeal: meta.appeal, appealPer100, market: d.market, underPct: d.underPct, usedComps: d.usedComps, score });
     }
   }
   rows.sort((a, b) => b.score - a.score || b.appeal - a.appeal);
@@ -184,7 +187,7 @@ const COMBO_TAX = 0.07;
 // Same part detection as the builder (scripts/newegg.mjs), re-run here so
 // saved combos follow today's rules.
 const COMBO_KIND = [
-  ["other", /\b(?:thermal (?:paste|compound|pad)|paste|compound|spreader|contact frame|sealing frame|bracket|cable|fan|cooler|aio|heatsink|workstation|pro b\d0)\b/i],
+  ["other", /\b(?:thermal (?:paste|compound|pad)|paste|compound|spreader|contact frame|sealing frame|bracket|cable|fan|cooler|aio|heatsink|workstation|pro b\d0|enclosure|adapter|dock|docking|caddy|reader)\b/i],
   ["cpu", /\b(?:ryzen \d|core i[3579]|core ultra \d)\b.*\b(?:processor|cpu)\b|\bprocessor\b.*\b(?:ryzen|core)\b/i],
   ["gpu", /\b(?:geforce|radeon rx|rtx \d{4}|graphics card|video card|arc [ab]\d{3})\b/i],
   ["motherboard", /\bmotherboard\b|\b[abxzh]\d{3}[a-z]?\b.*\b(?:atx|am[45]|lga ?\d{4})\b/i],
