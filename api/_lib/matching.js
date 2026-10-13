@@ -212,7 +212,7 @@ export function psuDesktopVerdict(t) {
 function laptopRe(kind) {
   // SODIMM part numbers: Samsung M471…, SK hynix HMA8…GS / HMAA…GS, Crucial CT…SF…
   return kind === "ram"
-    ? /\b(?:laptop|notebook|so ?dimm|sodimm|m471\w*|hma\w*gs\w*|ct\d+g4sf\w*)\b/
+    ? /\b(?:laptop|notebook|so ?dimm|sodimm|l?p?camm\d?|m471\w*|hma\w*gs\w*|ct\d+g4sf\w*)\b/
     : /\b(?:laptop|notebook|mobile|max q|mxm)\b/;
 }
 
@@ -381,6 +381,7 @@ export function evaluateListing({ title, query, category, structuredCondition = 
   // Incomplete / accessory / form-factor ------------------------------------
   const incomplete = hasUnnegated(t, INCOMPLETE_RE);
   if (incomplete) return reject("incomplete", incomplete);
+  if (/\bmonitor\b/.test(String(category || "").toLowerCase()) && /\bportable\b/.test(t) && !/\bportable\b/.test(q)) return reject("form-factor-mismatch", "portable monitor");
   const boxOnly = kind !== "case" && boxOnlyTitle(t);
   if (boxOnly) return reject("box-only", boxOnly);
   const host = stripHostPhrases(t);
@@ -448,7 +449,7 @@ export function evaluateListing({ title, query, category, structuredCondition = 
     const wantNvme = kind === "nvme" || /\bnvme\b|\bpcie\b/.test(q);
     const wantSata = kind === "sata" || /\bsata\b/.test(q);
     const wantHdd = kind === "hdd" || /\bhdd\b|\bhard disk\b|\brpm\b/.test(q);
-    const isNvme = /\b(?:nvme|pcie|gen ?[345])\b/.test(t);
+    const isNvme = /\b(?:nvme|pcie|gen ?[345])\b/.test(t.replace(/\b(?:not|non|no)\s+(?:an?\s+)?(?:nvme|pcie)\b/g, " "));
     const isSsd = /\b(?:ssd|solid state|nvme)\b/.test(t);
     if (wantNvme && !isNvme && /\bsata\b/.test(t)) return reject("interface-mismatch", "SATA");
     if (wantSata && isNvme) return reject("interface-mismatch", "NVMe");
@@ -536,6 +537,7 @@ export function evaluateListing({ title, query, category, structuredCondition = 
     const fanPack = /\b(?:case fans?|fan pack|fan kit|\d pack|3 pack)\b/.test(t) || /\b(?:80|92|120|140|200)mm\b.*\bfans?\b/.test(t);
     if (fanPack && !/\b(?:tower|chassis|atx|matx|itx|eatx)\b/.test(noFans)) return reject("accessory", "case fans");
     if (!isCase) return reject("model-not-stated", "not a case");
+    if (/\b(?:rackmount|rack mount|\d+u rack|test bench|testbench|bench table|open air|open frame)\b/.test(t) && !/\b(?:rack|bench|open air|open frame)\b/.test(q)) return reject("form-factor-mismatch", "rack / test bench / open-air");
     // Case models named for a size / lighting / color only keep matching ones.
     const attrs = caseAttributes(t);
     if (/\bwhite\b/.test(q) && attrs.Color !== "White") return reject("color-mismatch", "not white");
