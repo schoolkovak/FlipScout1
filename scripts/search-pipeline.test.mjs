@@ -736,3 +736,16 @@ test("amazon: search-page results become real product listings", async () => {
   assert.equal(o[2].itemPrice, 1299); assert.equal(o[2].structuredCondition, "renewed");
   assert.equal(o[0].image, "https://m.media-amazon.com/images/I/B0FSTL4VDZ.jpg");
 });
+
+test("overnight audit misfits: SATA-not-NVMe, CAMM laptop RAM, rack/test-bench cases, portable monitors", () => {
+  const ok = (t, q, c) => evaluateListing({ title: t, query: q, category: c }).ok;
+  assert.equal(ok("Crucial MX500 500GB M.2 2280 SATA SSD CT500MX500SSD4 NOT NVMe 87% Health", "500GB NVMe SSD", "NVMe SSD"), false);
+  assert.equal(ok("Samsung 970 EVO Plus 500GB NVMe M.2", "500GB NVMe SSD", "NVMe SSD"), true);
+  assert.equal(ok("Dell 32GB DDR5 5600 CAMM KYHG6V Precision 7670", "32GB DDR5 5600", "RAM"), false);
+  assert.equal(ok("Corsair Vengeance 32GB (2x16GB) DDR5 5600MT/s", "32GB DDR5 5600", "RAM"), true);
+  assert.equal(ok("Mini ITX Rackmount Case for 10 Inch Rack V2 PC Chassis", "Mini ITX PC case", "PC Case"), false);
+  assert.equal(ok("DIY Mini ITX Motherboard Test Bench Open Air Frame Tower PC Computer Case", "Mini ITX PC case", "PC Case"), false);
+  assert.equal(ok("Mini-ITX PC Case with 2x120mm ARGB Fans, High Airflow ITX Case", "Mini ITX PC case", "PC Case"), true);
+  assert.equal(ok("HotYeah 16.1in IPS 1080p 144Hz Portable Gaming Monitor USB-C", "144Hz gaming monitor", "Monitor"), false);
+  assert.equal(ok("ASRock 27 inch Full HD 144Hz IPS Gaming Monitor", "144Hz gaming monitor", "Monitor"), true);
+});
