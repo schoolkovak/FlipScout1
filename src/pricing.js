@@ -8,7 +8,9 @@ export const STATE_TAX = {
   UT: 7.25, VT: 6.36, VA: 5.77, WA: 9.38, WV: 6.55, WI: 5.43, WY: 5.44
 };
 const KEY = "flipscout-tax-state";
-export function loadTaxState() { try { return localStorage.getItem(KEY) || ""; } catch { return ""; } }
+// Default: Florida (the site owner ships to 32832); visitors can change it.
+export const DEFAULT_TAX_STATE = "FL";
+export function loadTaxState() { try { return localStorage.getItem(KEY) ?? DEFAULT_TAX_STATE; } catch { return DEFAULT_TAX_STATE; } }
 export function saveTaxState(st) { try { localStorage.setItem(KEY, st); } catch {} }
 export function taxRate(state) { return state && STATE_TAX[state] != null ? STATE_TAX[state] / 100 : 0.075; }
 
@@ -19,6 +21,7 @@ export function finalPrice(item, state) {
   const base = Number(item?.itemPrice ?? item?.totalPrice) || 0;
   let shipping = 0, shipNote;
   if (item?.shippingKnown) { shipping = Number(item.shipping) || 0; shipNote = shipping ? "ship $" + shipping.toFixed(2) : "free ship"; }
+  else if (item?.shippingEstimated && Number(item.shipping) > 0) { shipping = Number(item.shipping); shipNote = "~$" + shipping.toFixed(0) + " ship (est.)"; }
   else if (FREE_OVER_35.has(item?.marketplace) && base >= 35) shipNote = "free ship (est.)";
   else shipNote = "shipping not listed";
   const rate = taxRate(state);

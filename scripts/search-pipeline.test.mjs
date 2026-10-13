@@ -296,7 +296,9 @@ test("deep scan reads AliExpress item pages; no Google-indexed eBay or Mercari p
     assert.ok(organicCalls.some(c => c.body.q === "RX 7800 XT AliExpress"));
     assert.ok(!organicCalls.some(c => /ebay/i.test(c.body.q)), "no eBay web search");
     assert.deepEqual(result.ranked.map(x => x.marketplace), ["aliexpress"]);
-    assert.equal(result.ranked[0].totalPrice, 402.15);
+    assert.equal(result.ranked[0].itemPrice, 402.15);
+    assert.equal(result.ranked[0].totalPrice, 417.15, "unknown GPU shipping is estimated (~$15), not assumed free");
+    assert.equal(result.ranked[0].shippingEstimated, true);
   } finally { stub.restore(); }
 });
 
@@ -507,4 +509,13 @@ test("Deal Hunt answers catalog targets from saved listings without a paid searc
     globalThis.fetch = original;
     if (prev !== undefined) process.env.SNAPSHOTS_OFF = prev;
   }
+});
+
+test("shipping: unknown is estimated by part type; big retailers ship free over $35", async () => {
+  const { shippingFields } = await import("../api/_lib/market.js");
+  assert.deepEqual(shippingFields({ itemPrice: 32, shippingKnown: false }, "ebay", "GPU"), { shipping: 15, shippingKnown: false, shippingEstimated: true, totalPrice: 47 });
+  assert.equal(shippingFields({ itemPrice: 32, shipping: 15, shippingKnown: true }, "ebay", "GPU").totalPrice, 47);
+  assert.equal(shippingFields({ itemPrice: 189.99, shippingKnown: false }, "newegg", "GPU").totalPrice, 189.99);
+  assert.equal(shippingFields({ itemPrice: 20, shippingKnown: false }, "newegg", "RAM / Memory").totalPrice, 26);
+  assert.equal(shippingFields({ itemPrice: 40, shippingKnown: false }, "ebay", "PC Case").totalPrice, 65);
 });

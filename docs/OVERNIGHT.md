@@ -36,3 +36,5 @@ Restore point: branch `tomato` (commit 56d201c). Say "tomato" to return the site
 - eBay Browse API keys and a new Serper key were added in Vercel; this commit redeploys production so they take effect.
 - eBay Browse API connected (keyset exempted from account-deletion notifications). First full refresh: all 199 models have live eBay Buy It Now listings at 0 Serper credits; Flipper Deals sections all populated.
 - eBay item links are stored without search-tracking parameters so one listing found by several searches is shown once.
+- Shipping: eBay searches now use delivery ZIP 32832 (override with env EBAY_SHIP_TO_ZIP) so eBay returns calculated shipping; shipping that's still unknown is estimated by part type (GPU ~$15, CPU ~$8, RAM/SSD ~$6, PSU ~$15, case ~$25…) and shown as "~$15 ship (est.)" instead of being treated as free. Big retailers still ship free over $35.
+- Tax defaults to Florida (changeable in the Tax picker).

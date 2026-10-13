@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { evaluateListing, normalizeListingText } from "./matching.js";
+import { evaluateListing, normalizeListingText, categoryKind } from "./matching.js";
 import { SNIPER_MARKETPLACES, allowsUsed } from "../../shared/sniper.js";
 import { sortDeals } from "../../shared/dealSort.js";
 import { isTrustedMerchant, listingLink } from "./stores.js";
@@ -622,7 +622,9 @@ export async function searchEbay(input) {
   else filters.push("conditionIds:{" + (EBAY_CONDITION_IDS[condition] || EBAY_CONDITION_IDS.any) + "}");
   const params = new URLSearchParams({ q: input.query, limit: "200", filter: filters.join(",") });
   const data = await providerFetch("ebay", "https://api.ebay.com/buy/browse/v1/item_summary/search?" + params.toString(), {
-    headers: { "Authorization": "Bearer " + token, "X-EBAY-C-MARKETPLACE-ID": "EBAY_US" }
+    // A US delivery location makes eBay return calculated shipping costs
+    // (without it, ~40% of listings came back with no shipping price).
+    headers: { "Authorization": "Bearer " + token, "X-EBAY-C-MARKETPLACE-ID": "EBAY_US", "X-EBAY-C-ENDUSERCTX": "contextualLocation=country%3DUS%2Czip%3D" + (env("EBAY_SHIP_TO_ZIP") || "32832") }
   }, [token]);
   return (data.itemSummaries || []).map(x => {
     const shipValue = x.shippingOptions?.[0]?.shippingCost?.value;
@@ -694,6 +696,22 @@ function emptyStats(name) {
   return { name, status: "ok", raw: 0, priced: 0, kept: 0, duplicates: 0, dropped: {}, examples: [], message: null, cached: false };
 }
 
+// Shipping the listing didn't state is estimated, not assumed free, so a
+// cheap item with unknown shipping can't outrank one with free shipping.
+// Big retailers ship PC parts free over $35.
+const FREE_SHIP_OVER_35 = new Set(["amazon", "bestbuy", "walmart", "newegg", "microcenter", "bhphoto", "adorama"]);
+const SHIPPING_ESTIMATE = { gpu: 15, cpu: 8, ram: 6, ssd: 6, nvme: 6, sata: 6, hdd: 10, motherboard: 12, psu: 15, case: 25, aio: 15, aircooler: 12, cooler: 12, fans: 8, monitor: 30 };
+export function shippingFields(raw, marketplace, category) {
+  const item = Number(raw.itemPrice) || 0;
+  if (raw.shippingKnown) {
+    const ship = Number(raw.shipping) || 0;
+    return { shipping: ship, shippingKnown: true, shippingEstimated: false, totalPrice: Math.round((item + ship) * 100) / 100 };
+  }
+  if (FREE_SHIP_OVER_35.has(marketplace) && item >= 35) return { shipping: 0, shippingKnown: false, shippingEstimated: true, totalPrice: Math.round(item * 100) / 100 };
+  const est = SHIPPING_ESTIMATE[categoryKind(category)] ?? 10;
+  return { shipping: est, shippingKnown: false, shippingEstimated: true, totalPrice: Math.round((item + est) * 100) / 100 };
+}
+
 // Turn raw provider offers into qualified listings and record, per provider,
 // how many were dropped and why.
 export function qualifyOffers(rawOffers, input, { selected = null, includeOtherMerchants = false, stats = new Map() } = {}) {
@@ -739,9 +757,7 @@ export function qualifyOffers(rawOffers, input, { selected = null, includeOtherM
       condition: verdict.condition,
       conditionAssumed: verdict.conditionAssumed,
       itemPrice: raw.itemPrice,
-      shipping: raw.shipping,
-      shippingKnown: raw.shippingKnown,
-      totalPrice: Math.round(raw.totalPrice * 100) / 100,
+      ...shippingFields(raw, marketplace, input.category),
       seller: raw.seller,
       url: safeUrl(raw.url),
       sellerFeedback: raw.sellerFeedback || null,
