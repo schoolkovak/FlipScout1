@@ -584,17 +584,20 @@ test("saved eBay listings: sold-out/ended ones dropped, live price used", async 
   const original = globalThis.fetch;
   globalThis.fetch = async url => {
     if (String(url).includes("/oauth2/token")) return { ok: true, status: 200, json: async () => ({ access_token: "t", expires_in: 7200 }) };
-    return { ok: true, status: 200, json: async () => ({ items: [
-      { itemId: "v1|111111111111|0", price: { value: "105.00" }, estimatedAvailabilities: [{ estimatedAvailabilityStatus: "IN_STOCK" }], shippingOptions: [{ shippingCost: { value: "12.50" } }] },
-      { itemId: "v1|222222222222|0", price: { value: "90.00" }, estimatedAvailabilities: [{ estimatedAvailabilityStatus: "OUT_OF_STOCK" }] }
-    ] }) };
+    // One getItem / getItemByLegacyId call per listing (bulk getItems is 403).
+    const u = String(url);
+    if (u.includes("legacy_item_id=111111111111")) return { ok: true, status: 200, json: async () => ({ itemId: "v1|111111111111|0", title: "RTX 3070", price: { value: "105.00" }, estimatedAvailabilities: [{ estimatedAvailabilityStatus: "IN_STOCK" }], shippingOptions: [{ shippingCost: { value: "12.50" } }] }) };
+    if (u.includes("legacy_item_id=222222222222")) return { ok: true, status: 200, json: async () => ({ itemId: "v1|222222222222|0", title: "RTX 3070", price: { value: "90.00" }, estimatedAvailabilities: [{ estimatedAvailabilityStatus: "OUT_OF_STOCK" }] }) };
+    if (u.includes("legacy_item_id=444444444444")) return { ok: true, status: 200, json: async () => ({ itemId: "v1|444444444444|0", title: "EVGA RTX 3070 FTW3", description: "<p>This auction is for the box and the contents shown in the picture.</p>", price: { value: "150.00" }, estimatedAvailabilities: [{ estimatedAvailabilityStatus: "IN_STOCK" }] }) };
+    return { ok: false, status: 404, json: async () => ({}) };
   };
   const L = (id, p, extra = {}) => ({ id, marketplace: "ebay", url: "https://www.ebay.com/itm/" + id, itemPrice: p, shipping: 15, shippingKnown: false, shippingEstimated: true, totalPrice: p + 15, ...extra });
   try {
-    const r = await checkEbayAvailability([L("111111111111", 99), L("222222222222", 80), L("333333333333", 70, { providerItemId: "v1|333333333333|0" }), { id: "nw", marketplace: "newegg", totalPrice: 120 }]);
-    assert.deepEqual(r.items.map(x => x.id), ["111111111111", "nw"], "out of stock and vanished (ended) listings removed; other stores untouched");
+    const r = await checkEbayAvailability([L("111111111111", 99), L("222222222222", 80), L("333333333333", 70, { providerItemId: "v1|333333333333|0" }), L("444444444444", 140), { id: "nw", marketplace: "newegg", totalPrice: 120 }]);
+    assert.deepEqual(r.items.map(x => x.id), ["111111111111", "nw"], "out of stock, vanished (ended) and box-only listings removed; other stores untouched");
     assert.equal(r.items[0].totalPrice, 117.5, "live price + live shipping");
-    assert.equal(r.removed, 2);
+    assert.equal(r.items[0].liveChecked, true);
+    assert.equal(r.removed, 3);
   } finally { globalThis.fetch = original; process.env = env; }
 });
 

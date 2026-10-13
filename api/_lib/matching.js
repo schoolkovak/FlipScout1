@@ -531,7 +531,10 @@ export function evaluateListing({ title, query, category, structuredCondition = 
     const casePart = /\b(?:side panel|front panel|glass panel|replacement panel|dust filter|case feet|case badge|pcie bracket|vertical gpu)\b/.test(t);
     // "...Tower with Magnetic Dust Filter" is a case; "Side Panel for 4000D" is a part.
     if (casePart && (!caseBody || /\b(?:replacement|spare)\b/.test(t))) return reject("accessory", "case part");
-    if (/\b(?:case fans?|fan pack|\d pack|3 pack)\b/.test(t) && !/\b(?:mid tower|full tower|mini tower|tower case|chassis|computer case|pc case|atx case)\b/.test(t)) return reject("accessory", "case fans");
+    // Fan packs: "120mm PC Computer Case Fans RGB" says "computer case" but is fans.
+    const noFans = t.replace(/\b(?:pc |computer |gaming )*case fans?\b/g, " ");
+    const fanPack = /\b(?:case fans?|fan pack|fan kit|\d pack|3 pack)\b/.test(t) || /\b(?:80|92|120|140|200)mm\b.*\bfans?\b/.test(t);
+    if (fanPack && !/\b(?:tower|chassis|atx|matx|itx|eatx)\b/.test(noFans)) return reject("accessory", "case fans");
     if (!isCase) return reject("model-not-stated", "not a case");
     // Case models named for a size / lighting / color only keep matching ones.
     const attrs = caseAttributes(t);

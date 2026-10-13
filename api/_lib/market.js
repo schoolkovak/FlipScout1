@@ -671,26 +671,44 @@ function ebayRestId(x) {
   const legacy = String(x.url || "").match(/\/itm\/(?:[^/?#]+\/)?(\d{9,15})/)?.[1];
   return legacy ? { id: "v1|" + legacy + "|0", exact: false } : null;
 }
-export async function checkEbayAvailability(items, { limit = 20 } = {}) {
+// eBay's bulk getItems call is closed to this keyset (403), so each listing is
+// looked up on its own (getItem / getItemByLegacyId), with a 15-minute cache
+// so repeat page views don't spend the 5,000 calls/day.
+const ebayItemCache = new Map();
+async function ebayLiveItem(ref, token) {
+  const hit = ebayItemCache.get(ref.id);
+  if (hit && Date.now() - hit.at < 15 * 60 * 1000) return hit.value;
+  const legacy = ref.id.match(/^v1\|(\d+)\|0$/)?.[1];
+  const url = ref.exact || !legacy
+    ? "https://api.ebay.com/buy/browse/v1/item/" + encodeURIComponent(ref.id)
+    : "https://api.ebay.com/buy/browse/v1/item/get_item_by_legacy_id?legacy_item_id=" + legacy;
+  const r = await fetch(url, {
+    headers: { "Authorization": "Bearer " + token, "X-EBAY-C-MARKETPLACE-ID": "EBAY_US", "X-EBAY-C-ENDUSERCTX": "contextualLocation=country%3DUS%2Czip%3D" + (env("EBAY_SHIP_TO_ZIP") || "32832") },
+    signal: AbortSignal.timeout(8000)
+  });
+  // 404 = listing gone; other errors (multi-variation listings, rate limit) = unknown.
+  const value = r.ok ? { item: await r.json() } : r.status === 404 || r.status === 410 ? { item: null, gone: true } : { error: "HTTP " + r.status };
+  if (!value.error) ebayItemCache.set(ref.id, { at: Date.now(), value });
+  if (ebayItemCache.size > 3000) ebayItemCache.delete(ebayItemCache.keys().next().value);
+  return value;
+}
+
+export async function checkEbayAvailability(items, { limit = 8 } = {}) {
   const token = await getEbayToken().catch(() => null);
   const ebay = items.filter(x => x.marketplace === "ebay" && ebayRestId(x)).sort((a, b) => a.totalPrice - b.totalPrice).slice(0, limit);
   if (!token || !ebay.length) return { items, checked: 0, removed: 0 };
-  let data;
-  try {
-    const ids = [...new Set(ebay.map(x => ebayRestId(x).id))];
-    data = await providerFetch("ebay", "https://api.ebay.com/buy/browse/v1/item/?item_ids=" + encodeURIComponent(ids.join(",")), {
-      headers: { "Authorization": "Bearer " + token, "X-EBAY-C-MARKETPLACE-ID": "EBAY_US", "X-EBAY-C-ENDUSERCTX": "contextualLocation=country%3DUS%2Czip%3D" + (env("EBAY_SHIP_TO_ZIP") || "32832") }
-    }, [token]);
-  } catch (error) {
-    return { items, checked: 0, removed: 0, error: String(error?.message || error).slice(0, 160) };
-  }
-  const live = new Map((data.items || []).map(i => [i.itemId, i]));
+  const results = await Promise.all(ebay.map(x => ebayLiveItem(ebayRestId(x), token).catch(e => ({ error: String(e?.message || e).slice(0, 80) }))));
+  const errors = results.filter(r => r.error);
+  if (errors.length === results.length) return { items, checked: 0, removed: 0, error: errors[0].error };
+  const live = new Map();
+  ebay.forEach((x, i) => { if (results[i].item) live.set(ebayRestId(x).id, results[i].item); else if (results[i].gone) live.set(ebayRestId(x).id, null); });
   const gone = new Set();
   const out = items.map(x => x);
   for (const x of ebay) {
     const ref = ebayRestId(x);
+    if (!live.has(ref.id)) continue; // couldn't check: left as is
     const it = live.get(ref.id);
-    if (!it) { if (ref.exact) gone.add(x); continue; }
+    if (!it) { gone.add(x); continue; }
     const status = it.estimatedAvailabilities?.[0]?.estimatedAvailabilityStatus;
     const ended = it.itemEndDate && Date.parse(it.itemEndDate) < Date.now();
     const qty = it.estimatedAvailabilities?.[0]?.estimatedAvailableQuantity;
