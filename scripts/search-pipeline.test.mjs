@@ -658,7 +658,7 @@ test("deal alerts: great deals from saved listings, each sent once, with est. pr
   assert.equal(live.sent.length, 1);
 });
 
-test("deal alerts: skip GPUs over $500 and anything over its MSRP", async () => {
+test("deal alerts: skip anything over its MSRP (GPUs over $500 are fine)", async () => {
   const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
@@ -666,11 +666,10 @@ test("deal alerts: skip GPUs over $500 and anything over its MSRP", async () => 
   const dir = mkdtempSync(join(tmpdir(), "fs-alerts2-"));
   mkdirSync(join(dir, "models"));
   const L = (t, p) => ({ id: t + p, title: t, totalPrice: p, itemPrice: p, condition: "used", url: "https://www.ebay.com/itm/" + (200000000000 + p), source: "eBay", marketplace: "ebay" });
-  // RTX 4070 at $569 is 25% under market but over $500: no alert.
   writeFileSync(join(dir, "models", "rtx-4070.json"), JSON.stringify({ msrp: 599, results: [L("RTX 4070 12GB", 569), L("RTX 4070 12GB a", 760), L("RTX 4070 12GB b", 770), L("RTX 4070 12GB c", 780)] }));
-  // RTX 5060 at $320 is under market but over its $299 MSRP: no alert.
   writeFileSync(join(dir, "models", "rtx-5060.json"), JSON.stringify({ msrp: 299, results: [L("RTX 5060 8GB", 320), L("RTX 5060 8GB a", 420), L("RTX 5060 8GB b", 430), L("RTX 5060 8GB c", 440)] }));
-  assert.equal((await findGreatDeals(dir)).length, 0);
+  const deals = await findGreatDeals(dir);
+  assert.deepEqual(deals.map(d => d.model), ["RTX 4070"], "the $569 4070 (under its $599 MSRP) alerts; the $320 5060 (over $299 MSRP) doesn't");
 });
 
 test("newegg: search-page JSON becomes real listings and combo deals", async () => {

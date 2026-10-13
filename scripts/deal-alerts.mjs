@@ -16,14 +16,13 @@ export function inQuietHours(date = new Date(), q = QUIET_HOURS) {
   const h = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: q.tz }).format(date));
   return h >= q.from && h < q.to;
 }
-// Never alert on a GPU over this, or on anything priced above its launch MSRP.
-export const ALERT_GPU_MAX = 500;
 
 const money = n => "$" + Number(n).toFixed(2).replace(/\.00$/, "");
 
 export async function findGreatDeals(dataDir) {
   const read = async path => { try { return JSON.parse(readFileSync(join(dataDir, path), "utf8")); } catch { return null; } };
   const deals = [];
+  // Never alert on anything priced above its model's launch MSRP.
   const msrpOf = new Map();
   const msrp = async model => {
     if (!model) return 0;
@@ -34,7 +33,6 @@ export async function findGreatDeals(dataDir) {
     const s = await flipperSection(id, read);
     for (const x of s?.listings || []) {
       if (x.underPct == null || x.underPct < ALERT_MIN_PCT || !x.market || !x.url) continue;
-      if (id === "gpu" && x.totalPrice > ALERT_GPU_MAX) continue;
       const launch = await msrp(x.model);
       if (launch && x.totalPrice > launch) continue;
       const price = x.perPair || x.totalPrice;
