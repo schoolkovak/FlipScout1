@@ -4,24 +4,24 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci --silent
       - run: |
           cat > p.mjs <<'JS'
-          const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36";
-          const H = { "user-agent": UA, "accept": "text/html,application/json", "accept-language": "en-US,en;q=0.9" };
-          const get = async (u, o={}) => { try { const r = await fetch(u, { headers: { ...H, ...(o.headers||{}) }, method: o.method||"GET", body: o.body }); const t = await r.text(); console.log("\n=====", u.slice(0,120), r.status, t.length); return t; } catch (e) { console.log("ERR", u, e.message); return ""; } };
-          for (const r of ["https://www.mercari.com/robots.txt", "https://www.aliexpress.us/robots.txt", "https://www.amazon.com/robots.txt"]) { const t = await get(r); console.log(t.split("\n").filter(l => /^(user-agent: \*|disallow: \/(s|search|w|wholesale|v1|api)|allow: \/(s|search|w))/i.test(l.trim())).slice(0,30).join("\n")); }
-          // Mercari
-          let t = await get("https://www.mercari.com/search/?keyword=rtx%203070&itemStatuses=1");
-          console.log("mercari next:", /__NEXT_DATA__/.test(t), "items:", (t.match(/"itemId"|"id":"m\d+/g)||[]).length, t.slice(0,200).replace(/\s+/g," "));
-          const nd = t.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/); if (nd) console.log(nd[1].slice(0,1500));
-          t = await get("https://www.mercari.com/v1/api?operationName=searchFacetQuery&variables=" + encodeURIComponent(JSON.stringify({criteria:{offset:0,soldItemsOffset:0,promotedItemsOffset:0,sortBy:0,length:30,query:"rtx 3070",itemConditions:[],shippingPayerIds:[],sizeGroupIds:[],categoryIds:[],brandIds:[],itemStatuses:[1],minPrice:0,maxPrice:0,colors:[],hasFreeShipping:false,excludeShippingTypes:[]}})) + "&extensions=" + encodeURIComponent(JSON.stringify({persistedQuery:{version:1,sha256Hash:"c3e5e2e6b5b4f6f2"}})), { headers: { "content-type": "application/json", "x-platform": "web", "x-double-web": "1" } });
-          console.log(t.slice(0,400));
-          // AliExpress
-          t = await get("https://www.aliexpress.us/w/wholesale-rtx-3070.html");
-          console.log("ali init:", /_init_data_|window\.runParams|"itemList"/.test(t), (t.match(/"productId":"?\d+/g)||[]).length, /captcha|punish|slide/i.test(t.slice(0,5000)));
-          const i = t.indexOf('"itemList"'); if (i>0) console.log(t.slice(i, i+2500));
-          // Amazon
-          t = await get("https://www.amazon.com/s?k=rtx+3070");
-          console.log("amazon results:", (t.match(/data-component-type="s-search-result"/g)||[]).length, "captcha form:", /validateCaptcha/.test(t));
+          import { fetchAmazonSearch, amazonOffers, amazonListings } from "./scripts/amazon.mjs";
+          for (const [q, c] of [["RTX 3070", "GPU"], ["650W PSU", "Power Supply / PSU"], ["RGB gaming PC case", "PC Case"], ["Ryzen 5 5600", "CPU"]]) {
+            try {
+              const html = await fetchAmazonSearch(q);
+              const raw = amazonOffers(html);
+              console.log("\n####", q, "html", html.length, "raw", raw.length);
+              for (const o of raw.slice(0, 6)) console.log("  RAW", o.itemPrice, o.shippingKnown, o.shipping, o.structuredCondition, o.sponsored, o.title.slice(0, 80), o.url, (o.image||"").slice(0,60));
+              const items = await amazonListings({ query: q, category: c });
+              console.log("  KEPT", items.length); for (const x of items.slice(0, 5)) console.log("   ", x.totalPrice, x.condition, x.title.slice(0, 80));
+              if (!raw.length) { const i = html.indexOf('s-search-result'); console.log(html.slice(i - 200, i + 3000)); }
+            } catch (e) { console.log(q, "ERR", e.message); }
+            await new Promise(r => setTimeout(r, 3000));
+          }
           JS
-          node p.mjs
+          SNAPSHOTS_OFF=1 node p.mjs
