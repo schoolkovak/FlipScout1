@@ -24,3 +24,24 @@ jobs:
           }
           JS
           node p.mjs
+  sample-alert:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { ref: data, path: snapdata }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC || 'flipscout-deals-7f3c9a2e51b84d06' }}
+        run: |
+          cat > s.mjs <<'JS'
+          import { findGreatDeals, sendAlerts } from "./scripts/deal-alerts.mjs";
+          const deals = await findGreatDeals("snapdata");
+          console.log("great deals now:", deals.length);
+          const d = deals[0];
+          console.log(JSON.stringify(d, null, 1));
+          const r = await sendAlerts([d], { topic: process.env.NTFY_TOPIC });
+          console.log("sent", r.sent.length);
+          JS
+          SNAPSHOTS_OFF=1 node s.mjs
