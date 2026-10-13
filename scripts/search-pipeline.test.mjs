@@ -480,24 +480,36 @@ test("Flipper Deals sections are computed from saved listings", async () => {
   assert.equal(ddr4StickInfo("Kingston 8GB DDR4 2666 Desktop"), null, "slower than 3000MHz");
   assert.equal(ddr4StickInfo("Crucial 32GB (2x16GB) DDR4 3200"), null, "not 8GB sticks");
   const L = (title, p, extra = {}) => ({ id: title, title, totalPrice: p, itemPrice: p, condition: "new", url: "https://www.newegg.com/p/" + encodeURIComponent(title), source: "Newegg", marketplace: "newegg", ...extra });
+  const many = (title, prices, extra) => prices.map((p, k) => L(title + " #" + k, p, extra));
   const files = {
-    "models/8gb-ddr4-3200.json": [L("Lot of 4 Corsair 8GB DDR4 3200MHz Desktop RAM", 80, { condition: "used" }), L("HyperX 8GB DDR4 2666", 12)],
-    "models/16gb-ddr4-3200.json": [L("G.Skill 16GB (2x8GB) DDR4 3200", 39.99), L("Corsair 16GB (2x8GB) DDR4 3200 RGB", 70)],
-    "models/650w-psu.json": [L("EVGA 650 BR 650W 80+ Bronze Power Supply", 59.99), L("Generic 650W Power Supply", 30)],
-    "models/750w-80-gold-psu.json": [L("Corsair RM750e 750W 80+ Gold", 89.99)],
-    "models/atx-mid-tower-pc-case.json": [L("Montech AIR 100 ATX Mid Tower Case", 49.99), L("Lian Li Lancool 216 ATX Case", 99.99), L("AIO liquid cooler bracket for PC case", 15)],
-    "models/ryzen-5-3600.json": [L("AMD Ryzen 5 3600 Processor", 60, { condition: "used" })],
-    "models/ryzen-7-5800x3d.json": [L("AMD Ryzen 7 5800X3D", 250)]
+    // DDR4 market ≈ $70 per pair: $40/pair lots are deals, $68 is not, ECC is skipped.
+    "models/8gb-ddr4-3200.json": [L("Lot of 4 Corsair 8GB DDR4 3200MHz Desktop RAM", 80, { condition: "used" }), L("HyperX 8GB DDR4 2666", 12), L("SK hynix 8GB DDR4 3200 ECC UDIMM", 20, { condition: "used" })],
+    "models/16gb-ddr4-3200.json": [L("G.Skill 16GB (2x8GB) DDR4 3200", 39.99), ...many("Corsair 16GB (2x8GB) DDR4 3200 RGB", [68, 70, 72, 75], { condition: "used" })],
+    // PSU market per wattage; only >=10% under it.
+    "models/650w-psu.json": [L("EVGA 650 BR 650W 80+ Bronze Power Supply", 49.99), ...many("Corsair CX650 650W 80+ Bronze", [70, 72, 75], { condition: "used" })],
+    "models/750w-80-gold-psu.json": [L("Corsair RM750e 750W 80+ Gold", 79.99), ...many("MSI A750GL 750W 80+ Gold", [99, 100, 105], { condition: "used" })],
+    // Cases: RGB, Micro-ATX or bigger, <= $52; no open-air, no Mini-ITX.
+    "models/rgb-atx-mid-tower-pc-case.json": [L("Montech AIR 100 ARGB Micro ATX Mid Tower Case", 49.99), L("Lian Li Lancool 216 RGB ATX Case", 99.99), L("Open Air RGB ATX Test Bench", 25), L("Cooler Master NR200 Mini ITX RGB case", 45), L("Zalman T6 ATX Mid Tower Case", 35)],
+    "models/ryzen-5-3600.json": [L("AMD Ryzen 5 3600 Processor", 55, { condition: "used" }), ...many("AMD Ryzen 5 3600", [70, 72, 75], { condition: "used" })],
+    "models/ryzen-7-5800x3d.json": [L("AMD Ryzen 7 5800X3D", 199, { condition: "used" }), ...many("AMD Ryzen 7 5800X3D", [250, 260, 270], { condition: "used" })],
+    // GPUs: appeal first, price must still be justified.
+    "models/rtx-5060.json": [L("ZOTAC RTX 5060 8GB", 290, { condition: "used" }), ...many("RTX 5060 8GB", [340, 350, 360], { condition: "used" })],
+    "models/rtx-3070.json": [L("EVGA RTX 3070 8GB", 220, { condition: "used" }), ...many("RTX 3070 8GB", [255, 260, 270], { condition: "used" })],
+    "models/rtx-5090.json": [L("ASUS RTX 5090 32GB", 3900, { condition: "used" }), ...many("RTX 5090 32GB", [4500, 4600, 4700], { condition: "used" })]
   };
   const read = async path => files[path] ? { searchedAt: new Date().toISOString(), results: files[path] } : null;
   const ram = await flipperSection("ddr4", read);
-  assert.deepEqual(ram.listings.map(x => [x.perPair, x.sticks]), [[39.99, 2], [40, 4]], "per-pair price, < $65, 3000MHz+");
+  assert.deepEqual(ram.listings.map(x => [x.perPair, x.sticks]), [[39.99, 2], [40, 4]], "per-pair price, < $65, >=10% under market, no ECC");
+  assert.ok(ram.listings[0].underPct >= 10 && ram.listings[0].market > 60);
   const psu = await flipperSection("psu", read);
-  assert.deepEqual(psu.listings.map(x => x.tag), ["650W Bronze", "750W Gold", "650W"], "Bronze/Gold first, 650/550 before 750");
+  assert.deepEqual(psu.listings.map(x => x.tag), ["650W Bronze", "750W Gold"], "only under-market units; 650 before 750");
   const cs = await flipperSection("cases", read);
-  assert.deepEqual(cs.listings.map(x => x.totalPrice), [49.99], "under $52, no accessories");
+  assert.deepEqual(cs.listings.map(x => x.totalPrice), [49.99], "RGB, Micro-ATX+, <= $52, no open-air / Mini-ITX / non-RGB");
   const cpu = await flipperSection("ryzen", read);
-  assert.equal(cpu.listings[0].model, "Ryzen 5 3600", "cheap popular Ryzen ranks first on appeal per dollar");
+  assert.deepEqual(cpu.listings.map(x => x.model), ["Ryzen 5 3600"], "never more than $65");
+  const gpu = await flipperSection("gpu", read);
+  assert.equal(gpu.listings[0].model, "RTX 5060", "newer high-appeal card beats a cheaper older one");
+  assert.ok(gpu.listings.findIndex(x => x.model === "RTX 5090") > gpu.listings.findIndex(x => x.model === "RTX 3070"), "price must justify itself");
 });
 
 test("Deal Hunt answers catalog targets from saved listings without a paid search", async () => {
