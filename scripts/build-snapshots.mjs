@@ -25,7 +25,7 @@ const DAILY_BUDGET = Math.max(0, Number(args.budget ?? 60));
 const MAX_PAID_PER_RUN = Math.max(0, Number(args["max-paid"] ?? 6));
 const CREDITS_PER_MODEL_GUESS = 12; // worst case for one snapshot-mode search
 const PAID_STALE_H = { priority: 48, normal: 24 * 7 };
-const FREE_STALE_H = 2.5;
+const FREE_STALE_H = 1.9; // eBay allows 5,000 calls/day: ~200 models every 2 h ≈ 2,400
 const RUN_LIMIT_MS = Number(args["time-limit"] ?? 20 * 60 * 1000);
 
 // Parts a gaming-PC flipper buys and sells most: refreshed first.

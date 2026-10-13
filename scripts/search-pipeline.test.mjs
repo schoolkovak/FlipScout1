@@ -387,7 +387,24 @@ test("Google Shopping offers are shown only when resolved to the store's real it
 test("'Ultra 7 265KF ... RTX 5090' prebuilt is not shown as a GPU", () => {
   const r = evaluateListing({ title: "ArsenalPC - Ultra 7 265KF - RTX 5090 - 2TB NVMe SSD - 64GB DDR5 Memory", query: "RTX 5090", category: "GPU" });
   assert.equal(r.ok, false);
-  assert.equal(r.reason, "complete-system");
+  assert.ok(["complete-system", "laptop-or-system"].includes(r.reason), r.reason);
+});
+
+test("GPU: laptops, whole PCs and bare PCBs are not shown as graphics cards", () => {
+  const no = t => evaluateListing({ title: t, query: t.includes("5070") ? "RTX 5070 Ti" : "RTX 5090", category: "GPU" });
+  for (const t of [
+    "Razer Blade 16 240Hz QHD+ 2025 Ryzen AI 9 HX 370 64GB RAM 4TB SSD RTX 5090",
+    "ASUS ROG Strix SCAR 16 Ultra 9 HX 32GB RAM RTX 5090",
+    "Nvidia RTX 5090 MSI Raider 18 HX AI A2XWJG-416US 18\" QHD+ 240hz, 64gb Ddr5 2tb",
+    "ASUS ROG EDITION 20 RTX 5090 Gaming PC | 9950X3D2 | 96GB RAM CL28 | 6TB SSD",
+    "MSI GeForce RTX 5070 Ti 16GB PCB only - no cooler",
+    "Gigabyte RTX 5070 Ti Gaming OC 16G graphics card PCB"
+  ]) assert.equal(no(t).ok, false, t);
+  for (const t of [
+    "NVIDIA RTX 5090 32GB 575W pulled from NEW DELL Alienware Area-51 0 Hours",
+    "ASUS TUF GeForce RTX 5090 32GB GDDR7 Gaming OC Edition",
+    "MSI GeForce RTX 5070 Ti 16G Gaming Trio OC Graphics Card"
+  ]) assert.equal(no(t).ok, true, t);
 });
 
 test("Serper per-second rate limit (429) is retried, not treated as out of credits", async () => {
@@ -530,13 +547,35 @@ test("eBay Browse API: auctions are skipped, Buy It Now kept, links cleaned", as
     if (String(url).includes("/oauth2/token")) return { ok: true, status: 200, json: async () => ({ access_token: "t", expires_in: 7200 }) };
     headers.push(opts.headers);
     return { ok: true, status: 200, json: async () => ({ itemSummaries: [
-      { itemId: "v1|1|0", title: "EVGA GTX 1660 Super", price: { value: "99" }, buyingOptions: ["FIXED_PRICE"], itemWebUrl: "https://www.ebay.com/itm/111111111111?_skw=x&hash=y" },
+      { itemId: "v1|1|0", title: "EVGA GTX 1660 Super", price: { value: "99" }, buyingOptions: ["FIXED_PRICE"], itemWebUrl: "https://www.ebay.com/itm/111111111111?_skw=x&hash=y", image: { imageUrl: "https://i.ebayimg.com/images/g/abc/s-l225.jpg" } },
       { itemId: "v1|2|0", title: "MSI GTX 1660 Super", price: { value: "60" }, buyingOptions: ["AUCTION", "FIXED_PRICE"], itemWebUrl: "https://www.ebay.com/itm/222222222222" }
     ] }) };
   };
   try {
     const offers = await searchEbay({ query: "GTX 1660 Super", condition: "any" });
     assert.deepEqual(offers.map(o => o.url), ["https://www.ebay.com/itm/111111111111"]);
+    assert.equal(offers[0].image, "https://i.ebayimg.com/images/g/abc/s-l225.jpg", "the listing's own photo");
     assert.match(headers[0]["X-EBAY-C-ENDUSERCTX"], /zip%3D32832/);
+  } finally { globalThis.fetch = original; process.env = env; }
+});
+
+test("saved eBay listings: sold-out/ended ones dropped, live price used", async () => {
+  const { checkEbayAvailability } = await import("../api/_lib/market.js");
+  const env = { ...process.env };
+  process.env.EBAY_CLIENT_ID = "id2"; process.env.EBAY_CLIENT_SECRET = "secret2";
+  const original = globalThis.fetch;
+  globalThis.fetch = async url => {
+    if (String(url).includes("/oauth2/token")) return { ok: true, status: 200, json: async () => ({ access_token: "t", expires_in: 7200 }) };
+    return { ok: true, status: 200, json: async () => ({ items: [
+      { itemId: "v1|111111111111|0", price: { value: "105.00" }, estimatedAvailabilities: [{ estimatedAvailabilityStatus: "IN_STOCK" }], shippingOptions: [{ shippingCost: { value: "12.50" } }] },
+      { itemId: "v1|222222222222|0", price: { value: "90.00" }, estimatedAvailabilities: [{ estimatedAvailabilityStatus: "OUT_OF_STOCK" }] }
+    ] }) };
+  };
+  const L = (id, p, extra = {}) => ({ id, marketplace: "ebay", url: "https://www.ebay.com/itm/" + id, itemPrice: p, shipping: 15, shippingKnown: false, shippingEstimated: true, totalPrice: p + 15, ...extra });
+  try {
+    const r = await checkEbayAvailability([L("111111111111", 99), L("222222222222", 80), L("333333333333", 70, { providerItemId: "v1|333333333333|0" }), { id: "nw", marketplace: "newegg", totalPrice: 120 }]);
+    assert.deepEqual(r.items.map(x => x.id), ["111111111111", "nw"], "out of stock and vanished (ended) listings removed; other stores untouched");
+    assert.equal(r.items[0].totalPrice, 117.5, "live price + live shipping");
+    assert.equal(r.removed, 2);
   } finally { globalThis.fetch = original; process.env = env; }
 });

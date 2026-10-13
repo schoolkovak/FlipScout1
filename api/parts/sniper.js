@@ -4,7 +4,7 @@ import { sortDeals } from "../../shared/dealSort.js";
 import { findCatalogModel } from "../../shared/partCatalog.js";
 import { readSnapshot, modelPath, ageHours } from "../_lib/snapshots.js";
 import { filterByCondition } from "../_lib/summary.js";
-import { buildMarket, rankDeals } from "../_lib/market.js";
+import { buildMarket, rankDeals, checkEbayAvailability } from "../_lib/market.js";
 
 // Credit savers: a target that matches a catalog model saved in the last
 // SAVED_MAX_AGE_H hours is answered from the saved listings (0 credits).
@@ -18,7 +18,7 @@ async function fromSaved(target,marketplaces){
   if(!hit)return null;
   const snap=await readSnapshot(modelPath(hit.item.name));
   if(!snap?.results?.length||ageHours(snap.searchedAt)>SAVED_MAX_AGE_H)return null;
-  const items=filterByCondition(snap.results,target.condition).filter(x=>marketplaces.includes(x.marketplace));
+  const items=(await checkEbayAvailability(filterByCondition(snap.results,target.condition).filter(x=>marketplaces.includes(x.marketplace)))).items;
   if(!items.length)return null;
   const market=buildMarket(items);
   const ranked=rankDeals(items,market,{query:target.query,partBudget:target.maxPrice,buildBudget:target.buildBudget,committed:target.committed,sortBy:"lowest",msrp:hit.item.msrp||0});

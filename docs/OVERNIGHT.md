@@ -41,3 +41,7 @@ Restore point: branch `tomato` (commit 56d201c). Say "tomato" to return the site
 - Buy It Now only: eBay auctions are skipped, including auctions that also offer Buy It Now.
 - Refresh workflow has a "force_free" option to re-check every model on the free APIs immediately.
 - 500GB NVMe now also listed under "NVMe SSD" and 500GB SATA under "SATA SSD / HDD"; searching "500gb nvme" / "500gb sata" opens the right model.
+- eBay listings now show the seller's own photo (no photo → no image, never a stock image).
+- GPU filter: laptops (Razer Blade, ROG Strix SCAR, MSI Raider…), whole PCs (system RAM / SSD sizes / laptop CPUs / screen specs) and bare PCBs ("PCB", "no cooler") are rejected.
+- Out-of-stock/sold check: opening a model page (or a Deal Hunt saved target) asks eBay, in one call, whether the 20 cheapest saved listings are still for sale; sold/ended/out-of-stock ones are hidden and live prices + shipping are used.
+- eBay listings are re-checked every ~2 hours (was 2.5).
