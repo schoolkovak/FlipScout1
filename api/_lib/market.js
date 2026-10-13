@@ -612,6 +612,11 @@ function ebayItemUrl(url) {
   return id ? "https://www.ebay.com/itm/" + id : url || null;
 }
 
+// eBay's own category per part type: accessories (bridges, fans, heatsinks),
+// laptops and whole PCs live in other categories, so they never come back.
+// If a category search returns nothing, the search is retried without it.
+export const EBAY_CATEGORY = { gpu: "27386", cpu: "164", ram: "170083", motherboard: "1244", psu: "42017", nvme: "175669", sata: "175669", ssd: "175669", case: "42014", monitor: "80053" };
+
 export async function searchEbay(input) {
   const token = await getEbayToken();
   if (!token) return [];
@@ -622,12 +627,23 @@ export async function searchEbay(input) {
   if (condition === "new") filters.push("conditions:{NEW}");
   else if (condition === "used") filters.push("conditions:{USED}");
   else filters.push("conditionIds:{" + (EBAY_CONDITION_IDS[condition] || EBAY_CONDITION_IDS.any) + "}");
+  const category = EBAY_CATEGORY[categoryKind(input.category)];
   const params = new URLSearchParams({ q: input.query, limit: "200", filter: filters.join(",") });
-  const data = await providerFetch("ebay", "https://api.ebay.com/buy/browse/v1/item_summary/search?" + params.toString(), {
+  if (category) params.set("category_ids", category);
+  let data = await ebaySearchCall(params, token);
+  if (category && !(data.itemSummaries || []).length) { params.delete("category_ids"); data = await ebaySearchCall(params, token); }
+  return mapEbaySummaries(data);
+}
+
+function ebaySearchCall(params, token) {
+  return providerFetch("ebay", "https://api.ebay.com/buy/browse/v1/item_summary/search?" + params.toString(), {
     // A US delivery location makes eBay return calculated shipping costs
     // (without it, ~40% of listings came back with no shipping price).
     headers: { "Authorization": "Bearer " + token, "X-EBAY-C-MARKETPLACE-ID": "EBAY_US", "X-EBAY-C-ENDUSERCTX": "contextualLocation=country%3DUS%2Czip%3D" + (env("EBAY_SHIP_TO_ZIP") || "32832") }
   }, [token]);
+}
+
+function mapEbaySummaries(data) {
   // Buy It Now only: auctions (even with a Buy It Now option) are skipped.
   return (data.itemSummaries || []).filter(x => !(x.buyingOptions || []).includes("AUCTION") && (!x.price?.currency || x.price.currency === "USD") && (!x.itemLocation?.country || x.itemLocation.country === "US")).map(x => {
     const shipValue = x.shippingOptions?.[0]?.shippingCost?.value;

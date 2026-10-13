@@ -400,7 +400,9 @@ test("GPU: laptops, whole PCs and bare PCBs are not shown as graphics cards", ()
     "MSI GeForce RTX 5070 Ti 16GB PCB only - no cooler",
     "Gigabyte RTX 5070 Ti Gaming OC 16G graphics card PCB",
     "2pcs Cooling Fan Video Graphics Card for MSI RX5500XT 8GB MECH OC Graphics Card RTX 5090",
-    "For ASUS TUF RX6700XT/6800XT/6900XT/6950XT GAMING Series Graphics Card Heatsink RTX 5090"
+    "For ASUS TUF RX6700XT/6800XT/6900XT/6950XT GAMING Series Graphics Card Heatsink RTX 5090",
+    "NVIDIA RTX NVLink Bridge 4-Slot for 3090 / 30 Series P3657 GPU SLI RTX 5090",
+    "Gigabyte AORUS RTX 5090 Gaming Box Water-Cooled External Graphics Card eGPU"
   ]) assert.equal(no(t).ok, false, t);
   for (const t of [
     "NVIDIA RTX 5090 32GB 575W pulled from NEW DELL Alienware Area-51 0 Hours",

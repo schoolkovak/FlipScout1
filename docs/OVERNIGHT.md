@@ -56,3 +56,5 @@ Restore point: branch `tomato` (commit 56d201c). Say "tomato" to return the site
 - eBay: US-located sellers only and USD prices only (foreign listings showed converted prices without import charges, e.g. a CA$101.99 RX 580 shown as $51). GPU fan sets "for" a card are rejected.
 - PSUs: desktop units only. Rejects chargers, office/OEM pulls (Dell/HP/Lenovo…), server/redundant units, "replacement PC power supply" and peak-rated "650W-MAX" boxes; needs a known PSU brand or an 80 Plus rating, and 700W+ needs an 80 Plus rating (White or better).
 - Browse sidebar: a "New / Used" box is always shown under "Show" (Only Used is disabled, with a note, on new-only part types).
+- eBay searches are limited to eBay's own category for the part (Graphics Cards, CPUs, Memory, Motherboards, Power Supplies, SSDs, Cases, Monitors), so accessories, laptops and whole PCs mostly never come back; if a category returns nothing the search retries without it.
+- GPU filter also rejects NVLink/SLI bridges, risers, sag brackets, eGPU boxes ("Gaming Box", external graphics) and cable/adapter listings without a VRAM spec.
