@@ -34,3 +34,5 @@ Restore point: branch `tomato` (commit 56d201c). Say "tomato" to return the site
 
 ## Keys added (2026-10-13)
 - eBay Browse API keys and a new Serper key were added in Vercel; this commit redeploys production so they take effect.
+- eBay Browse API connected (keyset exempted from account-deletion notifications). First full refresh: all 199 models have live eBay Buy It Now listings at 0 Serper credits; Flipper Deals sections all populated.
+- eBay item links are stored without search-tracking parameters so one listing found by several searches is shown once.

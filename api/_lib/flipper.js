@@ -54,7 +54,8 @@ async function saved(names, read = readSnapshot) {
 
 function uniqueById(rows) {
   const seen = new Set();
-  return rows.filter(x => { const k = x.url || x.id; if (seen.has(k)) return false; seen.add(k); return true; });
+  const key = x => String(x.url || x.id).replace(/(\/itm\/\d+)[?#].*$/, "$1");
+  return rows.filter(x => { const k = key(x); if (seen.has(k)) return false; seen.add(k); return true; });
 }
 
 // ---- DDR4: 8GB sticks >= 3000MHz, under $65 per pair ----------------------
