@@ -3,8 +3,8 @@ name: Refresh listings
 # page on the site loads saved data instead of spending API credits.
 on:
   schedule:
-    # GitHub may delay or skip scheduled runs; running often is safe because
-    # the builder only spends credits on stale models within the daily budget.
+    # GitHub's scheduler often skips this repo's cron, so each run also
+    # starts the next one (job "next" below); the cron is only a backup.
     - cron: "23 * * * *"
   workflow_dispatch:
     inputs:
@@ -18,6 +18,7 @@ on:
         default: false
 permissions:
   contents: write
+  actions: write
 concurrency:
   group: snapshots
   cancel-in-progress: false
@@ -65,3 +66,20 @@ jobs:
           git add -A
           git commit -qm "Listings snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
           git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" data
+  # Keep refreshing about hourly: wait, then start the next run, unless
+  # another refresh is already queued or running (no duplicate chains).
+  next:
+    needs: build
+    if: always() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Wait, then start the next refresh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          sleep 2700
+          others=$(gh run list --workflow snapshots.yml --limit 20 --json databaseId,status \
+            -q '[.[] | select(.databaseId != ${{ github.run_id }}) | select(.status != "completed")] | length')
+          if [ "$others" = "0" ]; then gh workflow run snapshots.yml --ref main; echo "next refresh started"; else echo "another refresh is already queued/running"; fi
