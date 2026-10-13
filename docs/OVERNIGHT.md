@@ -38,3 +38,5 @@ Restore point: branch `tomato` (commit 56d201c). Say "tomato" to return the site
 - eBay item links are stored without search-tracking parameters so one listing found by several searches is shown once.
 - Shipping: eBay searches now use delivery ZIP 32832 (override with env EBAY_SHIP_TO_ZIP) so eBay returns calculated shipping; shipping that's still unknown is estimated by part type (GPU ~$15, CPU ~$8, RAM/SSD ~$6, PSU ~$15, case ~$25…) and shown as "~$15 ship (est.)" instead of being treated as free. Big retailers still ship free over $35.
 - Tax defaults to Florida (changeable in the Tax picker).
+- Buy It Now only: eBay auctions are skipped, including auctions that also offer Buy It Now.
+- Refresh workflow has a "force_free" option to re-check every model on the free APIs immediately.

@@ -626,7 +626,8 @@ export async function searchEbay(input) {
     // (without it, ~40% of listings came back with no shipping price).
     headers: { "Authorization": "Bearer " + token, "X-EBAY-C-MARKETPLACE-ID": "EBAY_US", "X-EBAY-C-ENDUSERCTX": "contextualLocation=country%3DUS%2Czip%3D" + (env("EBAY_SHIP_TO_ZIP") || "32832") }
   }, [token]);
-  return (data.itemSummaries || []).map(x => {
+  // Buy It Now only: auctions (even with a Buy It Now option) are skipped.
+  return (data.itemSummaries || []).filter(x => !(x.buyingOptions || []).includes("AUCTION")).map(x => {
     const shipValue = x.shippingOptions?.[0]?.shippingCost?.value;
     const shippingKnown = shipValue !== undefined && shipValue !== null;
     return offer({
