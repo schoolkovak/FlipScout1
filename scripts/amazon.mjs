@@ -65,8 +65,19 @@ export async function fetchAmazonSearch(query, { fetchImpl = fetch, timeoutMs = 
   return html;
 }
 
-export async function amazonListings(item, opts = {}) {
-  const raw = amazonOffers(await fetchAmazonSearch(item.query, opts));
+// The builder asks the site (Vercel) first — Amazon blocks GitHub's runners —
+// and falls back to fetching the page itself.
+export async function amazonListings(item, { site = "", ...opts } = {}) {
+  let raw = null;
+  if (site) {
+    try {
+      const r = await fetch(site + "/api/stores/amazon?q=" + encodeURIComponent(item.query), { signal: AbortSignal.timeout(30000) });
+      const d = await r.json();
+      if (d.ok) raw = d.offers || [];
+      else if (/captcha|blocked|HTTP 50|HTTP 429/.test(d.error || "")) throw new Error("Amazon (via site): " + d.error);
+    } catch (e) { if (/Amazon \(via site\)/.test(e.message)) throw e; }
+  }
+  if (!raw) raw = amazonOffers(await fetchAmazonSearch(item.query, opts));
   const { items } = qualifyOffers(raw, { query: item.query, category: item.category, msrp: item.msrp || 0, condition: "any" });
   return items;
 }
