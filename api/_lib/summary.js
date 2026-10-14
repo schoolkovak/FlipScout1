@@ -36,7 +36,10 @@ export function cardFromResults(id, results, { median = null, searchedAt = null,
   const newOnes = listings.filter(x => x.condition === "new");
   const usedOnes = listings.filter(x => USED.includes(x.condition));
   const best = results.slice().sort((a, b) => (b.score || 0) - (a.score || 0));
-  const pick = [...new Map([...listings.slice(0, 12), ...newOnes.slice(0, 5), ...usedOnes.slice(0, 5), ...best.slice(0, 3)].map(x => [x.id, x])).values()];
+  // Cheapest few from every store too, so the Store filter has something to show.
+  const byStore = new Map();
+  for (const x of listings) { const k = x.marketplace || "other"; const l = byStore.get(k) || byStore.set(k, []).get(k); if (l.length < 3) l.push(x); }
+  const pick = [...new Map([...listings.slice(0, 12), ...newOnes.slice(0, 5), ...usedOnes.slice(0, 5), ...best.slice(0, 3), ...[...byStore.values()].flat()].map(x => [x.id, x])).values()];
   return {
     id,
     available: listings.length > 0,
@@ -50,6 +53,9 @@ export function cardFromResults(id, results, { median = null, searchedAt = null,
     image: listings.find(x => x.image)?.image || null,
     listings: pick.map(slimListing),
     sources,
+    // Listing count per store and condition group, for the Store filter's
+    // "Amazon (13)" counts.
+    byMarket: listings.reduce((m, x) => { const k = x.marketplace || "other"; const c = x.condition === "new" ? "new" : USED.includes(x.condition) ? "used" : "other"; (m[k] ||= { new: 0, used: 0, other: 0 })[c]++; return m; }, {}),
     byStore: Object.entries(listings.reduce((m, x) => (m[x.source] = (m[x.source] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1]),
     searchedAt,
     errors

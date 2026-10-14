@@ -1,5 +1,5 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
-import {Box,Cpu,MemoryStick,HardDrive,CircuitBoard,Plug,Fan,Monitor,ArrowLeft,ExternalLink,RefreshCw,ChevronDown,List,Info,Flame,Bookmark,Search,Zap,TrendingDown,Filter,DollarSign,Layers} from "lucide-react";
+import {Box,Cpu,MemoryStick,HardDrive,CircuitBoard,Plug,Fan,Monitor,ArrowLeft,ExternalLink,RefreshCw,ChevronDown,List,Info,Flame,Bookmark,Search,Zap,TrendingDown,Filter,DollarSign,Layers,Store} from "lucide-react";
 import {track} from "@vercel/analytics";
 import {PART_GROUPS,findSeries,findCatalogModel,normalizePartQuery} from "../shared/partCatalog.js";
 import {caseAttributes,CASE_FACETS,monitorAttributes,MONITOR_FACETS} from "../shared/caseAttrs.js";
@@ -23,10 +23,13 @@ export function GroupIcon({icon,size=16}){const I=GROUP_ICONS[icon]||Layers;retu
 const RANK_MODES=[{value:"cheapest",label:"Cheapest Available"},{value:"best",label:"Best Deal"}];
 const COND_MODES=[{value:"any",label:"Any"},{value:"new",label:"Only New"},{value:"used",label:"Only Used"}];
 const USED=new Set(["used","refurbished","renewed","open-box"]);
+const STORE_MODES=[{value:"any",label:"All stores"},{value:"ebay",label:"eBay"},{value:"amazon",label:"Amazon"},{value:"newegg",label:"Newegg"},{value:"aliexpress",label:"AliExpress"},{value:"other",label:"Other"}];
+const MAIN_STORES=new Set(["ebay","amazon","newegg","aliexpress"]);
+const storeMatch=(x,store)=>!store||store==="any"||(store==="other"?!MAIN_STORES.has(x.marketplace):x.marketplace===store);
 // Saved browse results stay on screen across visits; fresh data loads quietly
 // in the background (it is read from saved snapshots, so it costs no credits).
 const CACHE_MS=48*3600*1000;
-const CACHE_VERSION="fs-overview-v7";
+const CACHE_VERSION="fs-overview-v8";
 
 function ago(iso,now){
   if(!iso)return "";
@@ -38,8 +41,8 @@ function ago(iso,now){
   return h<48?h+"h ago":Math.floor(h/24)+"d ago";
 }
 function storeName(x){return x?.source||"store";}
-function pickListing(row,mode={rank:"cheapest",cond:"any"}){
-  let list=row?.listings||[];
+function pickListing(row,mode={rank:"cheapest",cond:"any",store:"any"}){
+  let list=(row?.listings||[]).filter(x=>storeMatch(x,mode.store));
   if(mode.cond==="new")list=list.filter(x=>x.condition==="new");
   if(mode.cond==="used")list=list.filter(x=>USED.has(x.condition));
   if(!list.length)return null;
@@ -96,13 +99,13 @@ function ModelCard({item,row,mode,now,loading,onSeeAll,onCond,trend}){
         <button onClick={()=>setMore(m=>!m)}>{more?"Less":"More Info"}<ChevronDown size={14} className={more?"flip":""}/></button>
       </div>
       {more&&<div className="mcMore">
-        {(row.listings||[]).slice().sort((a,b)=>a.totalPrice-b.totalPrice).slice(0,10).map(x=><a key={x.id} href={x.url} target="_blank" rel="noreferrer"><span>{x.source}</span><em className={"c-"+x.condition}>{x.condition==="open-box"?"open box":x.condition}</em><b>{money(finalPrice(x,st).total,2)}</b></a>)}
+        {(row.listings||[]).filter(x=>storeMatch(x,mode.store)).sort((a,b)=>a.totalPrice-b.totalPrice).slice(0,10).map(x=><a key={x.id} href={x.url} target="_blank" rel="noreferrer"><span>{x.source}</span><em className={"c-"+x.condition}>{x.condition==="open-box"?"open box":x.condition}</em><b>{money(finalPrice(x,st).total,2)}</b></a>)}
         <small>{row.count} valid listings · market median {money(row.median)}</small>
         {row.byStore?.length>0&&<div className="mcStores">{row.byStore.map(([n,c])=><span key={n}>{n} <b>{c}</b></span>)}</div>}
         <SourcesWhy row={row}/>
       </div>}
       <a className="mcGo" href={pick.url||undefined} target="_blank" rel="noreferrer"><ExternalLink size={15}/>{linkLabel(pick,item.name)}</a>
-    </>:row?.pending?<div className="mcEmpty"><p>Prices for this model are collected in the background and will show up after the next update.</p><button className="mcSearchNow" onClick={onSeeAll}><List size={14}/>Search it now</button></div>:<div className="mcEmpty"><p>{mode.cond==="new"?"No new listing right now.":mode.cond==="used"?"No used listing right now.":"No real store listing right now."}</p><SourcesWhy row={row}/></div>}
+    </>:row?.pending?<div className="mcEmpty"><p>Prices for this model are collected in the background and will show up after the next update.</p><button className="mcSearchNow" onClick={onSeeAll}><List size={14}/>Search it now</button></div>:<div className="mcEmpty"><p>{(mode.store&&mode.store!=="any"?"No "+(STORE_MODES.find(x=>x.value===mode.store)?.label||"")+" ":"No ")+(mode.cond==="new"?"new ":mode.cond==="used"?"used ":"")+"listing right now."}</p><SourcesWhy row={row}/></div>}
   </article>;
 }
 
@@ -122,7 +125,18 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
   const [error,setError]=useState("");
   const [rank,setRank]=useState("cheapest");
   const [cond,setCond]=useState("any");
-  const mode=useMemo(()=>({rank,cond}),[rank,cond]);
+  const [store,setStore]=useState("any");
+  const mode=useMemo(()=>({rank,cond,store}),[rank,cond,store]);
+  // Listings per store in this subsection (respecting New / Used).
+  const storeCounts=useMemo(()=>{
+    const out={any:0};
+    for(const row of Object.values(rows||{}))for(const [k,c] of Object.entries(row?.byMarket||{})){
+      const n=cond==="new"?c.new:cond==="used"?c.used:c.new+c.used+c.other;
+      const key=MAIN_STORES.has(k)?k:"other";
+      out[key]=(out[key]||0)+n;out.any+=n;
+    }
+    return out;
+  },[rows,cond]);
   const [minPrice,setMinPrice]=useState("");
   const [maxPrice,setMaxPrice]=useState("");
   const [minVram,setMinVram]=useState("");
@@ -206,6 +220,10 @@ export function BrowsePage({providerKeys,groupId,seriesId,setRoute}){
         <div className="sideHead static"><Filter size={15}/>New / Used</div>
         <div className="modeRow three">{COND_MODES.map(m=><button key={m.value} className={cond===m.value?"on":""} disabled={!usedGroup&&m.value==="used"} onClick={()=>setCond(m.value)}>{m.label}</button>)}</div>
         {!usedGroup&&<small className="sideNote">New only for this part type.</small>}
+      </section>
+      <section className="sideBox">
+        <div className="sideHead static"><Store size={15}/>Store</div>
+        <div className="modeRow three">{STORE_MODES.map(m=><button key={m.value} className={store===m.value?"on":""} onClick={()=>setStore(m.value)}>{m.label} <em className="cnt">({storeCounts[m.value]||0})</em></button>)}</div>
       </section>
       <section className="sideBox">
         <button className="sideHead" onClick={()=>toggle("filters")}><Filter size={15}/>Filters<ChevronDown size={15} className={open.filters?"flip":""}/></button>
