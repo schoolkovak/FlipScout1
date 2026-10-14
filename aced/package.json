@@ -1,0 +1,10 @@
+{
+  "name": "aced",
+  "private": true,
+  "type": "commonjs",
+  "description": "Aced: adaptive enhanced-ACT practice. Static site; no build step.",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "guard": "python3 tools/similarity_gate.py guard --ref \"$ACED_REF\" ."
+  }
+}

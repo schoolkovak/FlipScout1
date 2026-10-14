@@ -1,0 +1,813 @@
+// Aced app: study modes, exam runner, dashboard. Learning logic lives in engine.js (AcedEngine).
+'use strict';
+const $ = id => document.getElementById(id);
+const E = window.AcedEngine;
+const D = window.ACED_DATA || {};
+D.units = D.units || {}; D.items = D.items || []; D.forms = D.forms || []; D.lessons = D.lessons || {};
+const OFFICIAL = window.ACED_OFFICIAL || { tests: {} };
+const LET = ['A', 'B', 'C', 'D'];
+const NAMES = { english: 'English', math: 'Math', reading: 'Reading', science: 'Science' };
+const SECTIONS = ['english', 'math', 'reading', 'science'];
+// Seconds per question for every timed quiz and test (user rule): English 42, Math 67, Reading 67, Science 60.
+const SECS = { english: 42, math: 67, reading: 67, science: 60 };
+// Generated math pool: answers are computed by construction, so these add fresh variety for training.
+(function addGenerated() {
+  if (!window.ACED_MATHGEN) return;
+  const K2SUB = { A: 'm.a.linear', G: 'm.g.plane', IES: 'm.ies.ratio', N: 'm.n.numbers', F: 'm.f.eval', S: 'm.s.prob' };
+  const rnd = mulberry(20261014);
+  for (let i = 0; i < 150; i++) {
+    const g = ACED_MATHGEN(rnd);
+    const order = shuffle([0, 1, 2, 3], rnd);
+    const nums = g.c.every(x => /^-?[\d.]+$/.test(String(x)));
+    const idx = nums ? [0, 1, 2, 3].sort((a, b) => +g.c[a] - +g.c[b]) : order;
+    D.items.push({ id: 'G-' + i, sec: 'math', sub: K2SUB[g.k] || 'm.a.linear', cat: g.k, diff: 2, t: 60, q: g.q, c: idx.map(k => g.c[k]), a: idx.indexOf(0), e: g.e, gen: true,
+      strat: 'Set the problem up step by step and check your answer against the original condition.' });
+  }
+})();
+const ITEMS = D.items;
+const BYID = Object.create(null);
+ITEMS.forEach(i => { BYID[i.id] = i; });
+const TAX = prepTax();
+
+const ICON = {
+  moon: '<svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
+  sun: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  pause: '<svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg>',
+  play: '<svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>'
+};
+
+// ---------- storage (every access guarded) ----------
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+};
+let ST = E.migrate(store.get('aced-state', null));
+ST.prefs = Object.assign({ includeScience: false, minutes: 20, released: [] }, ST.prefs || {});
+const saveState = () => store.set('aced-state', ST);
+const getSessions = () => store.get('aced-sessions', {});
+function saveRun() {
+  if (!R) return;
+  R.updated = Date.now();
+  const all = getSessions(); all[R.id] = R;
+  const ok = store.set('aced-sessions', all);
+  $('saved').textContent = ok ? 'Saved' : 'Not saved';
+}
+function dropRun(id) { const all = getSessions(); delete all[id]; store.set('aced-sessions', all); }
+
+// ---------- helpers ----------
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = String(s % 60).padStart(2, '0'); return h ? `${h}:${String(m).padStart(2, '0')}:${x}` : `${m}:${x}`; };
+const pct = (a, b) => b ? Math.round(100 * a / b) : null;
+const uid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function shuffle(arr, rnd) { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+const roundHalfUp = x => Math.max(1, Math.floor(x + 0.5));
+const subLabel = s => (TAX.subs[s] && TAX.subs[s].label) || s;
+const stagePill = st => `<span class="pill ${st}">${esc(E.STAGE_LABEL[st] || st)}</span>`;
+
+function prepTax() {
+  const t = JSON.parse(JSON.stringify(D.taxonomy || { subs: {}, conv: {} }));
+  t.subs = t.subs || {}; t.conv = t.conv || {};
+  for (const it of ITEMS) if (it.sub && !t.subs[it.sub]) t.subs[it.sub] = { sec: it.sec, label: it.sub, weight: 0.01, diff: 3, t: SECS[it.sec] };
+  for (const sec of SECTIONS) {
+    const subs = Object.values(t.subs).filter(s => s.sec === sec);
+    const sum = subs.reduce((a, s) => a + (s.weight || 0), 0) || 1;
+    subs.forEach(s => { s.weight = (s.weight || 0) / sum; });
+  }
+  return t;
+}
+// Items reserved for Aced practice tests stay out of training until that form has been taken.
+function trainingBank() { const rel = new Set(ST.prefs.released || []); return ITEMS.filter(i => !i.held || rel.has(i.form)); }
+const itemOf = x => typeof x === 'string' ? BYID[x] : x;
+
+// ---------- theme ----------
+function isDark() { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
+function paintTheme() {
+  const dark = isDark();
+  for (const b of [$('themeBtn'), $('themeBtn2')]) { b.innerHTML = dark ? ICON.sun : ICON.moon; b.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode'); }
+  if (calc) calc.updateSettings({ invertedColors: dark });
+}
+function toggleTheme() { document.documentElement.dataset.theme = isDark() ? 'light' : 'dark'; store.set('aced-theme', document.documentElement.dataset.theme); paintTheme(); }
+{ const t = store.get('aced-theme', null); if (t) document.documentElement.dataset.theme = t; }
+$('themeBtn').onclick = $('themeBtn2').onclick = toggleTheme;
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', paintTheme);
+
+// ---------- passage rendering ----------
+// English markup: paragraphs split by blank lines; a line "[3]" is a paragraph number; {12|text} is
+// underlined portion 12; [A]-[D] are insertion points; [[2]] is a sentence number.
+// Science: {fig:Figure 1} places a figure. Reading paragraphs are numbered.
+function renderUnit(u) {
+  if (!u) return '';
+  const figs = Object.fromEntries((u.figures || []).map(f => [f.id, f]));
+  const placed = new Set();
+  const para = (txt, num) => {
+    let h = esc(txt)
+      .replace(/\{(\d+)\|([^}]*)\}/g, '<u data-n="$1">$2</u><sup class="un">$1</sup>')
+      .replace(/\[\[(\d+)\]\]/g, '<span class="sn">[$1]</span>')
+      .replace(/\[([A-D])\]/g, '<span class="lp">[$1]</span>')
+      .replace(/\{fig:([^}]+)\}/g, (m, id) => { placed.add(id); return '</p>' + (window.AcedFigures ? AcedFigures.render(figs[id]) : '') + '<p>'; })
+      .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\*([^*]+)\*/g, '<i>$1</i>');
+    return num ? `<p class="num" data-p="${num}">${h}</p>` : `<p>${h}</p>`;
+  };
+  const block = (text, numbered) => {
+    let n = 0;
+    return String(text || '').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean).map(p => {
+      const ph = p.match(/^\[(\d+)\]$/);
+      if (ph) return `<div class="ph">[${ph[1]}]</div>`;
+      return para(p, numbered ? ++n : 0);
+    }).join('');
+  };
+  const numbered = u.sec === 'reading';
+  let h = `${u.label ? `<div class="meta">${esc(u.label)}</div>` : ''}${u.title ? `<div class="pt">${esc(u.title)}</div>` : ''}${u.intro ? `<div class="intro">${esc(u.intro)}</div>` : ''}`;
+  h += block(u.passage, numbered);
+  if (u.passageB) h += `<div class="pb">${u.titleB ? `<div class="pt">${esc(u.titleB)}</div>` : ''}${u.introB ? `<div class="intro">${esc(u.introB)}</div>` : ''}${block(u.passageB, numbered)}</div>`;
+  for (const f of u.figures || []) if (!placed.has(f.id) && window.AcedFigures) h += AcedFigures.render(f);
+  return h.replace(/<p><\/p>/g, '');
+}
+function markPassage(it, showEvidence) {
+  const P = $('passage');
+  P.querySelectorAll('u.cur').forEach(u => u.classList.remove('cur'));
+  P.querySelectorAll('p.ev').forEach(p => p.classList.remove('ev'));
+  const u = it && it.u && P.querySelector(`u[data-n="${it.u}"]`);
+  if (u) { u.classList.add('cur'); u.scrollIntoView({ block: 'nearest' }); }
+  if (showEvidence && it && it.evp) {
+    for (const n of [].concat(it.evp)) { const p = P.querySelector(`p[data-p="${n}"]`); if (p) { p.classList.add('ev'); p.scrollIntoView({ block: 'nearest' }); } }
+  }
+}
+function itemFigure(it) { return it && it.fig && window.AcedFigures ? AcedFigures.render(it.fig) : ''; }
+
+// ---------- app shell / views ----------
+let TAB = store.get('aced-tab', 'study');
+let R = null, tick = null, calc = null, hl = false, saveCount = 0;
+const UI = { len: ST.prefs.minutes || 20, tSec: 'english', tSubs: [], sSec: 'all', qzSec: 'english', qzN: 10, qzTimed: true, cpTest: Object.keys(OFFICIAL.tests)[0] || '1', skSec: 'english', planSeed: 1 };
+
+function show(which) {
+  $('app').hidden = which !== 'app'; $('test').hidden = which !== 'test';
+  $('calc').hidden = true; $('paused').hidden = true;
+  if (which === 'app') { stopTick(); R = null; }
+  scrollTo(0, 0);
+}
+function go(tab) { TAB = tab; store.set('aced-tab', tab); show('app'); renderView(); }
+function renderView() {
+  document.querySelectorAll('#tabs [data-tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === TAB));
+  const v = { study: viewStudy, simulate: viewSimulate, skills: viewSkills, progress: viewProgress, settings: viewSettings }[TAB] || viewStudy;
+  $('view').innerHTML = v();
+  paintTheme();
+}
+$('tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (b) go(b.dataset.tab); };
+
+function resumeList() {
+  const all = Object.values(getSessions()).sort((a, b) => b.updated - a.updated);
+  if (!all.length) return '';
+  return `<h2>In progress</h2><div class="grid">${all.map(s => {
+    let where = '';
+    if (s.kind === 'train') where = `${s.idx} of ${s.steps.length} questions done`;
+    else { const p = s.parts[s.pi]; where = s.onBreak ? `On break before ${NAMES[p.sec]}` : `${NAMES[p.sec]} · question ${s.cur + 1} of ${p.items.length} · ${Object.keys(s.ans || {}).length} answered`; }
+    const clock = s.kind === 'train' ? `${fmt(s.el || 0)} spent` : s.timed ? `${fmt(s.left)} left` : `${fmt(s.el)} elapsed`;
+    return `<div class="card hero"><h3>${esc(s.label)}</h3><div class="meta">${where}</div><div class="meta">${clock} · saved ${new Date(s.updated).toLocaleString()}</div>
+      <div class="row"><button class="btn pri" data-act="resume" data-id="${s.id}">Resume</button><button class="btn" data-act="discard" data-id="${s.id}">Discard</button></div></div>`;
+  }).join('')}</div>`;
+}
+
+function priorityList(k) {
+  const pr = E.topPriorities(ST, TAX, k);
+  if (!ITEMS.length) return '<p class="meta">The question bank has not loaded.</p>';
+  return pr.map((p, i) => `<div class="prio"><div class="rank">${i + 1}</div><div><b>${esc(p.label)}</b> <span class="meta">${NAMES[p.sec]}</span> ${stagePill(p.stage)}${p.stuck ? ' <span class="pill bad">Not improving</span>' : ''}</div>
+    <div class="meta small">≈${p.gainPts} pts</div>
+    <div class="why">${esc(p.reasons.slice(0, 3).join('; ') || 'not practiced yet')}. ${esc(p.recommend)}.${p.advice ? ' ' + esc(p.advice) : ''}</div></div>`).join('');
+}
+
+function viewStudy() {
+  const missed = new Set(ST.attempts.filter(a => !a.ok).map(a => a.sub));
+  const lens = [10, 20, 30, 60];
+  const none = !ST.attempts.length;
+  const noBaseline = !(ST.checkpoints || []).length;
+  const secOpts = sel => SECTIONS.map(s => `<option value="${s}" ${sel === s ? 'selected' : ''}>${NAMES[s]}</option>`).join('');
+  const subsFor = sec => Object.entries(TAX.subs).filter(([, i]) => i.sec === sec && ITEMS.some(x => x.sub === sel(x)));
+  function sel(x) { return x.sub; }
+  const tSubs = Object.entries(TAX.subs).filter(([s, i]) => i.sec === UI.tSec && trainingBank().some(x => x.sub === s)).sort((a, b) => b[1].weight - a[1].weight);
+  return `${resumeList()}
+  <h2>Maximum score improvement</h2>
+  <div class="card hero">
+    <div class="spread"><div><h3>Today's session</h3><div class="meta">Picks the questions most likely to raise your score: your weakest frequent skills, questions you answer slowly, reviews that are due, and a retention check.</div></div>
+    <div class="seg" role="group" aria-label="Session length">${lens.map(m => `<button data-act="len" data-m="${m}" aria-pressed="${UI.len === m}">${m} min</button>`).join('')}</div></div>
+    ${none ? `<div class="note">First session: it starts with a spread of skills so Aced can find where you lose points.${noBaseline ? ' For the most accurate plan, also take an official ACT practice test and log the result under Practice tests.' : ''}</div>` : ''}
+    <div>${priorityList(3)}</div>
+    <div class="row"><button class="btn pri" data-act="startMax">Start ${UI.len}-minute session</button></div>
+  </div>
+  <h2>Other ways to practice</h2>
+  <div class="grid">
+    <div class="card"><h3>Targeted skill training</h3><div class="meta">Choose the skills. Difficulty adapts to you.</div>
+      <label class="field">Section<select data-change="tSec">${secOpts(UI.tSec)}</select></label>
+      <div style="max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:7px;padding:6px 8px">${tSubs.map(([s, i]) => `<label class="switch small"><input type="checkbox" data-change="tSub" value="${esc(s)}" ${UI.tSubs.includes(s) ? 'checked' : ''}>${esc(i.label)} <span class="meta">${Math.round(i.weight * 100)}%</span></label>`).join('') || '<span class="meta">No skills yet.</span>'}</div>
+      <button class="btn" data-act="startTargeted" ${UI.tSubs.length ? '' : 'disabled'}>Train ${UI.tSubs.length || ''} skill${UI.tSubs.length === 1 ? '' : 's'} · ${UI.len} min</button></div>
+    <div class="card"><h3>Speed training</h3><div class="meta">Every question gets the real ACT pace (${SECS.english}s English, ${SECS.math}s Math, ${SECS.reading}s Reading). Tracks whether you get faster without losing accuracy.</div>
+      <label class="field">Section<select data-change="sSec"><option value="all">All sections</option>${secOpts(UI.sSec)}</select></label>
+      <button class="btn" data-act="startSpeed">Start ${UI.len}-minute speed set</button></div>
+    <div class="card"><h3>Mistake review</h3><div class="meta">New questions on the exact skills you have missed. The original questions are not repeated.</div>
+      <div class="meta">${missed.size} skill${missed.size === 1 ? '' : 's'} with misses</div>
+      <button class="btn" data-act="startReview" ${missed.size ? '' : 'disabled'}>Review mistakes · ${UI.len} min</button></div>
+    <div class="card"><h3>Custom quiz</h3><div class="meta">Test conditions, no feedback until the end.</div>
+      <div class="row"><label class="field">Section<select data-change="qzSec">${secOpts(UI.qzSec)}</select></label><label class="field">Questions<input type="number" min="1" max="100" value="${UI.qzN}" data-change="qzN" style="width:90px"></label>
+      <label class="field">Mode<select data-change="qzTimed"><option value="1" ${UI.qzTimed ? 'selected' : ''}>Timed</option><option value="0" ${UI.qzTimed ? '' : 'selected'}>Untimed</option></select></label></div>
+      <div class="meta">${UI.qzN} × ${SECS[UI.qzSec]} s = ${+(UI.qzN * SECS[UI.qzSec] / 60).toFixed(4)} minutes</div>
+      <button class="btn" data-act="startQuiz">Start quiz</button></div>
+  </div>`;
+}
+
+function viewSimulate() {
+  const sci = !!ST.prefs.simScience;
+  const forms = D.forms;
+  const mins = s => (s.items || []).length * SECS[s.sec] / 60;
+  const formSecs = f => SECTIONS.filter(s => f.sections[s] && (sci || s !== 'science'));
+  const sims = (ST.sims || []).slice().reverse();
+  const cps = (ST.checkpoints || []).slice().reverse();
+  const t = OFFICIAL.tests[UI.cpTest] || {};
+  return `${resumeList()}
+  <h2>Real ACT simulation</h2>
+  <p class="sub">Full-length Aced practice tests in the current enhanced format: English 50, Math 45, Reading 36, optional Science 40. Every question is original. Unscored field-test questions are mixed in as on the real test. No hints or feedback until you finish. Scores are estimates: Aced forms are not officially equated.</p>
+  <label class="switch"><input type="checkbox" data-change="simSci" ${sci ? 'checked' : ''}> Include the optional Science section</label>
+  <div class="grid" style="margin-top:10px">${forms.length ? forms.map(f => {
+    const secs = formSecs(f);
+    const total = secs.reduce((a, s) => a + f.sections[s].items.length * SECS[s] / 60, 0);
+    const done = (ST.sims || []).some(x => x.form === f.id && x.full);
+    return `<div class="card"><h3>${esc(f.name)}</h3><div class="meta">${secs.map(s => `${NAMES[s]} ${f.sections[s].items.length}`).join(' · ')}</div>
+      <div class="meta">${total.toFixed(1)} min of testing + optional 10-minute break${done ? ' · taken before' : ''}</div>
+      <div class="row"><button class="btn pri" data-act="startForm" data-f="${f.id}" data-timed="1">Timed</button><button class="btn" data-act="startForm" data-f="${f.id}" data-timed="0">Untimed</button></div>
+      <details><summary class="meta">Single sections</summary><div class="row" style="margin-top:6px">${SECTIONS.filter(s => f.sections[s]).map(s => `<button class="btn sm" data-act="startFormSection" data-f="${f.id}" data-sec="${s}" data-timed="1">${NAMES[s]} timed</button><button class="btn sm ghost" data-act="startFormSection" data-f="${f.id}" data-sec="${s}" data-timed="0">untimed</button>`).join('')}</div></details></div>`;
+  }).join('') : '<p class="meta">No practice tests are loaded.</p>'}</div>
+  ${sims.length ? `<h3 style="margin-top:18px">Your Aced test results</h3><div class="tbl"><table class="t"><tr><th>Date</th><th>Test</th><th>Mode</th><th>English</th><th>Math</th><th>Reading</th><th>Science</th><th>Composite</th></tr>${sims.map(s => `<tr><td>${new Date(s.at).toLocaleDateString()}</td><td>${esc(s.label)}</td><td>${s.timed ? 'Timed' : 'Untimed'}</td>${SECTIONS.map(k => `<td>${s.scores[k] ?? '—'}</td>`).join('')}<td><b>${s.composite ?? '—'}</b></td></tr>`).join('')}</table></div>` : ''}
+  <h2>Official practice test checkpoints</h2>
+  <p class="sub">Take an official ACT practice test outside Aced, then enter your raw scores here (number correct on scored questions). These are your baseline and your proof that practice transfers to the real test. Aced also uses them to calibrate its estimates.</p>
+  <div class="card"><div class="row">
+    <label class="field">Official test<select data-change="cpTest">${Object.keys(OFFICIAL.tests).map(k => `<option value="${k}" ${k === UI.cpTest ? 'selected' : ''}>${esc(OFFICIAL.tests[k].name || 'Practice Test ' + k)}</option>`).join('')}</select></label>
+    ${SECTIONS.map(s => `<label class="field">${NAMES[s]} raw (0–${t[s] ? t[s].length - 1 : '?'})<input type="number" min="0" max="${t[s] ? t[s].length - 1 : 50}" id="cp_${s}" placeholder="${s === 'science' ? 'optional' : ''}" style="width:110px"></label>`).join('')}
+  </div><div class="meta" id="cpPreview">Enter raw scores to see scale scores.</div><div class="row"><button class="btn pri" data-act="saveCheckpoint">Save checkpoint</button></div></div>
+  ${cps.length ? `<div class="tbl" style="margin-top:10px"><table class="t"><tr><th>Date</th><th>Official test</th><th>English</th><th>Math</th><th>Reading</th><th>Science</th><th>Composite</th><th></th></tr>${cps.map(c => `<tr><td>${new Date(c.at).toLocaleDateString()}</td><td>${esc(c.name)}</td>${SECTIONS.map(k => `<td>${c.scores[k] ?? '—'}${c.raw[k] != null ? ` <span class="meta">(${c.raw[k]})</span>` : ''}</td>`).join('')}<td><b>${c.composite ?? '—'}</b></td><td><button class="btn sm ghost" data-act="delCheckpoint" data-at="${c.at}">Remove</button></td></tr>`).join('')}</table></div>` : ''}`;
+}
+
+function viewSkills() {
+  const now = Date.now();
+  const rows = Object.entries(TAX.subs).filter(([, i]) => i.sec === UI.skSec).sort((a, b) => b[1].weight - a[1].weight).map(([s, i]) => {
+    const sk = ST.skills[s] || { n: 0, c: 0, stage: 'new', recent: [] };
+    const times = ST.attempts.filter(a => a.sub === s && a.ms != null);
+    const avg = times.length ? times.reduce((x, a) => x + a.ms, 0) / times.length / 1000 : null;
+    const p = E.pCorrect(sk.theta || 0, i.diff || 3);
+    const due = sk.due ? (sk.due <= now ? 'Due now' : new Date(sk.due).toLocaleDateString()) : '—';
+    const has = trainingBank().some(x => x.sub === s);
+    return `<tr><td><b>${esc(i.label)}</b>${i.group ? `<div class="meta small">${esc(i.group)}</div>` : ''}</td><td class="meta">${Math.round(i.weight * 100)}%</td><td>${stagePill(sk.stage)}${sk.stuck ? ' <span class="pill bad">Not improving</span>' : ''}</td>
+      <td>${sk.n ? `${pct(sk.c, sk.n)}%<div class="bar"><i style="width:${pct(sk.c, sk.n)}%"></i></div>` : '—'}</td><td>${sk.n}</td>
+      <td>${avg != null ? `${avg.toFixed(0)}s <span class="meta">/ ${i.t || SECS[i.sec]}s</span>` : '—'}</td><td>${sk.n ? Math.round(p * 100) + '%' : '—'}</td><td class="meta">${due}</td>
+      <td>${has ? `<button class="btn sm" data-act="trainOne" data-sub="${esc(s)}">Practice</button>` : ''}${D.lessons[s] ? ` <button class="btn sm ghost" data-act="lesson" data-sub="${esc(s)}">Lesson</button>` : ''}</td></tr>`;
+  }).join('');
+  return `<h2>Skills</h2><p class="sub">Every tested skill, weighted by how often it appears on the enhanced ACT. "At ACT level" is your estimated chance of answering a typical ACT question on that skill correctly.</p>
+  <div class="seg" role="group" aria-label="Section">${SECTIONS.map(s => `<button data-act="skSec" data-sec="${s}" aria-pressed="${UI.skSec === s}">${NAMES[s]}</button>`).join('')}</div>
+  <div id="lessonBox"></div>
+  <div class="tbl" style="margin-top:12px"><table class="t"><tr><th>Skill</th><th>Share</th><th>Stage</th><th>Accuracy</th><th>Tries</th><th>Avg time</th><th>At ACT level</th><th>Next review</th><th></th></tr>${rows}</table></div>`;
+}
+
+function lessonHTML(sub) {
+  const L = D.lessons[sub];
+  if (!L) return '';
+  return `<div class="lesson"><b>${esc(L.title || subLabel(sub))}</b>${L.rule ? `<div><b>Rule:</b> ${esc(L.rule)}</div>` : ''}${L.method ? `<div><b>Fastest method:</b> ${esc(L.method)}</div>` : ''}${L.recognize ? `<div><b>How to spot it:</b> ${esc(L.recognize)}</div>` : ''}${L.traps ? `<div><b>Common traps:</b> ${esc(L.traps)}</div>` : ''}${L.example ? `<div><b>Example:</b> ${esc(L.example)}</div>` : ''}</div>`;
+}
+
+function lineChart(series, opts) {
+  if (!window.AcedFigures || !series.some(s => s.points.length)) return '<p class="meta">Not enough data yet.</p>';
+  return `<div class="chart">${AcedFigures.render(Object.assign({ type: 'line', series: series.filter(s => s.points.length) }, opts))}</div>`;
+}
+
+function viewProgress() {
+  const est = E.estimateScores(ST, TAX);
+  const ev = E.evaluate(ST);
+  const att = ST.attempts;
+  const lvl = { insufficient: 'Not enough data yet', preliminary: 'Preliminary estimate', calibrated: 'Calibrated to your official tests' };
+  const cards = SECTIONS.map(s => {
+    const a = att.filter(x => x.sec === s), tm = a.filter(x => x.timed), ut = a.filter(x => !x.timed);
+    const avg = a.filter(x => x.ms != null);
+    const e = est[s];
+    return `<div class="card"><div class="spread"><h3>${NAMES[s]}</h3><span class="pill">${lvl[e.level]}</span></div>
+      <div class="big">${e.level === 'insufficient' ? '—' : `${e.low}–${e.high}`}</div>
+      <div class="meta small">${e.level === 'insufficient' ? `${e.attempts} questions answered; skills covered ${e.coverage}% (needs 40 questions and 60%)` : 'Estimated scale-score range'}</div>
+      <div class="row small"><span class="stat"><span class="meta">Accuracy</span><b>${a.length ? pct(a.filter(x => x.ok).length, a.length) + '%' : '—'}</b></span>
+      <span class="stat"><span class="meta">Avg time</span><b>${avg.length ? Math.round(avg.reduce((x, y) => x + y.ms, 0) / avg.length / 1000) + 's' : '—'}</b></span>
+      <span class="stat"><span class="meta">Timed / untimed</span><b>${tm.length ? pct(tm.filter(x => x.ok).length, tm.length) + '%' : '—'} / ${ut.length ? pct(ut.filter(x => x.ok).length, ut.length) + '%' : '—'}</b></span></div>
+      <div class="meta small">Target pace ${SECS[s]}s per question · ${a.length} answered</div></div>`;
+  }).join('');
+  // accuracy over time: 7-day buckets per section
+  const t0 = att.length ? att[0].at : Date.now();
+  const series = SECTIONS.map(s => {
+    const b = {};
+    att.filter(x => x.sec === s && x.mode !== 'sim').forEach(x => { const w = Math.floor((x.at - t0) / (7 * E.DAY)); (b[w] = b[w] || []).push(x.ok); });
+    return { name: NAMES[s], points: Object.entries(b).filter(([, v]) => v.length >= 5).map(([w, v]) => [+w + 1, Math.round(100 * v.filter(Boolean).length / v.length)]) };
+  });
+  const scoreSeries = [
+    { name: 'Official practice tests', points: (ST.checkpoints || []).filter(c => c.composite).map(c => [Math.max(0, Math.round((c.at - t0) / E.DAY)), c.composite]) },
+    { name: 'Aced practice tests', points: (ST.sims || []).filter(c => c.composite).map(c => [Math.max(0, Math.round((c.at - t0) / E.DAY)), c.composite]) }
+  ];
+  const skills = Object.entries(ST.skills).filter(([s]) => TAX.subs[s]);
+  const near = skills.filter(([, k]) => ['practicing', 'timed'].includes(k.stage)).sort((a, b) => b[1].theta - a[1].theta).slice(0, 8);
+  const urgent = skills.filter(([, k]) => k.relapse || k.stuck || (k.n >= 4 && k.c / k.n < 0.5)).sort((a, b) => (TAX.subs[b[0]].weight - TAX.subs[a[0]].weight)).slice(0, 8);
+  const reasons = {};
+  att.filter(a => a.reason).forEach(a => { reasons[a.reason] = (reasons[a.reason] || 0) + 1; });
+  const totalR = Object.values(reasons).reduce((a, b) => a + b, 0);
+  const lastSim = (ST.sims || []).filter(s => s.composite).slice(-1)[0];
+  const lastCp = (ST.checkpoints || []).filter(s => s.composite).slice(-1)[0];
+  const hist = store.get('aced-hist', []);
+  return `<h2>Progress</h2>
+  <p class="sub">Estimates come from your skill-level results weighted by how often each skill appears on the ACT. They stay labeled preliminary until there is enough evidence, and they become calibrated once you log an official practice test.</p>
+  <div class="grid">${cards}</div>
+  <div class="card" style="margin-top:14px"><div class="spread"><h3>Estimated composite</h3><span class="big">${est.composite ?? '—'}</span></div>
+    <div class="meta">${est.composite == null ? 'Needs enough evidence in English, Math and Reading.' : 'Average of the English, Math and Reading estimates. Treat it as a range of about ±2.'}</div></div>
+  <h2>Is it working?</h2>
+  <div class="grid">
+    <div class="card"><h3>Official practice tests</h3>${ev.official ? `<div class="big">${ev.official.last}</div><div class="meta">Baseline ${ev.official.first} → latest ${ev.official.last} (${ev.official.delta >= 0 ? '+' : ''}${ev.official.delta})</div>` : '<div class="meta">No official checkpoint yet. Log one under Practice tests to set your baseline.</div>'}</div>
+    <div class="card"><h3>Previously weak skills</h3>${ev.weakSkills ? `<div class="big">${ev.weakBefore}% → ${ev.weakAfter}%</div><div class="meta">First 5 vs latest 5 tries on ${ev.weakSkills} skill(s) that started under 60%</div>` : '<div class="meta">Shows once a weak skill has 8+ tries.</div>'}</div>
+    <div class="card"><h3>Under time pressure</h3>${ev.timedN >= 10 ? `<div class="big">${ev.timedEarly}% → ${ev.timedLate}%</div><div class="meta">Earlier vs recent timed questions (${ev.timedN})</div>` : '<div class="meta">Needs 10+ timed questions.</div>'}</div>
+    <div class="card"><h3>Retention</h3>${ev.retentionN ? `<div class="big">${ev.retentionAcc}%</div><div class="meta">Accuracy on skills after a week or more away (${ev.retentionN} questions)</div>` : '<div class="meta">Measured when you return to a skill after 7+ days.</div>'}</div>
+    <div class="card"><h3>Authentic vs Aced</h3><div class="meta">Latest official: <b>${lastCp ? lastCp.composite : '—'}</b> · latest Aced test: <b>${lastSim ? lastSim.composite : '—'}</b> · model estimate: <b>${est.composite ?? '—'}</b></div><div class="meta small">If Aced scores run well above official ones, the official result is the one to trust.</div></div>
+  </div>
+  ${ev.warnings.map(w => `<div class="warn" style="margin-top:10px">${esc(w)}</div>`).join('')}
+  <h2>Highest priorities</h2><div class="card">${priorityList(5)}</div>
+  <h2>Improvement over time</h2>
+  <div class="grid"><div class="card"><h3>Practice accuracy by week</h3>${lineChart(series, { x: { label: 'Week' }, y: { label: 'Accuracy (%)', min: 0, max: 100 } })}</div>
+  <div class="card"><h3>Composite scores</h3>${lineChart(scoreSeries, { x: { label: 'Day' }, y: { label: 'Composite', min: 1, max: 36 } })}</div></div>
+  <div class="grid" style="margin-top:14px">
+    <div class="card"><h3>Needs attention now</h3>${urgent.length ? urgent.map(([s, k]) => `<div class="spread small"><span>${esc(subLabel(s))}</span><span>${k.relapse ? '<span class="pill bad">Slipped</span>' : ''}${k.stuck ? '<span class="pill bad">Not improving</span>' : ''} ${pct(k.c, k.n)}%</span></div>`).join('') : '<div class="meta">Nothing urgent.</div>'}</div>
+    <div class="card"><h3>Close to mastery</h3>${near.length ? near.map(([s, k]) => `<div class="spread small"><span>${esc(subLabel(s))}</span>${stagePill(k.stage)}</div>`).join('') : '<div class="meta">None yet.</div>'}</div>
+    <div class="card"><h3>Why you miss questions</h3>${totalR ? Object.entries(reasons).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div class="spread small"><span>${esc(E.REASONS[k] || k)}</span><span>${pct(v, totalR)}%</span></div>`).join('') : '<div class="meta">Tell Aced what happened after a miss and the pattern shows here.</div>'}</div>
+  </div>
+  ${hist.length ? `<h2>Earlier attempts</h2><div class="tbl"><table class="t"><tr><th>Date</th><th>Attempt</th><th>English</th><th>Math</th><th>Reading</th><th>Science</th><th>Composite</th></tr>${hist.slice().reverse().map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.label || r.sec || '')}</td>${SECTIONS.map(s => `<td>${(r.sc && r.sc[s]) ?? '—'}</td>`).join('')}<td>${r.comp ?? '—'}</td></tr>`).join('')}</table></div>` : ''}`;
+}
+
+function viewSettings() {
+  return `<h2>Settings</h2>
+  <div class="card"><label class="switch"><input type="checkbox" data-change="incSci" ${ST.prefs.includeScience ? 'checked' : ''}> Include Science in my study priorities (it does not count toward the composite)</label></div>
+  <h2>Back up your progress</h2>
+  <p class="sub">Progress is saved in this browser automatically. Copy a backup to keep it safe or move it to another device.</p>
+  <div class="card"><div class="row"><button class="btn" data-act="exportData">Show backup</button><button class="btn" data-act="copyBackup">Copy backup</button></div>
+  <label class="field">Backup text<textarea id="backup" rows="5" placeholder="Paste a backup here to restore it"></textarea></label>
+  <div class="row"><button class="btn" data-act="importData">Restore from pasted backup</button><span class="meta" id="backupMsg"></span></div></div>
+  <h2>Reset</h2><div class="card"><div class="meta">Erases skills, history and saved sessions in this browser.</div><div class="row"><button class="btn" data-act="reset">Erase all progress</button></div></div>
+  <h2>About the questions</h2>
+  <div class="card"><div class="meta">Every passage, question, answer choice and figure in Aced is newly written. Official ACT practice tests were studied only for their skill mix, timing, difficulty and question design, and every Aced question was checked automatically and by independent review against them for copying or close paraphrase. Aced is not affiliated with ACT, Inc. Aced test scores are estimates; only official tests produce official scores.</div>
+  <div class="meta">Bank: ${ITEMS.length} questions · ${Object.keys(D.units).length} passages · ${D.forms.length} full practice tests</div></div>`;
+}
+
+// ---------- event wiring for views ----------
+const ACT = {};
+document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (el && ACT[el.dataset.act]) ACT[el.dataset.act](el, e); });
+document.addEventListener('change', e => { const el = e.target.closest('[data-change]'); if (el && CHG[el.dataset.change]) CHG[el.dataset.change](el, e); });
+document.addEventListener('input', e => { if (e.target.id && e.target.id.startsWith('cp_')) cpPreview(); });
+const CHG = {
+  tSec: el => { UI.tSec = el.value; UI.tSubs = []; renderView(); },
+  tSub: el => { UI.tSubs = el.checked ? UI.tSubs.concat(el.value) : UI.tSubs.filter(s => s !== el.value); renderView(); },
+  sSec: el => { UI.sSec = el.value; },
+  qzSec: el => { UI.qzSec = el.value; renderView(); },
+  qzN: el => { UI.qzN = Math.max(1, Math.min(100, +el.value || 1)); renderView(); const i = document.querySelector('[data-change="qzN"]'); if (i) i.focus(); },
+  qzTimed: el => { UI.qzTimed = el.value === '1'; },
+  simSci: el => { ST.prefs.simScience = el.checked; saveState(); renderView(); },
+  incSci: el => { ST.prefs.includeScience = el.checked; saveState(); },
+  cpTest: el => { UI.cpTest = el.value; renderView(); }
+};
+ACT.len = el => { UI.len = +el.dataset.m; ST.prefs.minutes = UI.len; saveState(); renderView(); };
+ACT.skSec = el => { UI.skSec = el.dataset.sec; renderView(); };
+ACT.lesson = el => { $('lessonBox').innerHTML = `<div style="margin-top:12px">${lessonHTML(el.dataset.sub)}</div>`; };
+ACT.resume = el => resume(el.dataset.id);
+ACT.discard = el => { if (el.dataset.armed) { dropRun(el.dataset.id); renderView(); } else { el.dataset.armed = 1; el.textContent = 'Click again to discard'; } };
+ACT.startMax = () => startTrain('max', { minutes: UI.len });
+ACT.startTargeted = () => startTrain('targeted', { minutes: UI.len, subs: UI.tSubs.slice(), sections: [UI.tSec] });
+ACT.trainOne = el => startTrain('targeted', { minutes: 10, subs: [el.dataset.sub] });
+ACT.startSpeed = () => startTrain('speed', { minutes: UI.len, sections: UI.sSec === 'all' ? null : [UI.sSec] });
+ACT.startReview = () => startTrain('review', { minutes: UI.len });
+ACT.startQuiz = () => startQuiz(UI.qzSec, UI.qzN, UI.qzTimed);
+ACT.startForm = el => startForm(el.dataset.f, el.dataset.timed === '1', null);
+ACT.startFormSection = el => startForm(el.dataset.f, el.dataset.timed === '1', el.dataset.sec);
+ACT.exportData = () => { $('backup').value = JSON.stringify({ aced: 2, state: ST, sessions: getSessions(), hist: store.get('aced-hist', []) }); $('backupMsg').textContent = 'Backup shown below.'; };
+ACT.copyBackup = () => {
+  ACT.exportData();
+  const t = $('backup');
+  navigator.clipboard?.writeText(t.value).then(() => { $('backupMsg').textContent = 'Copied.'; }, () => { t.select(); $('backupMsg').textContent = 'Select-all is on; copy with your keyboard.'; });
+};
+ACT.importData = () => {
+  try {
+    const d = JSON.parse($('backup').value);
+    if (!d || d.aced !== 2 || !d.state) throw new Error('not an Aced backup');
+    ST = E.migrate(d.state); saveState();
+    if (d.sessions) store.set('aced-sessions', d.sessions);
+    if (d.hist) store.set('aced-hist', d.hist);
+    $('backupMsg').textContent = `Restored ${ST.attempts.length} answers.`;
+  } catch (err) { $('backupMsg').textContent = 'That text is not a valid Aced backup. Paste the full backup text and try again.'; }
+};
+ACT.reset = el => {
+  if (!el.dataset.armed) { el.dataset.armed = 1; el.textContent = 'Click again to erase everything'; return; }
+  ST = E.newState(); saveState(); store.set('aced-sessions', {}); store.set('aced-hist', []); renderView();
+};
+function cpScores() {
+  const t = OFFICIAL.tests[UI.cpTest]; if (!t) return null;
+  const raw = {}, scores = {};
+  for (const s of SECTIONS) {
+    const el = $('cp_' + s); if (!el || el.value === '') continue;
+    const r = Math.max(0, Math.min(t[s].length - 1, Math.round(+el.value)));
+    raw[s] = r; scores[s] = t[s][r];
+  }
+  const core = ['english', 'math', 'reading'];
+  const composite = core.every(s => scores[s] != null) ? roundHalfUp(core.reduce((a, s) => a + scores[s], 0) / 3) : null;
+  return { raw, scores, composite, name: t.name || `Official Practice Test ${UI.cpTest}` };
+}
+function cpPreview() {
+  const c = cpScores(); if (!c) return;
+  $('cpPreview').textContent = Object.keys(c.scores).length ? SECTIONS.filter(s => c.scores[s] != null).map(s => `${NAMES[s]} ${c.scores[s]}`).join(' · ') + (c.composite ? ` · Composite ${c.composite}` : '') : 'Enter raw scores to see scale scores.';
+}
+ACT.saveCheckpoint = () => {
+  const c = cpScores();
+  if (!c || !Object.keys(c.scores).length) { $('cpPreview').textContent = 'Enter at least one raw score.'; return; }
+  const est = E.estimateScores(ST, TAX);
+  c.est = Object.fromEntries(SECTIONS.map(s => [s, est[s].scale]));
+  c.at = Date.now(); c.test = UI.cpTest;
+  ST.checkpoints.push(c); saveState(); renderView();
+};
+ACT.delCheckpoint = el => { ST.checkpoints = ST.checkpoints.filter(c => String(c.at) !== el.dataset.at); saveState(); renderView(); };
+
+// ---------- starting sessions ----------
+function startTrain(mode, opts) {
+  const bank = trainingBank();
+  const rng = mulberry((Date.now() ^ ST.attempts.length) & 0x7fffffff);
+  const sections = opts.sections || SECTIONS.filter(s => s !== 'science' || ST.prefs.includeScience || mode === 'targeted' || (opts.sections || []).includes('science'));
+  const plan = E.planSession(ST, bank, TAX, { minutes: opts.minutes, mode: mode === 'targeted' ? 'max' : mode, sections, subs: opts.subs, rng });
+  if (!plan.steps.length) { alertView(mode === 'review' ? 'No new questions are left for the skills you missed. Try a targeted session instead.' : 'No questions are available for that selection.'); return; }
+  const labels = { max: 'Score improvement session', targeted: 'Targeted training', speed: 'Speed training', review: 'Mistake review' };
+  R = { id: uid('t'), v: 2, kind: 'train', mode, label: `${labels[mode]} · ${opts.minutes} min`, minutes: opts.minutes, timed: mode === 'speed', steps: plan.steps, plan: plan.plan, idx: 0, resp: {}, sid: uid('s'), el: 0, created: Date.now(), updated: Date.now() };
+  ST.sessions.push({ id: R.sid, at: Date.now(), mode, n: plan.steps.length }); saveState();
+  saveRun(); enterRunner();
+}
+function alertView(msg) { $('view').insertAdjacentHTML('afterbegin', `<div class="warn">${esc(msg)}</div>`); scrollTo(0, 0); }
+
+function startQuiz(sec, n, timed) {
+  const rnd = mulberry(Date.now() & 0x7fffffff);
+  let pool = trainingBank().filter(i => i.sec === sec);
+  const unseen = pool.filter(i => !ST.items[i.id]);
+  let pick = shuffle(unseen, rnd).concat(shuffle(pool.filter(i => ST.items[i.id]), rnd)).slice(0, n);
+  const ids = pick.map(i => i.id);
+  const extra = [];
+  if (sec === 'math' && window.ACED_MATHGEN) while (ids.length + extra.length < n) { const g = ACED_MATHGEN(rnd); g.id = uid('g'); g.sec = 'math'; extra.push(g); }
+  // keep passage-based questions together
+  if (sec !== 'math') ids.sort((a, b) => (BYID[a].unit || '').localeCompare(BYID[b].unit || '') || (BYID[a].n || 0) - (BYID[b].n || 0));
+  const items = ids.concat(extra);
+  const ftN = Math.round(items.length * { english: 10 / 50, math: 4 / 45, reading: 9 / 36, science: 6 / 40 }[sec]);
+  const ft = shuffle(items.map(x => typeof x === 'string' ? x : x.id), rnd).slice(0, ftN);
+  R = newExam('quiz', `${NAMES[sec]} quiz · ${items.length} questions`, timed, [{ sec, items, ft }], null);
+  beginPart();
+}
+function startForm(fid, timed, onlySec) {
+  const f = D.forms.find(x => x.id === fid); if (!f) return;
+  const secs = onlySec ? [onlySec] : SECTIONS.filter(s => f.sections[s] && (s !== 'science' || ST.prefs.simScience));
+  const parts = secs.map(s => ({ sec: s, items: f.sections[s].items.slice(), ft: (f.sections[s].ft || []).slice() }));
+  R = newExam(onlySec ? 'section' : 'full', `${f.name}${onlySec ? ' · ' + NAMES[onlySec] : secs.includes('science') ? ' + Science' : ''}`, timed, parts, fid);
+  beginPart();
+}
+function newExam(type, label, timed, parts, form) {
+  return { id: uid('x'), v: 2, kind: 'exam', type, label, timed, parts, form, pi: 0, cur: 0, ans: {}, x: {}, flag: {}, ms: {}, chg: {}, left: 0, el: 0, results: [], onBreak: false, created: Date.now(), updated: Date.now(), sid: uid('s') };
+}
+function beginPart() {
+  const p = R.parts[R.pi];
+  R.cur = 0; R.ans = {}; R.x = {}; R.flag = {}; R.ms = {}; R.chg = {}; R.el = 0; R.onBreak = false;
+  R.left = p.items.length * SECS[p.sec];
+  saveRun(); enterRunner();
+}
+function resume(id) {
+  R = getSessions()[id];
+  if (!R) return renderView();
+  if (!R.kind || R.kind === 'full' || R.kind === 'section' || R.kind === 'quiz') { R.type = R.type || R.kind; R.kind = 'exam'; R.ms = R.ms || {}; R.chg = R.chg || {}; R.sid = R.sid || uid('s'); }
+  if (R.kind === 'exam' && R.onBreak) return showBreak();
+  enterRunner();
+}
+
+// ---------- runner shell ----------
+function enterRunner() {
+  show('test');
+  $('passage').dataset.p = '';
+  $('nav').hidden = true;
+  $('pauseBtn').hidden = !R.timed; $('pauseBtn').innerHTML = ICON.pause;
+  $('flagBtn').hidden = R.kind !== 'exam';
+  startTick(); showTime(); render();
+}
+function startTick() {
+  stopTick();
+  tick = setInterval(() => {
+    if (!R || !$('paused').hidden || document.hidden) return;
+    R.el = (R.el || 0) + 1;
+    if (R.kind === 'exam') {
+      const n = R.cur + 1; R.ms[n] = (R.ms[n] || 0) + 1000;
+      if (R.timed) { R.left--; if (R.left <= 0) { R.left = 0; return finishPart(); } }
+    } else {
+      const r = curResp(); if (r && r.phase === 'answer') { r.ms = (r.ms || 0) + 1000; if (R.mode === 'speed') speedBar(); }
+    }
+    showTime();
+    if (++saveCount % 5 === 0) saveRun();
+  }, 1000);
+}
+function stopTick() { clearInterval(tick); tick = null; }
+function showTime() {
+  if (!R) return;
+  if (R.kind === 'exam') { $('timer').textContent = R.timed ? fmt(R.left) : fmt(R.el); $('timer').classList.toggle('low', R.timed && R.left < 300); }
+  else $('timer').textContent = fmt(R.el || 0);
+}
+$('pauseBtn').onclick = () => { $('paused').hidden = false; $('pauseBtn').innerHTML = ICON.play; $('pauseBtn').setAttribute('aria-label', 'Resume'); saveRun(); };
+$('resumeBtn').onclick = () => { $('paused').hidden = true; $('pauseBtn').innerHTML = ICON.pause; $('pauseBtn').setAttribute('aria-label', 'Pause'); };
+$('hlBtn').onclick = () => { hl = !hl; $('hlBtn').classList.toggle('on', hl); $('hlBtn').setAttribute('aria-pressed', hl); };
+document.addEventListener('mouseup', () => {
+  if (!hl) return; const s = getSelection(); if (!s.rangeCount || s.isCollapsed) return;
+  const r = s.getRangeAt(0); if (!$('passage').contains(r.commonAncestorContainer)) return;
+  try { r.surroundContents(document.createElement('mark')); } catch (e) { /* selection crosses elements */ }
+  s.removeAllRanges();
+});
+$('passage').addEventListener('click', e => { if (e.target.tagName === 'MARK' && !hl) e.target.replaceWith(...e.target.childNodes); });
+addEventListener('pagehide', saveRun);
+addEventListener('beforeunload', saveRun);
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveRun(); });
+$('calcBtn').onclick = () => {
+  $('calc').hidden = !$('calc').hidden;
+  if (calc || $('calc').hidden || $('calcEl').dataset.loading) return;
+  $('calcEl').dataset.loading = 1;
+  const s = document.createElement('script');
+  s.src = 'https://www.desmos.com/api/v1.11/calculator.js?apiKey=dcb31709b452b1cf9dc26972add0fda6';
+  s.onload = () => { calc = Desmos.GraphingCalculator($('calcEl'), { expressionsCollapsed: false, invertedColors: isDark() }); };
+  s.onerror = () => { $('calcEl').innerHTML = '<p style="padding:12px">Desmos is blocked on this preview link but works on the deployed site. <a href="https://www.desmos.com/calculator" target="_blank" rel="noopener">Open Desmos in a new tab</a>.</p>'; };
+  document.head.appendChild(s);
+};
+$('calcClose').onclick = () => { $('calc').hidden = true; };
+
+function setPassage(html, key) {
+  $('main').classList.toggle('solo', !html); $('passage').hidden = !html;
+  if (html && $('passage').dataset.p !== key) { $('passage').innerHTML = html; $('passage').dataset.p = key; $('passage').scrollTop = 0; }
+}
+function choicesHTML(it, opts) {
+  return it.c.map((c, k) => {
+    const cls = [opts.sel === k ? 'sel' : '', opts.x && opts.x[k] ? 'x' : '', opts.reveal && k === it.a ? 'right' : '', opts.reveal && opts.sel === k && k !== it.a ? 'wrong' : ''].join(' ');
+    return `<div class="choice ${cls}"><label><input type="radio" name="a" ${opts.sel === k ? 'checked' : ''} ${opts.lock ? 'disabled' : ''} data-pick="${k}"><b>${LET[k]}.</b> <span>${c}</span></label>${opts.lock ? '' : `<button class="elim" data-elim="${k}" aria-label="Cross out choice ${LET[k]}" title="Cross out ${LET[k]}">${LET[k]}̶</button>`}</div>`;
+  }).join('');
+}
+function stemHTML(it) { return `${itemFigure(it)}${it.q ? `<div class="stem">${it.q}</div>` : ''}`; }
+function render() { if (R.kind === 'exam') renderExam(); else renderTrain(); }
+
+// ---------- exam runner (simulations and quizzes) ----------
+function partItems(p) { return p.items.map(itemOf); }
+function isFT(p, it) { return !!(it.ft || (p.ft || []).includes(it.id)); }
+function examPassage(p, it) {
+  if (it.unit && D.units[it.unit]) return [renderUnit(D.units[it.unit]), it.unit];
+  if (it.pid && p.passages) return [p.passages[it.pid], it.pid];
+  return [null, null];
+}
+function renderExam() {
+  const p = R.parts[R.pi], items = partItems(p), it = items[R.cur], n = R.cur + 1;
+  $('ttl').textContent = `${R.label} — ${NAMES[p.sec]}`;
+  $('calcBtn').hidden = p.sec !== 'math';
+  const [ph, key] = examPassage(p, it);
+  setPassage(ph, key);
+  if (ph) markPassage(it, false);
+  $('qpane').innerHTML = `<div class="qnum">Question ${n} of ${items.length}</div>${stemHTML(it)}${choicesHTML(it, { sel: R.ans[n], x: Object.fromEntries([0, 1, 2, 3].map(k => [k, R.x[n + '-' + k]])) })}`;
+  $('flagBtn').classList.toggle('on', !!R.flag[n]);
+  $('bot').innerHTML = `<button class="btn" data-run="exit">Save &amp; exit</button><div class="row"><button class="btn" data-run="prev" ${R.cur === 0 ? 'disabled' : ''}>← Back</button><button class="btn" data-run="navt">Questions</button><button class="btn pri" data-run="next">${R.cur === items.length - 1 ? 'Review →' : 'Next →'}</button></div><button class="btn" data-run="submit">Submit section</button>`;
+  navR();
+}
+function navR() {
+  if (R.kind !== 'exam') return;
+  const p = R.parts[R.pi];
+  $('nav').innerHTML = p.items.map((_, k) => `<button class="${R.ans[k + 1] != null ? 'ans' : ''} ${k === R.cur ? 'cur' : ''} ${R.flag[k + 1] ? 'fl' : ''}" data-run="goto" data-k="${k}" aria-label="Question ${k + 1}">${k + 1}</button>`).join('');
+}
+$('flagBtn').onclick = () => { if (R.kind !== 'exam') return; const n = R.cur + 1; R.flag[n] = !R.flag[n]; saveRun(); render(); };
+
+$('qpane').addEventListener('change', e => {
+  const k = e.target.dataset.pick; if (k == null) return;
+  if (R.kind === 'exam') {
+    const n = R.cur + 1;
+    if (R.ans[n] != null && R.ans[n] !== +k) R.chg[n] = (R.chg[n] || 0) + 1;
+    R.ans[n] = +k; delete R.x[n + '-' + k]; saveRun(); render();
+  } else {
+    const r = curResp(); if (r.phase !== 'answer') return;
+    if (r.choice != null && r.choice !== +k) r.changed = (r.changed || 0) + 1;
+    r.choice = +k; if (r.x) delete r.x[k]; saveRun(); render();
+  }
+});
+$('qpane').addEventListener('click', e => {
+  const b = e.target.closest('[data-elim]'); if (!b) return;
+  const k = +b.dataset.elim;
+  if (R.kind === 'exam') {
+    const n = R.cur + 1, key = n + '-' + k; R.x[key] = !R.x[key];
+    if (R.x[key] && R.ans[n] === k) delete R.ans[n];
+  } else {
+    const r = curResp(); r.x = r.x || {}; r.x[k] = !r.x[k]; if (r.x[k] && r.choice === k) r.choice = null;
+  }
+  saveRun(); render();
+});
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-run]'); if (!b || !R) return;
+  RUN[b.dataset.run](b, e);
+});
+const RUN = {};
+RUN.exit = () => { saveRun(); go(TAB); };
+RUN.prev = () => { if (R.cur > 0) { R.cur--; saveRun(); render(); } };
+RUN.next = () => { const p = R.parts[R.pi]; if (R.cur < p.items.length - 1) { R.cur++; saveRun(); render(); } else { $('nav').hidden = false; navR(); } };
+RUN.navt = () => { $('nav').hidden = !$('nav').hidden; };
+RUN.goto = b => { R.cur = +b.dataset.k; saveRun(); render(); };
+RUN.submit = b => {
+  const un = R.parts[R.pi].items.length - Object.keys(R.ans).length;
+  if (!b.dataset.armed) { b.dataset.armed = 1; b.textContent = un ? `${un} unanswered. Click again to submit` : 'Click again to submit'; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = 'Submit section'; } }, 4000); return; }
+  finishPart();
+};
+
+function scorePart(p, ans) {
+  const items = partItems(p);
+  let raw = 0, tot = 0; const cats = {};
+  items.forEach((q, k) => {
+    if (isFT(p, q)) return; tot++;
+    const ok = ans[k + 1] === q.a; if (ok) raw++;
+    const c = q.cat || q.k; if (c) { cats[c] = cats[c] || [0, 0]; cats[c][1]++; if (ok) cats[c][0]++; }
+  });
+  const conv = TAX.conv[p.sec];
+  const scale = Object.keys(ans).length && conv ? conv[Math.round(raw / (tot || 1) * (conv.length - 1))] : null;
+  return { sec: p.sec, raw, tot, scale, cats };
+}
+function finishPart() {
+  stopTick();
+  const p = R.parts[R.pi];
+  const res = scorePart(p, R.ans);
+  res.el = R.el; res.ans = Object.assign({}, R.ans); res.flag = Object.assign({}, R.flag); res.ms = Object.assign({}, R.ms);
+  R.results.push(res);
+  // Feed every answered question into the skill model (field-test items are ours too, so they count for learning).
+  partItems(p).forEach((it, k) => {
+    const n = k + 1;
+    if (R.ans[n] == null || !it.sub) return;
+    E.record(ST, it, { ok: R.ans[n] === it.a, ms: R.ms[n] || null, changed: R.chg[n] || 0, timed: R.timed, mode: R.type === 'quiz' ? 'quiz' : 'sim', sid: R.sid, choice: R.ans[n], typical: (TAX.subs[it.sub] || {}).diff });
+  });
+  saveState();
+  if (R.pi < R.parts.length - 1) { R.pi++; R.onBreak = true; R.breakLeft = p.sec === 'math' ? 600 : 0; saveRun(); return showBreak(); }
+  dropRun(R.id); showExamResults(R);
+}
+function showBreak() {
+  show('app'); stopTick();
+  const next = R.parts[R.pi], prev = R.results[R.results.length - 1];
+  const has = R.breakLeft > 0;
+  $('view').innerHTML = `<h2>${NAMES[prev.sec]} submitted</h2>
+    <p class="sub">Next: <b>${NAMES[next.sec]}</b>, ${next.items.length} questions${R.timed ? `, ${fmt(next.items.length * SECS[next.sec])}` : ''}. Scores appear when the whole test is finished.</p>
+    ${has ? `<p>Optional break: <b id="brk">${fmt(R.breakLeft)}</b></p>` : ''}
+    <div class="row"><button class="btn pri" id="nextPart">Start ${NAMES[next.sec]}</button><button class="btn" id="brkExit">Save &amp; exit</button></div>`;
+  const keep = R;
+  if (has) tick = setInterval(() => { keep.breakLeft--; const b = $('brk'); if (b) b.textContent = fmt(keep.breakLeft); if (keep.breakLeft <= 0) { stopTick(); R = keep; beginPart(); } else if (keep.breakLeft % 5 === 0) { R = keep; saveRun(); } }, 1000);
+  $('nextPart').onclick = () => { stopTick(); R = keep; beginPart(); };
+  $('brkExit').onclick = () => { R = keep; saveRun(); go('simulate'); };
+}
+function explainHTML(it, chosen) {
+  const wrong = chosen != null && chosen !== it.a;
+  const parts = [];
+  if (wrong && it.w && it.w[chosen]) parts.push(`<div><b>Why ${LET[chosen]} is wrong:</b> ${it.w[chosen]}</div>`);
+  if (it.e) parts.push(`<div><b>Why ${LET[it.a]} is right:</b> ${it.e}</div>`);
+  if (it.ev) parts.push(`<div><b>Evidence:</b> ${it.ev}</div>`);
+  if (it.strat) parts.push(`<div><b>Fastest reliable method:</b> ${it.strat}</div>`);
+  if (it.desmos) parts.push(`<div><b>Desmos:</b> ${it.desmos}</div>`);
+  if (it.recog) parts.push(`<div><b>Spot this type:</b> ${it.recog}</div>`);
+  return parts.join('');
+}
+function showExamResults(sess) {
+  show('app');
+  const sc = {}; sess.results.forEach(r => { if (r.scale != null) sc[r.sec] = r.scale; });
+  const full = sess.type === 'full';
+  const comp = full && sc.english && sc.math && sc.reading ? roundHalfUp((sc.english + sc.math + sc.reading) / 3) : null;
+  const stem = full && sc.math && sc.science ? roundHalfUp((sc.math + sc.science) / 2) : null;
+  if (sess.form) {
+    ST.sims.push({ at: Date.now(), form: sess.form, full, label: sess.label, timed: sess.timed, scores: sc, composite: comp });
+    if (full && !ST.prefs.released.includes(sess.form)) ST.prefs.released.push(sess.form);
+    saveState();
+  }
+  const missed = new Set();
+  const tiles = (comp != null ? `<div class="card"><div class="meta">Composite (estimated)</div><div class="big">${comp}</div></div>` : '') +
+    sess.results.map(r => `<div class="card"><div class="meta">${NAMES[r.sec]}</div><div class="big">${r.scale ?? '—'}</div><div class="meta">${r.raw}/${r.tot} scored correct · ${fmt(r.el)}</div></div>`).join('') +
+    (stem != null ? `<div class="card"><div class="meta">STEM (estimated)</div><div class="big">${stem}</div></div>` : '');
+  const detail = sess.results.map((r, pi) => {
+    const p = sess.parts[pi], items = partItems(p);
+    const cats = Object.entries(r.cats).map(([k, v]) => `<tr><td>${esc((TAX.cats && TAX.cats[k]) || k)}</td><td>${v[0]} / ${v[1]}</td></tr>`).join('');
+    const rev = items.map((q, k) => {
+      const n = k + 1, u = r.ans[n], ok = u === q.a, ft = isFT(p, q);
+      if (!ok && q.sub) missed.add(q.sub);
+      const mark = ft ? '' : ok ? '<b class="ok">Correct</b>' : u == null ? '<b class="no">Omitted</b>' : '<b class="no">Incorrect</b>';
+      return `<div class="rev"><div class="row"><b>${n}.</b> ${mark} ${ft ? '<span class="pill">Field test · not scored</span>' : ''} ${q.sub ? `<span class="pill">${esc(subLabel(q.sub))}</span>` : ''} ${r.flag[n] ? '<span class="pill">Flagged</span>' : ''} ${r.ms && r.ms[n] ? `<span class="meta small">${Math.round(r.ms[n] / 1000)}s</span>` : ''}</div>
+        <div>${q.u ? `<span class="meta">Underlined portion ${q.u}.</span> ` : ''}${q.q || ''}</div>
+        <div class="meta">Your answer: ${u != null ? LET[u] + '. ' + q.c[u] : '—'}</div><div>Correct: <b>${LET[q.a]}. ${q.c[q.a]}</b></div><div class="small">${explainHTML(q, u)}</div></div>`;
+    }).join('');
+    return `<h2>${NAMES[r.sec]} · ${r.scale ?? '—'}</h2><p class="meta">Raw score ${r.raw} of ${r.tot} scored questions. ${items.filter(q => isFT(p, q)).length} field-test questions were not scored.</p>
+      ${cats ? `<div class="tbl"><table class="t"><tr><th>Reporting category</th><th>Correct</th></tr>${cats}</table></div>` : ''}
+      <details><summary class="btn sm" style="display:inline-block;margin-top:10px">Review all ${items.length} questions</summary>${rev}</details>`;
+  }).join('');
+  const h = store.get('aced-hist', []);
+  h.push({ date: new Date().toLocaleDateString(), label: sess.label, mode: sess.timed ? 'Timed' : 'Untimed', sc, comp, stem });
+  store.set('aced-hist', h.slice(-100));
+  const missedList = [...missed];
+  $('view').innerHTML = `<div class="spread"><h2>${esc(sess.label)} results</h2><button class="btn" data-act="backHome">Back</button></div>
+    <p class="sub">Scale scores are estimates from a conversion averaged across official enhanced ACT forms. Aced tests are not officially equated, so treat them as ±2. ${full ? 'Composite is the rounded average of English, Math and Reading.' : ''}</p>
+    <div class="grid">${tiles}</div>
+    ${missedList.length ? `<div class="card" style="margin-top:12px"><div class="spread"><div><b>Turn misses into points</b><div class="meta">${missedList.length} skills had misses. Practice them with new questions.</div></div><button class="btn pri" data-act="trainMissed" data-subs="${esc(missedList.join('|'))}">Practice missed skills</button></div></div>` : ''}
+    ${detail}`;
+}
+ACT.backHome = () => go(TAB === 'simulate' ? 'simulate' : 'study');
+ACT.trainMissed = el => startTrain('targeted', { minutes: 20, subs: el.dataset.subs.split('|') });
+
+// ---------- training runner (feedback, reasons, follow-ups) ----------
+function curResp() { if (!R || R.kind !== 'train') return null; return R.resp[R.idx] || (R.resp[R.idx] = { phase: 'answer', ms: 0 }); }
+function stepItem(i) { const s = R.steps[i]; return s ? (s.item || BYID[s.id]) : null; }
+function renderTrain() {
+  if (R.idx >= R.steps.length) return trainSummary();
+  const it = stepItem(R.idx), r = curResp(), step = R.steps[R.idx];
+  if (!it) { R.idx++; return renderTrain(); }
+  $('ttl').textContent = `${R.label} — ${NAMES[it.sec]}`;
+  $('calcBtn').hidden = it.sec !== 'math';
+  const unit = it.unit && D.units[it.unit];
+  setPassage(unit ? renderUnit(unit) : null, it.unit);
+  if (unit) markPassage(it, r.phase === 'explain');
+  const n = R.idx + 1, total = R.steps.length;
+  const lock = r.phase !== 'answer';
+  let h = `<div class="spread"><div class="qnum">Question ${n} of ${total}</div><div class="row">${step.follow ? '<span class="pill">Check: new question, same skill</span>' : ''}<span class="pill">${esc(subLabel(it.sub))}</span></div></div>`;
+  if (R.mode === 'speed') h += `<div class="qtimer" id="qtimer"><i style="width:${Math.min(100, (r.ms || 0) / 10 / SECS[it.sec])}%"></i></div>`;
+  h += stemHTML(it);
+  h += choicesHTML(it, { sel: r.choice, x: r.x, lock, reveal: r.phase === 'explain' });
+  if (r.phase === 'answer') {
+    h += `<div class="conf">How sure are you? ${['sure', 'unsure', 'guess'].map(c => `<button class="chip" data-run="conf" data-c="${c}" aria-pressed="${r.conf === c}">${{ sure: 'Sure', unsure: 'Unsure', guess: 'Guessing' }[c]}</button>`).join('')}</div>`;
+    if (r.hint && it.h) h += `<div class="hint"><b>Hint:</b> ${it.h}</div>`;
+  } else if (r.phase === 'reason') {
+    h += `<div class="fb no"><div class="verdict">Not quite. Before the explanation: what happened?</div>
+      <div class="row">${Object.entries(E.REASONS).map(([k, v]) => `<button class="chip" data-run="reason" data-r="${k}" aria-pressed="${r.reason === k}">${esc(v)}</button>`).join('')}</div>
+      <label class="field">Your thinking (optional)<input id="whyNote" value="${esc(r.note || '')}" placeholder="e.g. I thought the comma was needed because…"></label>
+      <div class="row"><button class="btn pri" data-run="reasonGo">Show explanation</button><button class="btn ghost" data-run="reasonSkip">Skip</button></div></div>`;
+  } else {
+    const sk = ST.skills[it.sub];
+    const tip = sk ? E.advice(sk) : null;
+    const showLesson = !r.ok && (r.reason === 'concept' || (sk && sk.stuck) || r.conf === 'guess');
+    h += `<div class="fb ${r.ok ? 'ok' : 'no'}"><div class="verdict">${r.ok ? (r.conf === 'guess' ? 'Correct, but you were guessing. Make sure the reasoning below matches yours.' : r.conf === 'unsure' ? 'Correct. Check that your reasoning matches.' : 'Correct.') : `The answer is ${LET[it.a]}.`}</div>
+      ${explainHTML(it, r.choice)}
+      ${showLesson && D.lessons[it.sub] ? lessonHTML(it.sub) : D.lessons[it.sub] ? `<details><summary class="meta">Skill lesson: ${esc(subLabel(it.sub))}</summary>${lessonHTML(it.sub)}</details>` : ''}
+      ${tip && !r.ok ? `<div class="note small">${esc(tip)}</div>` : ''}
+      ${R.mode === 'speed' ? `<div class="meta small">Time: ${Math.round((r.ms || 0) / 1000)}s (pace ${SECS[it.sec]}s)</div>` : ''}</div>`;
+  }
+  $('qpane').innerHTML = h;
+  const answering = r.phase === 'answer';
+  $('bot').innerHTML = `<button class="btn" data-run="exit">Save &amp; exit</button>
+    <div class="row">${answering && it.h && R.mode !== 'speed' && !r.hint ? '<button class="btn" data-run="hint">Hint</button>' : ''}
+    ${answering ? `<button class="btn pri" data-run="check" ${r.choice == null ? 'disabled' : ''}>Check answer</button>` : r.phase === 'explain' ? `<button class="btn pri" data-run="tnext">${R.idx + 1 >= R.steps.length ? 'Finish' : 'Next question →'}</button>` : ''}</div>
+    <button class="btn ghost" data-run="tend">End session</button>`;
+  $('qpane').scrollTop = 0;
+}
+function speedBar() { const r = curResp(), it = stepItem(R.idx), b = $('qtimer'); if (!b || !it) return; const f = (r.ms || 0) / 1000 / SECS[it.sec]; b.firstChild.style.width = Math.min(100, f * 100) + '%'; b.classList.toggle('over', f > 1); }
+RUN.conf = b => { const r = curResp(); r.conf = r.conf === b.dataset.c ? null : b.dataset.c; saveRun(); render(); };
+RUN.hint = () => { const r = curResp(); r.hint = true; saveRun(); render(); };
+RUN.check = () => {
+  const r = curResp(), it = stepItem(R.idx); if (r.choice == null) return;
+  r.ok = r.choice === it.a;
+  if (r.ok) { recordTrain(r, it); r.phase = 'explain'; }
+  else r.phase = 'reason';
+  saveRun(); render();
+};
+RUN.reason = b => { const r = curResp(); r.reason = b.dataset.r; render(); };
+RUN.reasonGo = () => { const r = curResp(); const n = $('whyNote'); if (n) r.note = n.value.slice(0, 500); finishMiss(r); };
+RUN.reasonSkip = () => { finishMiss(curResp()); };
+function finishMiss(r) {
+  const it = stepItem(R.idx);
+  recordTrain(r, it); r.phase = 'explain';
+  // Follow-up: a new question on the same skill to check the fix, inserted right after this one.
+  if (!R.steps[R.idx].follow) {
+    const used = new Set(R.steps.map(s => s.id));
+    const f = E.followUp(ST, trainingBank(), it.sub, used, TAX);
+    if (f) R.steps.splice(R.idx + 1, 0, { id: f.id, sub: f.sub, why: ['check that the fix stuck'], follow: true });
+  }
+  saveRun(); render();
+}
+function recordTrain(r, it) {
+  if (r.recorded) return;
+  E.record(ST, it, { ok: r.ok, ms: r.ms || null, changed: r.changed || 0, conf: r.conf || null, hint: !!r.hint, timed: R.mode === 'speed', mode: R.mode, sid: R.sid, choice: r.choice, reason: r.reason || null, typical: (TAX.subs[it.sub] || {}).diff });
+  r.recorded = true;
+  if (r.note) ST.attempts[ST.attempts.length - 1].note = r.note;
+  saveState();
+}
+RUN.tnext = () => { R.idx++; saveRun(); render(); };
+RUN.tend = b => {
+  if (!b.dataset.armed) { b.dataset.armed = 1; b.textContent = 'Click again to end'; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = 'End session'; } }, 4000); return; }
+  R.steps = R.steps.slice(0, R.idx + (curResp().recorded ? 1 : 0)); R.idx = R.steps.length; trainSummary();
+};
+function trainSummary() {
+  stopTick();
+  const done = Object.values(R.resp).filter(r => r.recorded);
+  const right = done.filter(r => r.ok).length;
+  const subs = [...new Set(R.steps.map(s => (s.item || BYID[s.id] || {}).sub).filter(Boolean))];
+  const rows = subs.map(s => { const sk = ST.skills[s] || {}; return `<tr><td>${esc(subLabel(s))}</td><td>${stagePill(sk.stage || 'new')}</td><td>${sk.n ? pct(sk.c, sk.n) + '%' : '—'}</td><td class="meta">${sk.due ? new Date(sk.due).toLocaleDateString() : '—'}</td></tr>`; }).join('');
+  const times = done.map((r, i) => r.ms).filter(Boolean);
+  const sess = R; dropRun(R.id);
+  show('app');
+  $('view').innerHTML = `<div class="spread"><h2>${esc(sess.label)}: done</h2><button class="btn" data-act="backHome">Back to study</button></div>
+    <div class="grid"><div class="card"><div class="meta">Correct</div><div class="big">${right}/${done.length}</div></div>
+    <div class="card"><div class="meta">Average time</div><div class="big">${times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length / 1000) + 's' : '—'}</div></div>
+    <div class="card"><div class="meta">Time spent</div><div class="big">${fmt(sess.el || 0)}</div></div></div>
+    <h2>Skills practiced</h2><div class="tbl"><table class="t"><tr><th>Skill</th><th>Stage</th><th>Overall accuracy</th><th>Next review</th></tr>${rows}</table></div>
+    <h2>What to do next</h2><div class="card">${priorityList(3)}</div>`;
+}
+
+// ---------- boot ----------
+go(TAB);
