@@ -410,3 +410,55 @@ button.mcImage{border:0;width:100%;cursor:pointer;padding:0}
 .chip:disabled{opacity:.35;cursor:not-allowed}
 .flipMain .flipParts{display:flex;flex-direction:column;gap:2px;color:var(--muted);font-size:12px}
 .modeRow button em.cnt{font-style:normal;opacity:.7;font-size:.9em}
+
+/* Analytics */
+.anPage{--series-1:#3987e5;--series-2:#d95926;display:flex;flex-direction:column;gap:16px}
+.anTiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.anTile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:4px}
+.anTile span{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.anTile b{font-family:var(--display);font-size:28px;color:var(--text);line-height:1.1}
+.anTile small{color:var(--dim);font-size:12px}
+.anGrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.anPanel h3{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.anPanel h3 select{margin-left:auto;max-width:220px}
+.anBars{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.anBarRow{display:grid;grid-template-columns:110px 1fr 64px;align-items:center;gap:10px;position:relative;padding:2px 0;cursor:default}
+.anBarLabel{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.anBarTrack{height:12px;display:block}
+.anBarTrack i{display:block;height:12px;background:var(--series-1);border-radius:0 4px 4px 0}
+.anBarRow.on .anBarTrack i{filter:brightness(1.18)}
+.anBarVal{color:var(--text);font-size:13px;text-align:right;font-variant-numeric:tabular-nums}
+.anTip{position:absolute;z-index:5;top:-34px;left:120px;background:var(--card2);border:1px solid var(--line2);border-radius:8px;padding:6px 10px;font-size:12px;color:var(--text);display:flex;flex-direction:column;gap:2px;pointer-events:none;white-space:nowrap;box-shadow:0 6px 20px rgba(0,0,0,.4)}
+.anTip b{font-weight:600}
+.anTip.fixed{top:44px;transform:translateX(-10%)}
+.anTip span{display:flex;align-items:center;gap:6px;color:var(--muted)}
+.anChartWrap{position:relative;margin-top:6px}
+.anChart{max-width:100%;display:block;overflow:visible}
+.anChart .grid{stroke:var(--line);stroke-width:1}
+.anChart .axis{fill:var(--dim);font-size:11px}
+.anChart .line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.anChart .line.s1,.sw.s1{stroke:var(--series-1);background:var(--series-1)}
+.anChart .line.s2,.sw.s2{stroke:var(--series-2);background:var(--series-2)}
+.anChart .dot{stroke:var(--card);stroke-width:2}
+.anChart .dot.s1{fill:var(--series-1)}.anChart .dot.s2{fill:var(--series-2)}
+.anChart .endLabel{fill:var(--text);font-size:12px;font-variant-numeric:tabular-nums}
+.anChart .cross{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}
+.anChart .msrpLine{stroke:var(--dim);stroke-width:1;stroke-dasharray:6 4}
+.anLegend{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:12px}
+.anLegend span{display:flex;align-items:center;gap:6px}
+.sw{display:inline-block;width:12px;height:3px;border-radius:2px}
+.sw.msrp{background:none;border-top:1px dashed var(--dim);height:0}
+.anTable{margin-top:10px;color:var(--muted);font-size:12px}
+.anTable table{width:100%;border-collapse:collapse;margin-top:6px}
+.anTable td,.anTable th{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left}
+.anSeg{margin-left:auto;display:flex;gap:4px}
+.anSeg button{background:var(--card2);border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer}
+.anSeg button.on{color:var(--text);border-color:var(--line2);background:var(--line)}
+.anTwo{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.anTbl{width:100%;border-collapse:collapse;font-size:13px}
+.anTbl caption{text-align:left;color:var(--muted);font-size:12px;padding-bottom:6px}
+.anTbl th{color:var(--dim);font-weight:500;text-align:left;padding:6px;border-bottom:1px solid var(--line)}
+.anTbl td{padding:6px;border-bottom:1px solid var(--line);color:var(--text);font-variant-numeric:tabular-nums}
+.anTbl td.down{color:var(--green)}.anTbl td.up{color:var(--amber)}
+.anTbl a{color:var(--cyan);display:inline-flex;align-items:center;gap:4px;text-decoration:none}
+@media (max-width:820px){.anTiles{grid-template-columns:1fr 1fr}.anGrid,.anTwo{grid-template-columns:1fr}.anBarRow{grid-template-columns:90px 1fr 56px}.anTbl.wide th:nth-child(2),.anTbl.wide td:nth-child(2){display:none}}

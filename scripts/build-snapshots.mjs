@@ -129,9 +129,67 @@ function saveModel(item, payload) {
   const prev = readJson(file, null);
   const low = list => list.length ? Math.min(...list.map(x => x.totalPrice)) : null;
   const res = rest.results || [];
-  const point = { at: rest.searchedAt || now(), low: low(res), newLow: low(res.filter(x => x.condition === "new")), usedLow: low(res.filter(x => x.condition !== "new")) };
+  const point = { at: rest.searchedAt || now(), low: low(res), newLow: low(res.filter(x => x.condition === "new")), usedLow: low(res.filter(x => x.condition !== "new")), usedMed: rest.market?.conditionMedians?.used ?? null };
   const history = [...(prev?.history || []), point].filter(p => p.low != null).slice(-90);
   writeFileSync(file, JSON.stringify({ model: item.name, query: item.query, category: item.category, msrp: item.msrp || 0, ...rest, history }));
+}
+
+// Analytics page data (one small file, rebuilt after each refresh): what is
+// tracked, where prices moved, where the flip margins are, price histories.
+export async function buildAnalytics(models, state, deals, dataDir = DATA) {
+  const ts = Date.now();
+  const totals = { models: 0, listings: 0, byStore: {}, byCondition: { new: 0, used: 0 } };
+  const groups = {}, movers = [], margins = [], trends = [];
+  const prio = new Set(PRIORITY);
+  const groupOf = new Map();
+  for (const g of PART_GROUPS) for (const s of g.series) for (const i of s.items) if (!groupOf.has(i.name)) groupOf.set(i.name, g.label || g.id);
+  const lowAt = (hist, hoursAgo, field) => {
+    const cutoff = ts - hoursAgo * 3600000;
+    const older = hist.filter(p => Date.parse(p.at) <= cutoff && p[field] != null);
+    return older.length ? older[older.length - 1][field] : null;
+  };
+  for (const item of models) {
+    const snap = readJson(join(dataDir, "models", modelSlug(item.name) + ".json"), null);
+    const res = snap?.results || [];
+    if (!res.length) continue;
+    totals.models++; totals.listings += res.length;
+    const g = groupOf.get(item.name) || "Other";
+    (groups[g] ||= { models: 0, listings: 0 }).models++; groups[g].listings += res.length;
+    for (const x of res) {
+      totals.byStore[x.source || "Other"] = (totals.byStore[x.source || "Other"] || 0) + 1;
+      totals.byCondition[x.condition === "new" ? "new" : "used"]++;
+    }
+    const hist = (snap.history || []).filter(p => p.low != null);
+    // Typical used price when recorded (one odd listing can't swing it),
+    // else the lowest used / lowest price.
+    const field = hist.filter(p => p.usedMed != null).length >= 2 ? "usedMed" : hist.some(p => p.usedLow != null) ? "usedLow" : "low";
+    const nowLow = hist.length ? hist[hist.length - 1][field] : null;
+    for (const [h, key] of [[24, "d1"], [24 * 7, "d7"]]) {
+      const was = lowAt(hist, h, field);
+      if (nowLow && was) movers.push({ model: item.name, group: g, window: key, was, now: nowLow, pct: Math.round((nowLow - was) / was * 1000) / 10, basis: field === "usedMed" ? "used median" : field === "usedLow" ? "lowest used" : "lowest" });
+    }
+    const usedMed = snap.market?.conditionMedians?.used;
+    const usedN = snap.market?.byCondition?.used || 0;
+    // Cheapest used listing that isn't a bait price (>= 50% of the used median).
+    const cheapest = res.filter(x => x.condition !== "new" && usedMed && x.totalPrice >= usedMed * 0.5)
+      .reduce((m, x) => (x.totalPrice < (m?.totalPrice ?? Infinity) ? x : m), null);
+    if (usedMed && usedN >= 5 && cheapest && cheapest.totalPrice < usedMed) {
+      margins.push({ model: item.name, group: g, market: Math.round(usedMed * 100) / 100, cheapest: cheapest.totalPrice, margin: Math.round((usedMed - cheapest.totalPrice) * 100) / 100, pct: Math.round((usedMed - cheapest.totalPrice) / usedMed * 100), url: cheapest.url, source: cheapest.source, title: cheapest.title, usedComps: usedN });
+    }
+    if (prio.has(item.name) && hist.length >= 2) trends.push({ model: item.name, group: g, msrp: item.msrp || 0, points: hist.slice(-60).map(p => [p.at, p.usedLow ?? null, p.newLow ?? null, p.usedMed ?? null]) });
+  }
+  const pick = (w, dir) => movers.filter(m => m.window === w && (dir < 0 ? m.pct < 0 : m.pct > 0)).sort((a, b) => dir * (b.pct - a.pct)).slice(0, 12);
+  const sections = {};
+  for (const d of deals) sections[d.section] = (sections[d.section] || 0) + 1;
+  return {
+    updatedAt: now(), totals, groups,
+    drops: { d1: pick("d1", -1), d7: pick("d7", -1) }, rises: { d1: pick("d1", 1), d7: pick("d7", 1) },
+    margins: margins.sort((a, b) => b.margin - a.margin).slice(0, 20),
+    deals: { count: deals.length, bySection: sections, top: deals.slice(0, 8).map(d => ({ title: d.title, price: d.price, market: d.market, underPct: d.underPct, profit: d.profit, url: d.url, model: d.model, image: d.image || null })) },
+    alertsSent: (state.alerted || []).length,
+    runs: (state.runs || []).slice(0, 24).map(r => ({ at: r.at, free: r.free || 0, newegg: r.newegg || 0, amazon: r.amazon || 0, aliexpress: r.aliexpress || 0, alerts: r.alerts || 0 })),
+    trends
+  };
 }
 
 async function pool(list, size, fn) {
@@ -354,9 +412,15 @@ async function main() {
   if (!changed) { console.log("nothing to refresh this run", JSON.stringify(log)); return; }
   state.runs = [log, ...(state.runs || [])].slice(0, 30);
   state.updatedAt = now();
+  try {
+    const deals = await findGreatDeals(DATA).catch(() => []);
+    writeFileSync(join(DATA, "analytics.json"), JSON.stringify(await buildAnalytics(models, state, deals)));
+  } catch (e) { console.log("analytics: " + e.message); }
   writeFileSync(join(DATA, "state.json"), JSON.stringify(state, null, 1));
   writeFileSync(join(DATA, "links.json"), JSON.stringify(links));
   console.log(JSON.stringify(log));
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+export { catalog };
+// Run only when executed directly (tests import buildAnalytics).
+if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "/").split("/").pop())) main().catch(e => { console.error(e); process.exit(1); });

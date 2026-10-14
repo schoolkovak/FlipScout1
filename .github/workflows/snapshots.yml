@@ -56,7 +56,7 @@ jobs:
         if: steps.refresh.outputs.changed == 'true'
         run: |
           rm -rf publish && mkdir publish
-          cp -r snapdata/models snapdata/links.json snapdata/state.json snapdata/combos.json publish/ 2>/dev/null || true
+          cp -r snapdata/models snapdata/links.json snapdata/state.json snapdata/combos.json snapdata/analytics.json publish/ 2>/dev/null || true
           # The data branch is not a site: keep Vercel from trying to deploy it.
           echo '{"git":{"deploymentEnabled":false}}' > publish/vercel.json
           cd publish
@@ -96,7 +96,7 @@ jobs:
         if: steps.refresh.outputs.changed == 'true'
         run: |
           rm -rf publish && mkdir publish
-          cp -r snapdata/models snapdata/links.json snapdata/state.json snapdata/combos.json publish/ 2>/dev/null || true
+          cp -r snapdata/models snapdata/links.json snapdata/state.json snapdata/combos.json snapdata/analytics.json publish/ 2>/dev/null || true
           echo '{"git":{"deploymentEnabled":false}}' > publish/vercel.json
           cd publish
           git init -q -b data
