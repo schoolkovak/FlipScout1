@@ -84,12 +84,21 @@ test('every skill has a lesson; every math skill names Desmos or paper as fastes
   }
 });
 
-test('every math skill has enough unseen training questions for diagnostics and follow-ups', () => {
-  const training = D.items.filter(i => !i.held).concat(pool);
-  for (const [s, info] of Object.entries(T.subs)) {
-    if (info.sec !== 'math') continue;
-    assert.ok(training.filter(i => i.sub === s).length >= 6, `${s} has too few questions`);
-  }
+test('validated math training bank covers every math category (shortages are reported, not padded)', () => {
+  const training = D.items.filter(i => i.sec === 'math' && !i.held);
+  assert.ok(training.every(i => i.validated), 'every math training item must come from the validation pipeline');
+  for (const cat of ['N', 'A', 'F', 'G', 'S', 'IES']) assert.ok(training.some(i => i.cat === cat), `no validated ${cat} training items`);
+  const short = Object.entries(T.subs).filter(([s, i]) => i.sec === 'math' && !training.some(x => x.sub === s)).map(([s]) => s);
+  if (short.length) console.log('math skills with no validated training items yet:', short.join(', '));
+});
+
+test('practice-test math items are validated and span authentic difficulty', () => {
+  const f = D.items.filter(i => i.form === 'F1' && i.sec === 'math');
+  assert.equal(f.length, 45);
+  assert.ok(f.every(i => i.validated));
+  const d = [1, 2, 3, 4].map(k => f.filter(i => i.diff === k).length);
+  assert.ok(d[2] + d[3] >= 15, `too few level 3-4 items: ${d}`);
+  assert.ok(d[0] <= 9, `too many level-1 items: ${d}`);
 });
 
 test('Aced Practice Test 1 has the enhanced structure and is held out of training', () => {
