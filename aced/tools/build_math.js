@@ -24,7 +24,8 @@ new Function('window', fs.readFileSync(path.join(root, 'data/taxonomy.js'), 'utf
 const TAX = win.ACED_DATA.taxonomy;
 const CAT = { n: 'N', a: 'A', f: 'F', g: 'G', s: 'S', ies: 'IES' };
 
-const strip = s => String(s).replace(/<[^>]+>/g, '').replace(/−/g, '-').replace(/[$,]/g, '').trim();
+const strip = s => String(s).replace(/&minus;/g, '-').replace(/<sup>(\d+)<\/sup>\s*&frasl;\s*<sub>(\d+)<\/sub>/g, '$1/$2').replace(/&frasl;/g, '/')
+  .replace(/(\d+(?:\.\d+)?)<sup>(-?\d+)<\/sup>/g, (m, b, e) => String(Math.pow(+b, +e))).replace(/<sup>/g, '^').replace(/<[^>]+>/g, '').replace(/−/g, '-').replace(/[$,]/g, '').trim();
 // Numeric value of a choice when it is a plain number, fraction, percent, or kπ; otherwise null.
 function num(c) {
   let s = strip(c).replace(/\s*(cm|in|ft|m|mi|km|kg|lb|g|s|min|hours?|square|cubic|units?|degrees?|°|feet|inches|meters|dollars)\b.*$/i, '').trim();
@@ -84,7 +85,8 @@ function place(it) {
 
 // Reword standard convention phrases that also occur verbatim in official tests, so no 8-word sequence matches.
 const PHRASES = [[/In the standard \(x,\s*y\) coordinate plane/g, 'In the xy-plane'], [/in the standard \(x,\s*y\) coordinate plane/g, 'in the xy-plane'], [/Which of the following numbers is irrational\?/g, 'Which of these values is irrational?'], [/Which of the following is equivalent to/g, 'Which expression is equivalent to'],
-  [/Which of the following expressions is equivalent to/g, 'Which expression is equivalent to'], [/Which of the following gives/g, 'Which choice gives']];
+  [/Which of the following expressions is equivalent to/g, 'Which expression is equivalent to'], [/Which of the following gives/g, 'Which choice gives'],
+  [/Which of the following expressions gives/g, 'Which expression gives'], [/What is the perimeter, in inches, of the/g, 'How long, in inches, is the perimeter of the']];
 function toItem(it, id, extra) {
   for (const [re, to] of PHRASES) it.q = it.q.replace(re, to);
   place(it);
@@ -97,7 +99,15 @@ function toItem(it, id, extra) {
 
 if (APPEND) {
   const old = existing.filter(i => !i.held);
-  old.forEach(i => count[i.a]++);
+  for (const i of old) {
+    // keep numeric choice sets in ascending order (earlier builds missed &minus; / &frasl; values)
+    const vals = i.c.map(num);
+    if (vals.every(x => x != null)) {
+      const order = [0, 1, 2, 3].sort((a, b) => vals[a] - vals[b]);
+      i.c = order.map(k => i.c[k]); i.w = order.map(k => (i.w || [])[k] || ''); i.a = order.indexOf(i.a);
+    }
+    count[i.a]++;
+  }
   const added = ok.map((it, i) => toItem(Object.assign({}, it), `M3-${it.slot}`, { n: old.length + i + 1 }));
   const bank = old.concat(added);
   const summary = { validatedFromWorkflow: (src.passed || []).length, failedInWorkflow: (src.failed || []).length, rejectedLocally: report.rejected.length, added: added.length, bankItems: bank.length,

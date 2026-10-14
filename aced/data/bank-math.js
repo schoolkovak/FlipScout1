@@ -136,17 +136,17 @@ window.ACED_DATA = window.ACED_DATA || {};
   "q": "For what value of k does the system of equations below have no solution?<br>4x &minus; ky = 3<br>6x &minus; 9y = 2",
   "c": [
    "&minus;6",
+   "6",
    "9",
-   "<sup>27</sup>&frasl;<sub>2</sub>",
-   "6"
+   "<sup>27</sup>&frasl;<sub>2</sub>"
   ],
-  "a": 3,
+  "a": 1,
   "e": "A linear system has no solution when the lines have equal slopes but different intercepts. The x- and y-coefficients must be in the same ratio: 4/6 = (&minus;k)/(&minus;9), so k = 9 &middot; 4/6 = 6. Check: with k = 6, multiplying the first equation by 3/2 gives 6x &minus; 9y = 4.5, which differs from 6x &minus; 9y = 2. The lines are parallel and distinct, so there is no solution.",
   "w": [
    "Sign slip: set 4/6 = k/(&minus;9) and got k = &minus;6.",
+   "",
    "Matched the y-coefficients directly without scaling for the x-coefficients, setting &minus;k = &minus;9.",
-   "Flipped one ratio: 6/4 = k/9, so k = 27/2.",
-   ""
+   "Flipped one ratio: 6/4 = k/9, so k = 27/2."
   ],
   "strat": "Set the coefficient ratios equal, 4/6 = k/9, so k = 6. Then confirm that the constants are not in the same ratio.",
   "desmos": "Graph both equations with a slider for k and look for parallel lines. This is slower than setting the ratios equal.",
@@ -619,6 +619,3556 @@ window.ACED_DATA = window.ACED_DATA || {};
   "fastest": "paper",
   "validated": "solver-verified",
   "n": 14
+ },
+ {
+  "id": "M3-100",
+  "sec": "math",
+  "sub": "m.n.exponents",
+  "cat": "N",
+  "model": false,
+  "diff": 2,
+  "steps": 3,
+  "t": 67,
+  "q": "A backup drive has a storage capacity of 8<sup>5</sup> megabytes. Each video file in an archive takes up exactly 4<sup>3</sup> megabytes. What is the greatest number of these video files that the drive can hold?",
+  "c": [
+   "2<sup>2</sup>",
+   "2<sup>3</sup>",
+   "2<sup>9</sup>",
+   "2<sup>21</sup>"
+  ],
+  "a": 2,
+  "e": "Write both as powers of 2: 8<sup>5</sup> = (2<sup>3</sup>)<sup>5</sup> = 2<sup>15</sup> and 4<sup>3</sup> = (2<sup>2</sup>)<sup>3</sup> = 2<sup>6</sup>. The number of files is 2<sup>15</sup> ÷ 2<sup>6</sup> = 2<sup>9</sup> = 512.",
+  "w": [
+   "Divides the bases and subtracts the exponents: (8÷4)<sup>5−3</sup> = 2<sup>2</sup>.",
+   "Adds exponents in a power of a power: (2<sup>3</sup>)<sup>5</sup> taken as 2<sup>8</sup> and (2<sup>2</sup>)<sup>3</sup> as 2<sup>5</sup>, giving 2<sup>3</sup>.",
+   "",
+   "Multiplies instead of dividing: 2<sup>15</sup> · 2<sup>6</sup> = 2<sup>21</sup>."
+  ],
+  "strat": "Rewrite 8 and 4 as powers of 2, multiply exponents, then subtract exponents to divide.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 15
+ },
+ {
+  "id": "M3-102",
+  "sec": "math",
+  "sub": "m.n.real",
+  "cat": "N",
+  "model": false,
+  "diff": 3,
+  "steps": 2,
+  "t": 67,
+  "q": "Rectangle ABCD is shown below with diagonal AC. The length AB = p is a rational number, and the length BC = q is an irrational number. Which of the following quantities MUST be irrational?",
+  "c": [
+   "The value of q<sup>2</sup>",
+   "The value of p<sup>2</sup> + q<sup>2</sup>",
+   "The length of diagonal AC",
+   "The perimeter of ABCD"
+  ],
+  "a": 3,
+  "e": "The perimeter is 2p + 2q. If it were a rational number r, then q = (r − 2p)/2 would be rational, a contradiction; so the perimeter must be irrational. The others can be rational: with p = 1 and q = √3, q<sup>2</sup> = 3, p<sup>2</sup> + q<sup>2</sup> = 4, and AC = √4 = 2.",
+  "w": [
+   "Assumes the square of an irrational number stays irrational; q = √3 gives q<sup>2</sup> = 3.",
+   "Same misconception applied to the sum of squares; p = 1, q = √3 gives 4.",
+   "Assumes any length involving an irrational side is irrational; p = 1, q = √3 gives AC = 2.",
+   ""
+  ],
+  "strat": "Test each choice with the counterexample p = 1, q = √3; only the perimeter cannot become rational.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "solver-verified",
+  "n": 16,
+  "fig": {
+   "type": "geometry",
+   "points": {
+    "A": [
+     0,
+     0
+    ],
+    "B": [
+     6,
+     0
+    ],
+    "C": [
+     6,
+     3
+    ],
+    "D": [
+     0,
+     3
+    ]
+   },
+   "segments": [
+    [
+     "A",
+     "C"
+    ]
+   ],
+   "polygons": [
+    [
+     "A",
+     "B",
+     "C",
+     "D"
+    ]
+   ],
+   "rightAngles": [
+    [
+     "A",
+     "B",
+     "C"
+    ]
+   ],
+   "labels": [
+    {
+     "at": [
+      3,
+      -0.5
+     ],
+     "text": "p"
+    },
+    {
+     "at": [
+      6.5,
+      1.5
+     ],
+     "text": "q"
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-104",
+  "sec": "math",
+  "sub": "m.n.complex",
+  "cat": "N",
+  "model": false,
+  "diff": 3,
+  "steps": 3,
+  "t": 67,
+  "q": "For i = √(−1), the real numbers a and b satisfy the equation (a + 2i)(1 − i) = 7 + bi. What is the value of b ?",
+  "c": [
+   "−7",
+   "−3",
+   "3",
+   "5"
+  ],
+  "a": 1,
+  "e": "Expand: (a + 2i)(1 − i) = a − ai + 2i − 2i<sup>2</sup> = (a + 2) + (2 − a)i. Matching real parts: a + 2 = 7, so a = 5. Matching imaginary parts: b = 2 − a = 2 − 5 = −3.",
+  "w": [
+   "Uses i<sup>2</sup> = 1: real part a − 2 = 7 gives a = 9, so b = 2 − 9 = −7.",
+   "",
+   "Sign slip on the imaginary part: writes b = a − 2 = 3.",
+   "Partial answer: reports a = 5 instead of b."
+  ],
+  "strat": "Expand, set real parts equal to find a, then read b from the imaginary part.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 17
+ },
+ {
+  "id": "M3-105",
+  "sec": "math",
+  "sub": "m.n.complex",
+  "cat": "N",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "In an alternating-current circuit, voltage V, current I, and impedance Z are complex numbers related by V = IZ, where i = √(−1). If the current is 2 + i amperes and the impedance is 3 − 4i ohms, what is the voltage, in volts?",
+  "c": [
+   "2 − 5i",
+   "6 − 4i",
+   "10 + 5i",
+   "10 − 5i"
+  ],
+  "a": 3,
+  "e": "V = (2 + i)(3 − 4i) = 6 − 8i + 3i − 4i<sup>2</sup> = 6 − 5i + 4 = 10 − 5i.",
+  "w": [
+   "Treats i<sup>2</sup> as +1: 6 − 5i − 4 = 2 − 5i.",
+   "Multiplies only real parts and only imaginary coefficients: (2)(3) and (1)(−4) giving 6 − 4i.",
+   "Sign slip combining the middle terms: −8i + 3i taken as +5i.",
+   ""
+  ],
+  "strat": "FOIL the product and replace i<sup>2</sup> with −1.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "solver-verified",
+  "n": 18
+ },
+ {
+  "id": "M3-106",
+  "sec": "math",
+  "sub": "m.n.vecmat",
+  "cat": "N",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "The table below shows the numbers of T-shirts and caps sold at 2 stores on one day. Matrix A is the 2 × 2 matrix whose rows are the North and South rows of the table, in that order, with the T-shirt column first. Matrix B is the 2 × 1 matrix whose first row is 15 and second row is 10, giving the prices, in dollars, of a T-shirt and a cap, respectively. What is the value of the entry in row 2 of the product AB ?",
+  "c": [
+   "650",
+   "700",
+   "775",
+   "850"
+  ],
+  "a": 2,
+  "e": "Row 2 of AB is (row 2 of A) · B = 25(15) + 40(10) = 375 + 400 = 775, the South store's total sales in dollars.",
+  "w": [
+   "Uses row 1 (North): 30(15) + 20(10) = 650.",
+   "Uses column 2 of A instead of row 2: 20(15) + 40(10) = 700.",
+   "",
+   "Pairs the wrong price with each item: 25(10) + 40(15) = 850."
+  ],
+  "strat": "Dot row 2 of A (South: 25, 40) with the price column (15, 10).",
+  "desmos": "Desmos matrix calculator can multiply, but entering the matrices is slower than one dot product.",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 19,
+  "fig": {
+   "type": "table",
+   "columns": [
+    "Store",
+    "T-shirts",
+    "Caps"
+   ],
+   "rows": [
+    [
+     "North",
+     "30",
+     "20"
+    ],
+    [
+     "South",
+     "25",
+     "40"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M3-107",
+  "sec": "math",
+  "sub": "m.n.vecmat",
+  "cat": "N",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "In the xy-plane below, points A(1,1), B(4,3), and C(6,−1) are shown. Vector <b>u</b> goes from A to B, and vector <b>v</b> goes from B to C. What is the component form of <b>u</b> + <b>v</b> ?",
+  "c": [
+   "⟨5, −2⟩",
+   "⟨−5, 2⟩",
+   "⟨5, 6⟩",
+   "⟨10, 2⟩"
+  ],
+  "a": 0,
+  "e": "<b>u</b> = ⟨4 − 1, 3 − 1⟩ = ⟨3, 2⟩ and <b>v</b> = ⟨6 − 4, −1 − 3⟩ = ⟨2, −4⟩. So <b>u</b> + <b>v</b> = ⟨5, −2⟩ (the vector from A to C).",
+  "w": [
+   "",
+   "Direction slip: subtracts terminal from initial point, giving the vector from C to A.",
+   "Sign slip on v's y-component: uses −1 − 3 = +4, giving ⟨3 + 2, 2 + 4⟩.",
+   "Adds the coordinates of the endpoints B and C instead of finding component differences."
+  ],
+  "strat": "Find each vector as terminal minus initial, then add, or go straight from A to C.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "solver-verified",
+  "n": 20,
+  "fig": {
+   "type": "geometry",
+   "points": {
+    "A": [
+     1,
+     1
+    ],
+    "B": [
+     4,
+     3
+    ],
+    "C": [
+     6,
+     -1
+    ]
+   },
+   "segments": [
+    [
+     "A",
+     "B"
+    ],
+    [
+     "B",
+     "C"
+    ]
+   ],
+   "labels": [
+    {
+     "at": [
+      0.4,
+      1.4
+     ],
+     "text": "A(1,1)"
+    },
+    {
+     "at": [
+      4,
+      3.5
+     ],
+     "text": "B(4,3)"
+    },
+    {
+     "at": [
+      6.4,
+      -1.4
+     ],
+     "text": "C(6,−1)"
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-108",
+  "sec": "math",
+  "sub": "m.a.linear",
+  "cat": "A",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "The line graphed in the xy-plane below passes through the points (0,4) and (3,−2). If the line is extended, what is the x-coordinate of the point on the line whose y-coordinate is −10 ?",
+  "c": [
+   "−7",
+   "3",
+   "7",
+   "28"
+  ],
+  "a": 2,
+  "e": "The slope is (−2 − 4)/(3 − 0) = −2 and the y-intercept is 4, so y = −2x + 4. Setting −2x + 4 = −10 gives −2x = −14, so x = 7.",
+  "w": [
+   "Sign slip on the slope: uses y = 2x + 4, so 2x = −14 and x = −7.",
+   "Sign slip when solving: writes −2x = −10 + 4 = −6, so x = 3.",
+   "",
+   "Inverts the slope as run over rise: uses y = −x/2 + 4, so x = 28."
+  ],
+  "strat": "Read slope −2 and intercept 4 from the graph, then solve −2x + 4 = −10.",
+  "desmos": "Graph y = −2x + 4 and y = −10 and find the intersection.",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 21,
+  "fig": {
+   "type": "line",
+   "x": {
+    "label": "x"
+   },
+   "y": {
+    "label": "y"
+   },
+   "series": [
+    {
+     "name": "line",
+     "points": [
+      [
+       -1,
+       6
+      ],
+      [
+       0,
+       4
+      ],
+      [
+       1,
+       2
+      ],
+      [
+       2,
+       0
+      ],
+      [
+       3,
+       -2
+      ],
+      [
+       4,
+       -4
+      ]
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-103",
+  "sec": "math",
+  "sub": "m.n.real",
+  "cat": "N",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "Part of the graph of the linear function f is shown in the xy-plane below. For which of the following values of x is √f(x) a rational number?",
+  "c": [
+   "2",
+   "3",
+   "4",
+   "7"
+  ],
+  "a": 2,
+  "e": "The graph passes through (0, 1) and (1, 3), so the slope is 2 and the y-intercept is 1. That gives f(x) = 2x + 1. Then f(2) = 5, f(3) = 7, f(4) = 9, and f(7) = 15. Only 9 is a perfect square, and √9 = 3 is rational. √5, √7, and √15 are irrational, so the answer is x = 4.",
+  "w": [
+   "Drops the y-intercept and uses f(x) = 2x. Then f(2) = 4, and √4 = 2 is rational.",
+   "Misreads the slope as 1 and uses f(x) = x + 1. Then f(3) = 4, and √4 = 2 is rational.",
+   "",
+   "Swaps the slope and the y-intercept and uses f(x) = x + 2. Then f(7) = 9, and √9 = 3 is rational."
+  ],
+  "strat": "Read the intercept (1) and the slope (2) from the graph to get f(x) = 2x + 1. Then find the choice where 2x + 1 is a perfect square.",
+  "desmos": "Enter f(x) = 2x + 1 (taken from the graph) and a table of sqrt(f(x)) at x = 2, 3, 4, 7. Only x = 4 gives a whole number, 3.",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 22,
+  "fig": {
+   "type": "line",
+   "x": {
+    "label": "x"
+   },
+   "y": {
+    "label": "y"
+   },
+   "series": [
+    {
+     "name": "y = f(x)",
+     "points": [
+      [
+       -1,
+       -1
+      ],
+      [
+       0,
+       1
+      ],
+      [
+       1,
+       3
+      ],
+      [
+       2,
+       5
+      ]
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-110",
+  "sec": "math",
+  "sub": "m.a.abs",
+  "cat": "A",
+  "model": false,
+  "diff": 3,
+  "steps": 3,
+  "t": 67,
+  "q": "A factory makes metal rods. Customer P accepts a rod of length L millimeters only if |L − 250| ≤ 1.5. Customer Q accepts a rod only if |L − 251| ≤ 2. Which inequality describes all lengths L of rods that are acceptable to <i>both</i> customers?",
+  "c": [
+   "|L − 250.5| ≤ 1.75",
+   "|L − 250.25| ≤ 2.5",
+   "|L − 250.75| ≤ 2.25",
+   "|L − 250.25| ≤ 1.25"
+  ],
+  "a": 3,
+  "e": "Customer P: 248.5 ≤ L ≤ 251.5. Customer Q: 249 ≤ L ≤ 253. Both must hold, so take the intersection: 249 ≤ L ≤ 251.5. The midpoint is (249 + 251.5)/2 = 250.25 and the half-width is (251.5 − 249)/2 = 1.25, which gives |L − 250.25| ≤ 1.25.",
+  "w": [
+   "Averaged the two centers and the two tolerances instead of intersecting the intervals",
+   "Found the correct center but used the full interval width, 2.5, instead of half of it",
+   "Used the union 248.5 ≤ L ≤ 253 (either customer) instead of the intersection",
+   ""
+  ],
+  "strat": "Turn each inequality into an interval, intersect the intervals, then rewrite the result as |L − midpoint| ≤ half-width.",
+  "desmos": "You can graph both inequalities in L on a number line (as x) and see where they overlap, but you still have to convert by hand. Paper is faster.",
+  "fastest": "paper",
+  "validated": "solver-verified",
+  "n": 23
+ },
+ {
+  "id": "M3-111",
+  "sec": "math",
+  "sub": "m.a.abs",
+  "cat": "A",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "A thermostat is set to 72°F. A temperature reading t, in degrees Fahrenheit, is considered acceptable if |t − 72| ≤ 3. The table below shows 7 readings taken during one day. How many of the 7 readings are acceptable?",
+  "c": [
+   "2",
+   "3",
+   "5",
+   "6"
+  ],
+  "a": 2,
+  "e": "|t − 72| ≤ 3 means 69 ≤ t ≤ 75, endpoints included. The readings 70, 75, 71, 69, and 74 fall in this interval; 68 and 76 do not. That makes 5 readings.",
+  "w": [
+   "Counted the readings that are NOT acceptable (68 and 76)",
+   "Treated the inequality as strict and excluded the endpoints 69 and 75",
+   "Ignored the absolute value and used only t − 72 ≤ 3 (t ≤ 75), which wrongly counts 68",
+   ""
+  ],
+  "strat": "Rewrite the inequality as 69 ≤ t ≤ 75, then count the table values in that interval, endpoints included.",
+  "desmos": "Not needed. Counting the values by sight is faster.",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 24,
+  "fig": {
+   "type": "table",
+   "columns": [
+    "Reading",
+    "Temperature (°F)"
+   ],
+   "rows": [
+    [
+     "1",
+     "68"
+    ],
+    [
+     "2",
+     "70"
+    ],
+    [
+     "3",
+     "75"
+    ],
+    [
+     "4",
+     "76"
+    ],
+    [
+     "5",
+     "71"
+    ],
+    [
+     "6",
+     "69"
+    ],
+    [
+     "7",
+     "74"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M3-112",
+  "sec": "math",
+  "sub": "m.a.systems",
+  "cat": "A",
+  "model": false,
+  "diff": 2,
+  "steps": 3,
+  "t": 67,
+  "q": "In rectangle ABCD shown below, the side lengths, in centimeters, are AB = 3x − y, BC = x + y, CD = 2x + 4, and DA = 10. What is the length of AB, in centimeters?",
+  "c": [
+   "7",
+   "10",
+   "18",
+   "24"
+  ],
+  "a": 2,
+  "e": "Opposite sides of a rectangle are equal. AB = CD gives 3x − y = 2x + 4, so x − y = 4. BC = DA gives x + y = 10. Add the two equations: 2x = 14, so x = 7 and y = 3. Then AB = 3(7) − 3 = 18.",
+  "w": [
+   "Stopped after finding x = 7 and reported it as the length",
+   "Read off the length of BC (or DA), 10, instead of AB",
+   "",
+   "Made a sign slip when substituting, computing 3x + y = 21 + 3 = 24"
+  ],
+  "strat": "Set each pair of opposite sides equal, add the two equations to get x, find y, then substitute into the expression for AB.",
+  "desmos": "You can enter x − y = 4 and x + y = 10 and read the intersection (7, 3), but writing the equations takes longer than solving them by hand.",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 25,
+  "fig": {
+   "type": "geometry",
+   "points": {
+    "A": [
+     0,
+     0
+    ],
+    "B": [
+     9,
+     0
+    ],
+    "C": [
+     9,
+     5
+    ],
+    "D": [
+     0,
+     5
+    ]
+   },
+   "polygons": [
+    [
+     "A",
+     "B",
+     "C",
+     "D"
+    ]
+   ],
+   "rightAngles": [
+    [
+     "D",
+     "A",
+     "B"
+    ],
+    [
+     "A",
+     "B",
+     "C"
+    ],
+    [
+     "B",
+     "C",
+     "D"
+    ],
+    [
+     "C",
+     "D",
+     "A"
+    ]
+   ],
+   "labels": [
+    {
+     "at": [
+      4.5,
+      -0.6
+     ],
+     "text": "3x − y"
+    },
+    {
+     "at": [
+      10,
+      2.5
+     ],
+     "text": "x + y"
+    },
+    {
+     "at": [
+      4.5,
+      5.6
+     ],
+     "text": "2x + 4"
+    },
+    {
+     "at": [
+      -0.8,
+      2.5
+     ],
+     "text": "10"
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-113",
+  "sec": "math",
+  "sub": "m.a.poly",
+  "cat": "A",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "The graph of the polynomial function y = f(x) is shown in the xy-plane below. The graph crosses the x-axis at x = −3, x = 1, and x = 4, and it crosses the y-axis at (0,12). Which of the following could define f ?",
+  "c": [
+   "f(x) = (x + 3)(x − 1)(x − 4)",
+   "f(x) = (x − 3)(x + 1)(x + 4)",
+   "f(x) = −(x + 3)(x − 1)(x − 4)",
+   "f(x) = 2(x + 3)(x − 1)(x − 4)"
+  ],
+  "a": 0,
+  "e": "A zero at x = r means a factor of (x − r), so the zeros −3, 1, and 4 give the factors (x + 3), (x − 1), and (x − 4). Check the y-intercept: (0 + 3)(0 − 1)(0 − 4) = 12, which matches. The graph also rises to the right, so the leading coefficient is positive.",
+  "w": [
+   "",
+   "Sign slip: wrote (x − r) as (x + r), so the zeros come out as 3, −1, and −4",
+   "Used the right factors but the wrong sign of the leading coefficient; the y-intercept is −12 and the end behavior is reversed",
+   "Matched the zeros but did not check the y-intercept; this gives 24, not 12"
+  ],
+  "strat": "Turn each zero into a factor, then check the y-intercept and the end behavior to choose the leading coefficient.",
+  "desmos": "Graph each choice and compare its zeros and y-intercept with the figure. This works, but it is slower than checking f(0) by hand.",
+  "fastest": "paper",
+  "validated": "solver-verified",
+  "n": 26,
+  "fig": {
+   "type": "line",
+   "x": {
+    "label": "x"
+   },
+   "y": {
+    "label": "y"
+   },
+   "series": [
+    {
+     "name": "y = f(x)",
+     "points": [
+      [
+       -3.5,
+       -16.875
+      ],
+      [
+       -3,
+       0
+      ],
+      [
+       -2.5,
+       11.375
+      ],
+      [
+       -2,
+       18
+      ],
+      [
+       -1.5,
+       20.625
+      ],
+      [
+       -1,
+       20
+      ],
+      [
+       -0.5,
+       16.875
+      ],
+      [
+       0,
+       12
+      ],
+      [
+       0.5,
+       6.125
+      ],
+      [
+       1,
+       0
+      ],
+      [
+       1.5,
+       -5.625
+      ],
+      [
+       2,
+       -10
+      ],
+      [
+       2.5,
+       -12.375
+      ],
+      [
+       3,
+       -12
+      ],
+      [
+       3.5,
+       -8.125
+      ],
+      [
+       4,
+       0
+      ],
+      [
+       4.5,
+       13.125
+      ],
+      [
+       5,
+       32
+      ]
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-114",
+  "sec": "math",
+  "sub": "m.a.poly",
+  "cat": "A",
+  "model": false,
+  "diff": 3,
+  "steps": 2,
+  "t": 67,
+  "q": "When the polynomial p(x) = 2x<sup>3</sup> − 5x<sup>2</sup> + kx + 4, where k is a constant, is divided by x − 2, the remainder is 10. What is the value of k ?",
+  "c": [
+   "−21",
+   "−15",
+   "0",
+   "5"
+  ],
+  "a": 3,
+  "e": "By the remainder theorem, the remainder from dividing by x − 2 equals p(2). So p(2) = 2(8) − 5(4) + 2k + 4 = 16 − 20 + 2k + 4 = 2k. Setting 2k = 10 gives k = 5.",
+  "w": [
+   "Evaluated p(−2) instead of p(2): −32 − 2k = 10 gives k = −21",
+   "Dropped the negative sign on −5x², computing 16 + 20 + 2k + 4 = 10, so k = −15",
+   "Treated x − 2 as a factor and set p(2) = 0 instead of 10, so k = 0",
+   ""
+  ],
+  "strat": "Use the remainder theorem: set p(2) equal to 10 and solve the resulting linear equation for k.",
+  "desmos": "Define p(x) with a slider for k and adjust it until p(2) = 10. This is slower than the one-line substitution.",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 27
+ },
+ {
+  "id": "M3-115",
+  "sec": "math",
+  "sub": "m.a.poly",
+  "cat": "A",
+  "model": false,
+  "diff": 1,
+  "steps": 1,
+  "t": 67,
+  "q": "A rectangular vegetable garden is (x + 5) meters long and (x − 2) meters wide. Which expression gives the area of the garden, in square meters?",
+  "c": [
+   "x<sup>2</sup> − 10",
+   "x<sup>2</sup> + 3x − 10",
+   "x<sup>2</sup> + 3x + 10",
+   "x<sup>2</sup> + 7x − 10"
+  ],
+  "a": 1,
+  "e": "Area = (x + 5)(x − 2) = x² − 2x + 5x − 10 = x² + 3x − 10.",
+  "w": [
+   "Multiplied only the first terms and the last terms, leaving out the middle term",
+   "",
+   "Lost the negative sign on the constant: (5)(−2) taken as +10",
+   "Combined the outer and inner terms as 5x + 2x, ignoring the sign of −2"
+  ],
+  "strat": "Area = length × width; expand with FOIL and combine the like terms.",
+  "desmos": "Not helpful.",
+  "fastest": "paper",
+  "validated": "solver-verified",
+  "n": 28
+ },
+ {
+  "id": "M3-116",
+  "sec": "math",
+  "sub": "m.a.radrat",
+  "cat": "A",
+  "model": false,
+  "diff": 2,
+  "steps": 3,
+  "t": 67,
+  "q": "The table below shows how many hours each of 3 printing machines takes, working alone, to print one batch of brochures. Each machine works at a constant rate. If all 3 machines work together, how many <i>minutes</i> will it take them to print one batch?",
+  "c": [
+   "45",
+   "80",
+   "260",
+   "780"
+  ],
+  "a": 1,
+  "e": "Rates in batches per hour: 1/6 + 1/3 + 1/4 = 2/12 + 4/12 + 3/12 = 9/12 = 3/4. The time t satisfies 1/t = 3/4, so t = 4/3 hours = 80 minutes.",
+  "w": [
+   "Did not take the reciprocal: used 3/4 hour = 45 minutes",
+   "",
+   "Averaged the three times: (6 + 3 + 4)/3 = 13/3 hours = 260 minutes",
+   "Added the three times: 13 hours = 780 minutes"
+  ],
+  "strat": "Add the reciprocals of the times, take the reciprocal of that sum to get the combined time, then convert hours to minutes.",
+  "desmos": "Typing 60/(1/6+1/3+1/4) gives 80 immediately, but the fractions are easy to do mentally, so the two are about equal.",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 29,
+  "fig": {
+   "type": "table",
+   "columns": [
+    "Machine",
+    "Hours to print one batch alone"
+   ],
+   "rows": [
+    [
+     "A",
+     "6"
+    ],
+    [
+     "B",
+     "3"
+    ],
+    [
+     "C",
+     "4"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M3-117",
+  "sec": "math",
+  "sub": "m.a.radrat",
+  "cat": "A",
+  "model": false,
+  "diff": 3,
+  "steps": 2,
+  "t": 67,
+  "q": "In right triangle ABC shown below, angle A is the right angle, AB = x units, AC = √(5x) units, and BC = 6 units. What is the value of x ?",
+  "c": [
+   "−9",
+   "1",
+   "4",
+   "9"
+  ],
+  "a": 2,
+  "e": "By the Pythagorean theorem, x² + (√(5x))² = 6², so x² + 5x = 36, or x² + 5x − 36 = 0. Factor: (x + 9)(x − 4) = 0, so x = −9 or x = 4. A length must be positive (and √(5x) must be defined), so x = 4. Check: 16 + 20 = 36.",
+  "w": [
+   "Kept the negative root of the quadratic, which cannot be a length",
+   "Did not square the hypotenuse: x² + 5x = 6 gives x = 1",
+   "",
+   "Sign slip when factoring: wrote (x − 9)(x + 4) and took x = 9"
+  ],
+  "strat": "Apply a² + b² = c². Squaring √(5x) leaves 5x, so solve the quadratic and reject the negative root.",
+  "desmos": "Graph y = x² + 5x and y = 36 and use the positive intersection (4, 36). Factoring is just as fast.",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 30,
+  "fig": {
+   "type": "geometry",
+   "points": {
+    "A": [
+     0,
+     0
+    ],
+    "B": [
+     4,
+     0
+    ],
+    "C": [
+     0,
+     4.47
+    ]
+   },
+   "polygons": [
+    [
+     "A",
+     "B",
+     "C"
+    ]
+   ],
+   "rightAngles": [
+    [
+     "B",
+     "A",
+     "C"
+    ]
+   ],
+   "labels": [
+    {
+     "at": [
+      2,
+      -0.5
+     ],
+     "text": "x"
+    },
+    {
+     "at": [
+      -0.9,
+      2.2
+     ],
+     "text": "√(5x)"
+    },
+    {
+     "at": [
+      2.4,
+      2.6
+     ],
+     "text": "6"
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-109",
+  "sec": "math",
+  "sub": "m.a.linear",
+  "cat": "A",
+  "model": false,
+  "diff": 3,
+  "steps": 3,
+  "t": 67,
+  "q": "In the equation below, a and b are constants. The equation has infinitely many solutions for x. What is the value of a + b?<br>3(ax − 2) + 5 = 12x + b − 4",
+  "c": [
+   "−1",
+   "4",
+   "7",
+   "11"
+  ],
+  "a": 2,
+  "e": "Distribute the left side: 3ax − 6 + 5 = 3ax − 1. For the equation to hold for every x, both sides must be the same expression. Match the x-coefficients: 3a = 12, so a = 4. Match the constant terms: −1 = b − 4, so b = 3. Then a + b = 4 + 3 = 7.",
+  "w": [
+   "Sign slip when isolating b: solved −1 = b − 4 as b = −1 − 4 = −5, so a + b = 4 + (−5) = −1",
+   "Partial answer: found a = 4 from the x-coefficients and stopped without finding b",
+   "",
+   "Did not distribute the 3 to the −2: the left constant became −2 + 5 = 3, so 3 = b − 4 gives b = 7 and a + b = 4 + 7 = 11"
+  ],
+  "strat": "Distribute, then require both sides to be identical: set the x-coefficients equal to get a, set the constants equal to get b, and add.",
+  "desmos": "Not helpful. You could use sliders for a and b on y = 3(ax−2)+5 and y = 12x+b−4 until the two lines coincide, but paper is faster.",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 31
+ },
+ {
+  "id": "M3-118",
+  "sec": "math",
+  "sub": "m.f.notation",
+  "cat": "F",
+  "model": false,
+  "diff": 4,
+  "steps": 4,
+  "t": 67,
+  "q": "The graph of y = f(x), shown below, has domain −4 ≤ x ≤ 4. It is made of 4 line segments whose endpoints are (−4,0), (−2,4), (0,0), (2,−2), and (4,2). How many values of x satisfy f(f(x)) = 0 ?",
+  "c": [
+   "2",
+   "3",
+   "4",
+   "5"
+  ],
+  "a": 3,
+  "e": "f(f(x)) = 0 means f(x) must be a zero of f. The zeros of f are x = −4, x = 0, and x = 3 (the segment from (2,−2) to (4,2) crosses the x-axis at x = 3). So solve f(x) = −4, f(x) = 0, and f(x) = 3. f(x) = −4 has no solutions because the range is −2 ≤ y ≤ 4. f(x) = 0 has 3 solutions: x = −4, 0, 3. f(x) = 3 has 2 solutions: x = −2.5 on the first segment and x = −1.5 on the second. The last segment only reaches y = 2. Total: 0 + 3 + 2 = 5.",
+  "w": [
+   "Counts only the solutions of f(x) = 3 and forgets that f(x) = 0 also works",
+   "Solves f(x) = 0 instead of f(f(x)) = 0",
+   "Misses the endpoint zero at x = −4, so uses only the zeros 0 and 3: 2 solutions from f(x) = 0 plus 2 from f(x) = 3",
+   ""
+  ],
+  "strat": "List the zeros of f (−4, 0, 3). For each zero z, count where the graph meets the horizontal line y = z, then add the counts.",
+  "desmos": "Enter the piecewise-linear f and graph y = −4, y = 0, y = 3 to count the intersections. This is no faster than reading the given graph.",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 32,
+  "fig": {
+   "type": "line",
+   "x": {
+    "label": "x"
+   },
+   "y": {
+    "label": "y"
+   },
+   "series": [
+    {
+     "name": "y = f(x)",
+     "points": [
+      [
+       -4,
+       0
+      ],
+      [
+       -2,
+       4
+      ],
+      [
+       0,
+       0
+      ],
+      [
+       2,
+       -2
+      ],
+      [
+       4,
+       2
+      ]
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-120",
+  "sec": "math",
+  "sub": "m.f.inverse",
+  "cat": "F",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "On a mountain climb, the function T(h) = 60 − 4h models the air temperature, in degrees Fahrenheit, at an altitude of h thousand feet above the base camp. A climber's thermometer reads 36°F. What is the value of T<sup>−1</sup>(36), which gives the climber's altitude, in thousands of feet above the base camp?",
+  "c": [
+   "−84",
+   "6",
+   "9",
+   "24"
+  ],
+  "a": 1,
+  "e": "T<sup>−1</sup>(36) is the input h that gives T(h) = 36. Solve 60 − 4h = 36: 4h = 24, so h = 6. The climber is 6 thousand feet above the base camp.",
+  "w": [
+   "Evaluates T(36) = 60 − 144 instead of the inverse",
+   "",
+   "Ignores the constant term and divides 36 by 4",
+   "Sign slip when inverting, computing (60 + 36)/4"
+  ],
+  "strat": "Read T<sup>−1</sup>(36) as the h for which T(h) = 36, then solve the linear equation.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 33
+ },
+ {
+  "id": "M3-121",
+  "sec": "math",
+  "sub": "m.f.quad",
+  "cat": "F",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "The table below gives selected values of the quadratic function f. What is the value of f(5) ?",
+  "c": [
+   "−3",
+   "1",
+   "5",
+   "15"
+  ],
+  "a": 2,
+  "e": "f(2) = f(4) = −1, so the axis of symmetry is x = 3 and the vertex is (3, −3). The input x = 5 is 2 units right of the axis, so it mirrors x = 1, which is 2 units left. So f(5) = f(1) = 5.",
+  "w": [
+   "Reflects across x = 4 as if the vertex were there, giving f(5) = f(3)",
+   "Assumes the last difference (+2) repeats, as if f were linear",
+   "",
+   "Off by one: gives f(6) = f(0) = 15 instead of f(5)"
+  ],
+  "strat": "Find the axis from the matching outputs f(2) = f(4), then reflect x = 5 to x = 1.",
+  "desmos": "Running a quadratic regression on the table works, but symmetry is faster.",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 34,
+  "fig": {
+   "type": "table",
+   "columns": [
+    "x",
+    "f(x)"
+   ],
+   "rows": [
+    [
+     "1",
+     "5"
+    ],
+    [
+     "2",
+     "−1"
+    ],
+    [
+     "3",
+     "−3"
+    ],
+    [
+     "4",
+     "−1"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M3-123",
+  "sec": "math",
+  "sub": "m.f.explog",
+  "cat": "F",
+  "model": true,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "The graph below shows the value, in dollars, of a rare coin at 3 times after it was bought. The value doubles every 4 years. If this pattern continues, what will the coin's value be, in dollars, 20 years after it was bought?",
+  "c": [
+   "500",
+   "800",
+   "1,250",
+   "1,600"
+  ],
+  "a": 3,
+  "e": "The graph shows a starting value of $50 that doubles every 4 years. 20 years is 20/4 = 5 doubling periods, so the value is 50 · 2<sup>5</sup> = 50 · 32 = $1,600.",
+  "w": [
+   "Multiplies by the number of periods instead of raising 2 to that power: 50 · 2 · 5",
+   "Off by one: uses only 4 doublings, 50 · 2<sup>4</sup>",
+   "Swaps the base and the exponent: 50 · 5<sup>2</sup>",
+   ""
+  ],
+  "strat": "Count the doubling periods (20/4 = 5), then multiply 50 by 2 five times.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 35,
+  "fig": {
+   "type": "scatter",
+   "x": {
+    "label": "Years since purchase"
+   },
+   "y": {
+    "label": "Value (dollars)"
+   },
+   "series": [
+    {
+     "name": "Coin value",
+     "points": [
+      [
+       0,
+       50
+      ],
+      [
+       4,
+       100
+      ],
+      [
+       8,
+       200
+      ]
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-124",
+  "sec": "math",
+  "sub": "m.f.transform",
+  "cat": "F",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "The point (4, −1) lies on the graph of y = f(x) in the xy-plane. Which of the following points must lie on the graph of y = 2f(x + 3) − 1 ?",
+  "c": [
+   "(1, −3)",
+   "(1, −4)",
+   "(7, −3)",
+   "(4, −3)"
+  ],
+  "a": 0,
+  "e": "The input must satisfy x + 3 = 4, so x = 1. Then y = 2f(4) − 1 = 2(−1) − 1 = −3. The point is (1, −3).",
+  "w": [
+   "",
+   "Subtracts 1 before doubling: 2(−1 − 1) = −4",
+   "Shifts the graph 3 units right instead of left",
+   "Ignores the horizontal shift and keeps x = 4"
+  ],
+  "strat": "Set the inside expression equal to the known input (x + 3 = 4), then transform the output: multiply by 2, then subtract 1.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "solver-verified",
+  "n": 36
+ },
+ {
+  "id": "M3-125",
+  "sec": "math",
+  "sub": "m.f.transform",
+  "cat": "F",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "In a greenhouse, the function T(h) gives the air temperature, in °F, h hours after midnight. Under the current heating schedule, T reaches its maximum value of 78°F at h = 13. A new schedule makes every temperature 4°F higher and makes each temperature occur 3 hours later than it does now. The new temperatures are modeled by N(h). At what value of h does N reach its maximum, and what is that maximum temperature?",
+  "c": [
+   "h = 16 and 82°F",
+   "h = 16 and 74°F",
+   "h = 10 and 82°F",
+   "h = 13 and 82°F"
+  ],
+  "a": 0,
+  "e": "Each temperature happening 3 hours later is a horizontal shift right by 3, and being 4°F higher is a vertical shift up by 4. So N(h) = T(h − 3) + 4. The maximum moves from h = 13 to h = 16, and its value rises from 78 to 82°F.",
+  "w": [
+   "",
+   "Applies the vertical shift in the wrong direction (78 − 4)",
+   "Reads \"3 hours later\" as h + 3 inside T, which shifts the peak earlier",
+   "Applies only the vertical shift and leaves the time of the peak unchanged"
+  ],
+  "strat": "Translate the words into N(h) = T(h − 3) + 4, then move the peak point (13, 78) right 3 and up 4.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "solver-verified",
+  "n": 37
+ },
+ {
+  "id": "M3-126",
+  "sec": "math",
+  "sub": "m.f.piecewise",
+  "cat": "F",
+  "model": false,
+  "diff": 3,
+  "steps": 3,
+  "t": 67,
+  "q": "The function f is defined piecewise, as shown in the table below. How many real values of x satisfy f(x) = 3 ?",
+  "c": [
+   "1",
+   "2",
+   "3",
+   "4"
+  ],
+  "a": 1,
+  "e": "Solve each piece and keep only the solutions that lie in that piece's interval. First piece: x + 3 = 3 gives x = 0, but 0 is not less than −1, so reject it. Second piece: x<sup>2</sup> = 3 gives x = ±√3. √3 ≈ 1.73 is in [−1, 2), so keep it. −√3 ≈ −1.73 is not in the interval, so reject it. Third piece: 8 − 2x = 3 gives x = 2.5, which is at least 2, so keep it. That makes 2 solutions.",
+  "w": [
+   "Solves only the quadratic piece and keeps only √3",
+   "",
+   "Keeps x = 0 from the first piece without checking its interval",
+   "Keeps both x = 0 and x = −√3 without checking either interval"
+  ],
+  "strat": "Solve f(x) = 3 on each row, then test each solution against that row's interval.",
+  "desmos": "Graph the piecewise function with {} domain restrictions and y = 3, then count the intersections. This is about as fast as paper and avoids the domain-check errors.",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 38,
+  "fig": {
+   "type": "table",
+   "columns": [
+    "Interval",
+    "f(x)"
+   ],
+   "rows": [
+    [
+     "x < −1",
+     "x + 3"
+    ],
+    [
+     "−1 ≤ x < 2",
+     "x<sup>2</sup>"
+    ],
+    [
+     "x ≥ 2",
+     "8 − 2x"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M3-122",
+  "sec": "math",
+  "sub": "m.f.quad",
+  "cat": "F",
+  "model": false,
+  "diff": 3,
+  "steps": 3,
+  "t": 67,
+  "q": "The front edge of a garden arch, shown below, is modeled by a parabola in the xy-plane, where x and y are measured in feet and the ground is the x-axis. The arch meets the ground at (−6,0) and (6,0) and passes through the point P(4,5). According to the model, what is the height of the arch, in feet, at x = 2 ? (Figure not drawn to scale.)",
+  "c": [
+   "8",
+   "9",
+   "10",
+   "20"
+  ],
+  "a": 0,
+  "e": "Use the x-intercepts: y = a(x − 6)(x + 6). Substitute P: 5 = a(−2)(10), so a = −1/4. At x = 2: y = −(1/4)(−4)(8) = 8.",
+  "w": [
+   "",
+   "Gives the maximum height at x = 0, y = −(1/4)(−36) = 9, instead of the height at x = 2",
+   "Treats the side of the arch as a straight line through (6,0) and (4,5); its slope is −5/2, so it gives 10 at x = 2",
+   "Uses a double root, y = a(x − 6)<sup>2</sup>: 5 = 4a, so a = 5/4 and y(2) = 20"
+  ],
+  "strat": "Write the intercept form y = a(x − 6)(x + 6), solve for a using P, then evaluate at x = 2.",
+  "desmos": "Fitting y = a(x−6)(x+6) to the point (4,5) with a regression or a slider works, but the algebra takes 3 short lines.",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 39,
+  "fig": {
+   "type": "geometry",
+   "points": {
+    "c0": [
+     -6,
+     0
+    ],
+    "c1": [
+     -5.5,
+     1.4375
+    ],
+    "c2": [
+     -5,
+     2.75
+    ],
+    "c3": [
+     -4.5,
+     3.9375
+    ],
+    "c4": [
+     -4,
+     5
+    ],
+    "c5": [
+     -3.5,
+     5.9375
+    ],
+    "c6": [
+     -3,
+     6.75
+    ],
+    "c7": [
+     -2.5,
+     7.4375
+    ],
+    "c8": [
+     -2,
+     8
+    ],
+    "c9": [
+     -1.5,
+     8.4375
+    ],
+    "c10": [
+     -1,
+     8.75
+    ],
+    "c11": [
+     -0.5,
+     8.9375
+    ],
+    "c12": [
+     0,
+     9
+    ],
+    "c13": [
+     0.5,
+     8.9375
+    ],
+    "c14": [
+     1,
+     8.75
+    ],
+    "c15": [
+     1.5,
+     8.4375
+    ],
+    "c16": [
+     2,
+     8
+    ],
+    "c17": [
+     2.5,
+     7.4375
+    ],
+    "c18": [
+     3,
+     6.75
+    ],
+    "c19": [
+     3.5,
+     5.9375
+    ],
+    "P": [
+     4,
+     5
+    ],
+    "c21": [
+     4.5,
+     3.9375
+    ],
+    "c22": [
+     5,
+     2.75
+    ],
+    "c23": [
+     5.5,
+     1.4375
+    ],
+    "c24": [
+     6,
+     0
+    ],
+    "G1": [
+     -7,
+     0
+    ],
+    "G2": [
+     7,
+     0
+    ]
+   },
+   "segments": [
+    [
+     "c0",
+     "c1"
+    ],
+    [
+     "c1",
+     "c2"
+    ],
+    [
+     "c2",
+     "c3"
+    ],
+    [
+     "c3",
+     "c4"
+    ],
+    [
+     "c4",
+     "c5"
+    ],
+    [
+     "c5",
+     "c6"
+    ],
+    [
+     "c6",
+     "c7"
+    ],
+    [
+     "c7",
+     "c8"
+    ],
+    [
+     "c8",
+     "c9"
+    ],
+    [
+     "c9",
+     "c10"
+    ],
+    [
+     "c10",
+     "c11"
+    ],
+    [
+     "c11",
+     "c12"
+    ],
+    [
+     "c12",
+     "c13"
+    ],
+    [
+     "c13",
+     "c14"
+    ],
+    [
+     "c14",
+     "c15"
+    ],
+    [
+     "c15",
+     "c16"
+    ],
+    [
+     "c16",
+     "c17"
+    ],
+    [
+     "c17",
+     "c18"
+    ],
+    [
+     "c18",
+     "c19"
+    ],
+    [
+     "c19",
+     "P"
+    ],
+    [
+     "P",
+     "c21"
+    ],
+    [
+     "c21",
+     "c22"
+    ],
+    [
+     "c22",
+     "c23"
+    ],
+    [
+     "c23",
+     "c24"
+    ],
+    [
+     "G1",
+     "G2"
+    ]
+   ],
+   "hidePoints": [
+    "c0",
+    "c1",
+    "c2",
+    "c3",
+    "c4",
+    "c5",
+    "c6",
+    "c7",
+    "c8",
+    "c9",
+    "c10",
+    "c11",
+    "c12",
+    "c13",
+    "c14",
+    "c15",
+    "c16",
+    "c17",
+    "c18",
+    "c19",
+    "c21",
+    "c22",
+    "c23",
+    "c24",
+    "G1",
+    "G2"
+   ],
+   "labels": [
+    {
+     "at": [
+      -6,
+      -0.8
+     ],
+     "text": "(−6, 0)"
+    },
+    {
+     "at": [
+      6,
+      -0.8
+     ],
+     "text": "(6, 0)"
+    },
+    {
+     "at": [
+      5.8,
+      5
+     ],
+     "text": "(4, 5)"
+    }
+   ],
+   "alt": "Parabolic arch through (−6, 0), (6, 0), and P(4, 5)"
+  }
+ },
+ {
+  "id": "M3-127",
+  "sec": "math",
+  "sub": "m.f.piecewise",
+  "cat": "F",
+  "model": false,
+  "diff": 2,
+  "steps": 3,
+  "t": 67,
+  "q": "The graph of the piecewise function y = f(x) is shown below for −4 ≤ x ≤ 4. The left piece has an open circle at (0,3), and the right piece has a closed dot at (0,−1). The left piece passes through (−4,1) and (0,3); the right piece passes through (0,−1) and (4,3). What is the value of f(f(−4)) ?",
+  "c": [
+   "0",
+   "1",
+   "2.5",
+   "3.5"
+  ],
+  "a": 0,
+  "e": "From the graph, f(−4) = 1. Then f(f(−4)) = f(1). Since 1 ≥ 0, use the right piece, the line through (0,−1) and (4,3), which is y = x − 1. So f(1) = 0.",
+  "w": [
+   "",
+   "Stops after the inner value: reports f(−4) = 1 instead of f(1).",
+   "Sign slip: after finding f(−4) = 1, evaluates f(−1) on the left piece, (1/2)(−1) + 3 = 2.5.",
+   "Uses the wrong piece for the outer evaluation: extends the left line y = (1/2)x + 3 to x = 1 and gets 3.5."
+  ],
+  "strat": "Read f(−4) = 1 from the left piece. Then read f(1) from the right piece, which rises 1 unit for each unit to the right starting at (0,−1), so f(1) = 0.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 40,
+  "fig": {
+   "type": "line",
+   "x": {
+    "label": "x"
+   },
+   "y": {
+    "label": "y"
+   },
+   "series": [
+    {
+     "name": "left piece (open circle at (0,3))",
+     "points": [
+      [
+       -4,
+       1
+      ],
+      [
+       0,
+       3
+      ]
+     ]
+    },
+    {
+     "name": "right piece (closed dot at (0,−1))",
+     "points": [
+      [
+       0,
+       -1
+      ],
+      [
+       4,
+       3
+      ]
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-128",
+  "sec": "math",
+  "sub": "m.f.seq",
+  "cat": "F",
+  "model": false,
+  "diff": 3,
+  "steps": 3,
+  "t": 67,
+  "q": "The graph below shows the points (n, a<sub>n</sub>) for the 2nd, 3rd, 4th, and 5th terms of an arithmetic sequence a<sub>1</sub>, a<sub>2</sub>, a<sub>3</sub>, …. The plotted points are (2,11), (3,14), (4,17), and (5,20). What is the sum of the first 20 terms of the sequence?",
+  "c": [
+   "65",
+   "730",
+   "760",
+   "790"
+  ],
+  "a": 1,
+  "e": "The common difference is 14 − 11 = 3, so a<sub>1</sub> = 11 − 3 = 8. Then a<sub>20</sub> = 8 + 19(3) = 65. The sum of the first 20 terms is 20(8 + 65)/2 = 10(73) = 730.",
+  "w": [
+   "Partial answer: finds the 20th term, 65, rather than the sum.",
+   "",
+   "Off-by-one: computes a<sub>20</sub> = 8 + 20(3) = 68, then 20(8 + 68)/2 = 760.",
+   "Treats the first plotted point as the first term: a<sub>1</sub> = 11, a<sub>20</sub> = 11 + 57 = 68, and 20(11 + 68)/2 = 790."
+  ],
+  "strat": "Find d = 3 from the graph and step back one term to get a<sub>1</sub> = 8. Then a<sub>20</sub> = 8 + 57 = 65, and the sum is 10 × 73 = 730.",
+  "desmos": "Typing sum(8+3(n−1), n=1..20) as a summation gives 730, but setting it up takes longer than the paper method.",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 41,
+  "fig": {
+   "type": "scatter",
+   "x": {
+    "label": "n"
+   },
+   "y": {
+    "label": "a_n"
+   },
+   "series": [
+    {
+     "name": "terms",
+     "points": [
+      [
+       2,
+       11
+      ],
+      [
+       3,
+       14
+      ],
+      [
+       4,
+       17
+      ],
+      [
+       5,
+       20
+      ]
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-129",
+  "sec": "math",
+  "sub": "m.f.seq",
+  "cat": "F",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "In a geometric sequence, the 2nd term is 12 and the 3rd term is 18. What is the 5th term of the sequence?",
+  "c": [
+   "27",
+   "30",
+   "40.5",
+   "60.75"
+  ],
+  "a": 2,
+  "e": "The common ratio is r = 18/12 = 1.5. The 5th term is the 3rd term times r², so 18(1.5)² = 18(2.25) = 40.5.",
+  "w": [
+   "Off-by-one: multiplies by r only once and gets the 4th term, 18(1.5) = 27.",
+   "Treats the sequence as arithmetic: d = 6, so 18 + 6 + 6 = 30.",
+   "",
+   "Off-by-one in the other direction: multiplies by r three times and gets the 6th term, 18(1.5)³ = 60.75."
+  ],
+  "strat": "r = 18/12 = 3/2. Then 18 → 27 → 40.5.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 42
+ },
+ {
+  "id": "M3-130",
+  "sec": "math",
+  "sub": "m.f.trig",
+  "cat": "F",
+  "model": false,
+  "diff": 3,
+  "steps": 3,
+  "t": 67,
+  "q": "A buoy bobs up and down on waves. Its height above the sea floor ranges from a minimum of 1.2 meters to a maximum of 3.6 meters, and it completes one full up-and-down cycle every 8 seconds. Which of the following equations could model the buoy's height h, in meters, t seconds after it passes its middle height on the way up?",
+  "c": [
+   "h = 2.4 sin(πt/4) + 1.2",
+   "h = 1.2 sin(8t) + 2.4",
+   "h = 1.2 sin(πt/8) + 2.4",
+   "h = 1.2 sin(πt/4) + 2.4"
+  ],
+  "a": 3,
+  "e": "Amplitude = (3.6 − 1.2)/2 = 1.2. Midline = (3.6 + 1.2)/2 = 2.4. A period of 8 requires 2π/B = 8, so B = π/4. Sine starts at the midline going upward, which matches the starting condition. So h = 1.2 sin(πt/4) + 2.4.",
+  "w": [
+   "Uses the full range, 2.4, as the amplitude and the minimum, 1.2, as the midline.",
+   "Uses the period itself as the coefficient B instead of 2π/period.",
+   "Misapplies the period rule as B = π/period instead of 2π/period.",
+   ""
+  ],
+  "strat": "Amplitude is half the range (1.2), the midline is the average (2.4), and B = 2π/8 = π/4.",
+  "desmos": "You could graph each choice and check its max, min and period, but the paper method is faster.",
+  "fastest": "paper",
+  "validated": "solver-verified",
+  "n": 43
+ },
+ {
+  "id": "M3-132",
+  "sec": "math",
+  "sub": "m.g.area",
+  "cat": "G",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "In trapezoid ABCD shown below, AB is parallel to DC, and angles A and D are right angles. AB = 16 units, DC = 10 units, and AD = 8 units. What is the perimeter, in units, of ABCD ?",
+  "c": [
+   "40",
+   "42",
+   "44",
+   "104"
+  ],
+  "a": 2,
+  "e": "Drop a perpendicular from C to AB. The horizontal leg is 16 − 10 = 6, and the vertical leg is 8, so BC = √(6² + 8²) = 10. The perimeter is 16 + 10 + 8 + 10 = 44.",
+  "w": [
+   "Takes BC to be the horizontal offset 6, so 16 + 10 + 8 + 6 = 40.",
+   "Assumes the slanted side equals the height, 8, so 16 + 10 + 8 + 8 = 42.",
+   "",
+   "Computes the area, 8(16 + 10)/2 = 104, instead of the perimeter."
+  ],
+  "strat": "The offset is 16 − 10 = 6. With the height 8, this is a 6-8-10 right triangle, so BC = 10. Add the four sides.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 44,
+  "fig": {
+   "type": "geometry",
+   "points": {
+    "A": [
+     0,
+     0
+    ],
+    "B": [
+     16,
+     0
+    ],
+    "C": [
+     10,
+     8
+    ],
+    "D": [
+     0,
+     8
+    ]
+   },
+   "polygons": [
+    [
+     "A",
+     "B",
+     "C",
+     "D"
+    ]
+   ],
+   "rightAngles": [
+    [
+     "D",
+     "A",
+     "B"
+    ],
+    [
+     "A",
+     "D",
+     "C"
+    ]
+   ],
+   "labels": [
+    {
+     "at": [
+      8,
+      -1
+     ],
+     "text": "16"
+    },
+    {
+     "at": [
+      5,
+      9
+     ],
+     "text": "10"
+    },
+    {
+     "at": [
+      -1,
+      4
+     ],
+     "text": "8"
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-133",
+  "sec": "math",
+  "sub": "m.g.area",
+  "cat": "G",
+  "model": false,
+  "diff": 2,
+  "steps": 3,
+  "t": 67,
+  "q": "The lines y = x + 2 and y = −2x + 8 are graphed in the xy-plane below. What is the area, in square units, of the triangle bounded by these two lines and the x-axis?",
+  "c": [
+   "6",
+   "8",
+   "12",
+   "24"
+  ],
+  "a": 2,
+  "e": "The x-intercepts are x = −2 (for y = x + 2) and x = 4 (for y = −2x + 8), so the base is 6. The lines intersect where x + 2 = −2x + 8, so x = 2 and y = 4; the height is 4. Area = (1/2)(6)(4) = 12.",
+  "w": [
+   "Uses the y-intercept of y = x + 2 (which is 2) as the height instead of the intersection height: (1/2)(6)(2) = 6.",
+   "Measures the base from the origin to x = 4 only: (1/2)(4)(4) = 8.",
+   "",
+   "Forgets the 1/2 in the triangle area formula: 6 × 4 = 24."
+  ],
+  "strat": "Find the x-intercepts −2 and 4 (base 6) and the intersection (2,4) (height 4). Then area = 12.",
+  "desmos": "Graph both lines and click the intercepts and the intersection to read (−2,0), (4,0) and (2,4); this is about as fast as paper.",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 45,
+  "fig": {
+   "type": "line",
+   "x": {
+    "label": "x"
+   },
+   "y": {
+    "label": "y"
+   },
+   "series": [
+    {
+     "name": "y = x + 2",
+     "points": [
+      [
+       -3,
+       -1
+      ],
+      [
+       4,
+       6
+      ]
+     ]
+    },
+    {
+     "name": "y = −2x + 8",
+     "points": [
+      [
+       0,
+       8
+      ],
+      [
+       5,
+       -2
+      ]
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-134",
+  "sec": "math",
+  "sub": "m.g.triangle",
+  "cat": "G",
+  "model": false,
+  "diff": 3,
+  "steps": 3,
+  "t": 67,
+  "q": "In △ABC, the measure of ∠A is 30°, the measure of ∠B is 45°, and BC = 8 units. What is the length, in units, of AC ?",
+  "c": [
+   "4√2",
+   "4√6",
+   "16",
+   "8√2"
+  ],
+  "a": 3,
+  "e": "Draw the altitude CH from C to AB. Both ∠A and ∠B are acute, so H lies on AB. In △BCH, a 45°-45°-90° triangle with hypotenuse BC = 8, CH = 8/√2 = 4√2. In △ACH, a 30°-60°-90° triangle, CH is opposite the 30° angle, so the hypotenuse is AC = 2(4√2) = 8√2.",
+  "w": [
+   "Partial answer: reports the altitude CH = 4√2 instead of AC.",
+   "Finds the wrong side of the 30°-60°-90° triangle: computes the long leg AH = 4√2·√3 = 4√6 instead of the hypotenuse.",
+   "Skips the altitude: treats BC as the side opposite 30° in a right triangle and doubles it to get 16.",
+   ""
+  ],
+  "strat": "Drop the altitude from C. The 45°-45°-90° triangle gives CH = 4√2. Then in the 30°-60°-90° triangle the hypotenuse is twice the short leg, so AC = 8√2.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "solver-verified",
+  "n": 46
+ },
+ {
+  "id": "M3-135",
+  "sec": "math",
+  "sub": "m.g.similar",
+  "cat": "G",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "A designer enlarges a rectangular logo that measures 4 inches by 6 inches. The enlarged logo is similar to the original, and its shorter side is 10 inches long. How long, in inches, is the perimeter of the enlarged logo?",
+  "c": [
+   "15",
+   "44",
+   "50",
+   "125"
+  ],
+  "a": 2,
+  "e": "The scale factor is 10/4 = 2.5, so the longer side is 6(2.5) = 15 inches. The perimeter is 2(10 + 15) = 50 inches. (Equivalently, 20 × 2.5 = 50.)",
+  "w": [
+   "Partial answer: gives the enlarged longer side, 15, instead of the perimeter.",
+   "Adds instead of scaling: since 4 + 6 = 10, takes the longer side as 6 + 6 = 12, so the perimeter is 2(10 + 12) = 44.",
+   "",
+   "Scales the perimeter by the square of the scale factor: 20 × 2.5² = 125."
+  ],
+  "strat": "Find k = 10/4 = 2.5. Perimeter scales by k: 20 × 2.5 = 50.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 47
+ },
+ {
+  "id": "M3-131",
+  "sec": "math",
+  "sub": "m.f.trig",
+  "cat": "F",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "The table below gives selected values of the function f(x) = a sin(bx), where a is a positive constant and b is the smallest positive constant that fits the table. What is the period of f ?",
+  "c": [
+   "3",
+   "4",
+   "6",
+   "8"
+  ],
+  "a": 2,
+  "e": "Start at x = 0 and follow the values: f goes 0 → 4 (max) → 0 → −4 (min) → 0, which is one full cycle. That cycle ends at x = 6, and the pattern then starts again (f(7.5) = 4, the same as f(1.5)). Because b is the smallest positive constant that fits, there is no shorter cycle hidden between the table points. So the period is 6. (Check: sin(1.5b) = 1 gives b = π/3, and the period is 2π/(π/3) = 6.)",
+  "w": [
+   "Counts from one zero to the next (x = 0 to x = 3), which is only half a cycle.",
+   "Mixes up period and amplitude and gives the maximum value, 4.",
+   "",
+   "Uses the range of the output, max − min = 4 − (−4) = 8, instead of an x-length."
+  ],
+  "strat": "Find the x-value where the pattern 0, max, 0, min, 0 is complete. Here that is x = 6, and the next row (x = 7.5) starts the pattern again.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 48,
+  "fig": {
+   "type": "table",
+   "columns": [
+    "x",
+    "f(x)"
+   ],
+   "rows": [
+    [
+     "0",
+     "0"
+    ],
+    [
+     "1.5",
+     "4"
+    ],
+    [
+     "3",
+     "0"
+    ],
+    [
+     "4.5",
+     "−4"
+    ],
+    [
+     "6",
+     "0"
+    ],
+    [
+     "7.5",
+     "4"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M3-136",
+  "sec": "math",
+  "sub": "m.g.similar",
+  "cat": "G",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "Hexagons P and Q are similar. The table below gives the length of the shortest side, the perimeter, and the area of each hexagon. What is the area of hexagon Q, in square centimeters?",
+  "c": [
+   "38",
+   "42",
+   "63",
+   "94.5"
+  ],
+  "a": 2,
+  "e": "Because the hexagons are similar, the scale factor from P to Q is 30/20 = 6/4 = 3/2. Areas scale by the square of the scale factor, so the area of Q is 28 × (3/2)<sup>2</sup> = 28 × 9/4 = 63 square centimeters.",
+  "w": [
+   "Additive reasoning: the perimeter grew by 10, so 10 was added to the area (28 + 10)",
+   "Area scaled by k instead of k²: 28 × 3/2",
+   "",
+   "Area scaled by k³, the volume rule: 28 × 27/8"
+  ],
+  "strat": "k = 30/20 = 3/2, then multiply 28 by k² = 9/4.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 49,
+  "fig": {
+   "type": "table",
+   "columns": [
+    "Hexagon",
+    "Shortest side (cm)",
+    "Perimeter (cm)",
+    "Area (cm²)"
+   ],
+   "rows": [
+    [
+     "P",
+     "4",
+     "20",
+     "28"
+    ],
+    [
+     "Q",
+     "6",
+     "30",
+     "?"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M3-137",
+  "sec": "math",
+  "sub": "m.g.circles",
+  "cat": "G",
+  "model": false,
+  "diff": 2,
+  "steps": 3,
+  "t": 67,
+  "q": "In the circle with center O shown below, points A, B, and C lie on the circle, the radius is 9 units, and m∠ACB = 40°. What is the length, in units, of minor arc AB ?",
+  "c": [
+   "2π",
+   "4π",
+   "8π",
+   "14π"
+  ],
+  "a": 1,
+  "e": "Inscribed angle ACB intercepts arc AB, so the central angle AOB is 2 × 40° = 80°. The circumference is 2π(9) = 18π. Arc AB = (80/360)(18π) = 4π.",
+  "w": [
+   "Used the 40° inscribed angle as the central angle: (40/360)(18π)",
+   "",
+   "Used the diameter 18 as the radius: (80/360)(2π · 18)",
+   "Found the major arc instead: (280/360)(18π)"
+  ],
+  "strat": "Double the inscribed angle to get 80°, then take 80/360 of 18π.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 50,
+  "fig": {
+   "type": "geometry",
+   "points": {
+    "O": [
+     0,
+     0
+    ],
+    "A": [
+     -5.79,
+     6.89
+    ],
+    "B": [
+     5.79,
+     6.89
+    ],
+    "C": [
+     0,
+     -9
+    ]
+   },
+   "segments": [
+    [
+     "C",
+     "A"
+    ],
+    [
+     "C",
+     "B"
+    ],
+    [
+     "O",
+     "B"
+    ]
+   ],
+   "circles": [
+    {
+     "c": [
+      0,
+      0
+     ],
+     "r": 9
+    }
+   ],
+   "labels": [
+    {
+     "at": [
+      0,
+      -7.3
+     ],
+     "text": "40°"
+    },
+    {
+     "at": [
+      3.4,
+      3
+     ],
+     "text": "9"
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-138",
+  "sec": "math",
+  "sub": "m.g.circles",
+  "cat": "G",
+  "model": false,
+  "diff": 3,
+  "steps": 3,
+  "t": 67,
+  "q": "In the xy-plane below, the circle has center C(1,2), and points A(4,6) and B(5,−1) lie on the circle. What is the area of the smaller sector bounded by radius CA, radius CB, and arc AB ?",
+  "c": [
+   "25π/4",
+   "5π/2",
+   "75π/4",
+   "25π"
+  ],
+  "a": 0,
+  "e": "The radius is CA = √(3<sup>2</sup> + 4<sup>2</sup>) = 5. The slope of CA is 4/3 and the slope of CB is −3/4. These are negative reciprocals, so ∠ACB = 90°. The sector area is (90/360)π(5)<sup>2</sup> = 25π/4.",
+  "w": [
+   "",
+   "Used the arc-length formula instead of the area formula: (90/360)(2π · 5)",
+   "Found the area of the larger sector (270°) instead",
+   "Stopped at the area of the whole circle, π(5)²"
+  ],
+  "strat": "Find r = 5 with the distance formula, see that the radius slopes 4/3 and −3/4 are perpendicular, then take 1/4 of 25π.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "solver-verified",
+  "n": 51,
+  "fig": {
+   "type": "geometry",
+   "points": {
+    "C": [
+     1,
+     2
+    ],
+    "A": [
+     4,
+     6
+    ],
+    "B": [
+     5,
+     -1
+    ]
+   },
+   "segments": [
+    [
+     "C",
+     "A"
+    ],
+    [
+     "C",
+     "B"
+    ]
+   ],
+   "circles": [
+    {
+     "c": [
+      1,
+      2
+     ],
+     "r": 5
+    }
+   ],
+   "labels": [
+    {
+     "at": [
+      1,
+      1.4
+     ],
+     "text": "C(1,2)"
+    },
+    {
+     "at": [
+      4,
+      6.6
+     ],
+     "text": "A(4,6)"
+    },
+    {
+     "at": [
+      5.6,
+      -1.5
+     ],
+     "text": "B(5,−1)"
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-139",
+  "sec": "math",
+  "sub": "m.g.coord",
+  "cat": "G",
+  "model": false,
+  "diff": 1,
+  "steps": 2,
+  "t": 67,
+  "q": "In the xy-plane, M(3,−1) is the midpoint of segment AB, and A has coordinates (−2,4). What are the coordinates of B ?",
+  "c": [
+   "(−7, 9)",
+   "(0.5, 1.5)",
+   "(5, −5)",
+   "(8, −6)"
+  ],
+  "a": 3,
+  "e": "For each coordinate, B = 2M − A. The x-coordinate is 2(3) − (−2) = 8, and the y-coordinate is 2(−1) − 4 = −6. So B = (8, −6).",
+  "w": [
+   "Reversed the roles of A and M: computed 2A − M",
+   "Found the midpoint of A and M instead of extending past M",
+   "Found only the change from A to M, M − A, and reported it as B",
+   ""
+  ],
+  "strat": "Moving from A to M is +5 in x and −5 in y. Make the same move again from M.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "solver-verified",
+  "n": 52
+ },
+ {
+  "id": "M3-140",
+  "sec": "math",
+  "sub": "m.g.transform",
+  "cat": "G",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "A game designer places a character at the point (−3, 5) on a coordinate grid. The character is first reflected across the x-axis and then translated 6 units to the right and 2 units up. What are the coordinates of the character's final position?",
+  "c": [
+   "(3, −3)",
+   "(−9, −3)",
+   "(3, −7)",
+   "(9, 7)"
+  ],
+  "a": 0,
+  "e": "Reflecting (−3, 5) across the x-axis gives (−3, −5). Translating 6 units right and 2 units up gives (−3 + 6, −5 + 2) = (3, −3).",
+  "w": [
+   "",
+   "Direction slip: translated 6 units left instead of right",
+   "Did the transformations in the wrong order: translated to (3, 7) and then reflected",
+   "Reflected across the y-axis instead of the x-axis: (3, 5) → (9, 7)"
+  ],
+  "strat": "Negate y, then add 6 to x and 2 to y.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "solver-verified",
+  "n": 53
+ },
+ {
+  "id": "M3-141",
+  "sec": "math",
+  "sub": "m.g.transform",
+  "cat": "G",
+  "model": false,
+  "diff": 3,
+  "steps": 2,
+  "t": 67,
+  "q": "A single transformation about the origin maps each point in the table below to its image. If point D(−3, 6) undergoes the same transformation, what are the coordinates of its image, D′ ?",
+  "c": [
+   "(−6, −3)",
+   "(6, 3)",
+   "(3, −6)",
+   "(6, −3)"
+  ],
+  "a": 1,
+  "e": "The table shows (2,1) → (1,−2), (5,1) → (1,−5), and (2,4) → (4,−2), so the rule is (x, y) → (y, −x), which is a 90° clockwise rotation about the origin. Then D(−3, 6) → (6, −(−3)) = (6, 3).",
+  "w": [
+   "Used a 90° counterclockwise rotation, (x, y) → (−y, x)",
+   "",
+   "Used a 180° rotation, (x, y) → (−x, −y)",
+   "Swapped the coordinates without negating, (x, y) → (y, x), the reflection across y = x"
+  ],
+  "strat": "Infer (x, y) → (y, −x) from the first row and confirm it with another row, then apply it to D.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "solver-verified",
+  "n": 54,
+  "fig": {
+   "type": "table",
+   "columns": [
+    "Point",
+    "Image"
+   ],
+   "rows": [
+    [
+     "(2, 1)",
+     "(1, −2)"
+    ],
+    [
+     "(5, 1)",
+     "(1, −5)"
+    ],
+    [
+     "(2, 4)",
+     "(4, −2)"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M3-143",
+  "sec": "math",
+  "sub": "m.g.trig",
+  "cat": "G",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "The line graphed in the xy-plane below passes through the origin and the point (8, 6). Let θ be the angle between the line and the positive x-axis. What is the value of cos θ ?",
+  "c": [
+   "3/5",
+   "4/5",
+   "5/4",
+   "4/3"
+  ],
+  "a": 1,
+  "e": "Drop a perpendicular from (8, 6) to the x-axis. This forms a right triangle with an adjacent leg of 8 and an opposite leg of 6. The hypotenuse is √(8<sup>2</sup> + 6<sup>2</sup>) = 10, so cos θ = 8/10 = 4/5.",
+  "w": [
+   "Used opposite/hypotenuse, which is sin θ",
+   "",
+   "Used hypotenuse/adjacent, the reciprocal of cos θ",
+   "Used adjacent/opposite, the reciprocal of tan θ"
+  ],
+  "strat": "Build the 6-8-10 right triangle and take adjacent/hypotenuse.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 55,
+  "fig": {
+   "type": "line",
+   "x": {
+    "label": "x"
+   },
+   "y": {
+    "label": "y"
+   },
+   "series": [
+    {
+     "name": "line",
+     "points": [
+      [
+       0,
+       0
+      ],
+      [
+       8,
+       6
+      ]
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-144",
+  "sec": "math",
+  "sub": "m.g.conics",
+  "cat": "G",
+  "model": false,
+  "diff": 3,
+  "steps": 3,
+  "t": 67,
+  "q": "In the xy-plane, the graph of 4x<sup>2</sup> + 9y<sup>2</sup> − 16x + 18y − 11 = 0 is an ellipse. What is the length of the major axis of the ellipse?",
+  "c": [
+   "3",
+   "4",
+   "6",
+   "9"
+  ],
+  "a": 2,
+  "e": "Complete the square: 4(x<sup>2</sup> − 4x) + 9(y<sup>2</sup> + 2y) = 11, so 4(x − 2)<sup>2</sup> + 9(y + 1)<sup>2</sup> = 11 + 16 + 9 = 36. Dividing by 36 gives (x − 2)<sup>2</sup>/9 + (y + 1)<sup>2</sup>/4 = 1. Then a = 3, and the major axis has length 2a = 6.",
+  "w": [
+   "Partial answer: gave the semi-major axis a instead of 2a",
+   "Gave the minor axis length 2b instead of the major axis",
+   "",
+   "Gave a² from the standard form as the length"
+  ],
+  "strat": "Complete the square, divide by 36, read a² = 9, and double a.",
+  "desmos": "Graph the equation and read off the horizontal extent from x = −1 to x = 5. This is about as fast as paper.",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 56
+ },
+ {
+  "id": "M3-145",
+  "sec": "math",
+  "sub": "m.g.conics",
+  "cat": "G",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "A landscape designer plans a circular flower bed on a coordinate grid where each unit represents 1 meter. The center of the bed is at (3, −2), and the bed measures 10 meters across through its center. Which equation describes the edge of the flower bed?",
+  "c": [
+   "(x − 3)<sup>2</sup> + (y + 2)<sup>2</sup> = 5",
+   "(x − 3)<sup>2</sup> + (y + 2)<sup>2</sup> = 100",
+   "(x + 3)<sup>2</sup> + (y − 2)<sup>2</sup> = 25",
+   "(x − 3)<sup>2</sup> + (y + 2)<sup>2</sup> = 25"
+  ],
+  "a": 3,
+  "e": "10 meters across is the diameter, so the radius is 5. A circle with center (h, k) and radius r is (x − h)<sup>2</sup> + (y − k)<sup>2</sup> = r<sup>2</sup>, which gives (x − 3)<sup>2</sup> + (y + 2)<sup>2</sup> = 25.",
+  "w": [
+   "Uses the radius 5 on the right side without squaring it",
+   "Squares the diameter (10) instead of the radius",
+   "Gets the signs of the center coordinates backward in (x − h) and (y − k)",
+   ""
+  ],
+  "strat": "Halve the diameter to get r = 5, square it, and write (x − h) and (y − k) with the center's signs reversed.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "solver-verified",
+  "n": 57
+ },
+ {
+  "id": "M3-146",
+  "sec": "math",
+  "sub": "m.s.prob",
+  "cat": "S",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "The table below shows the members of a fitness center, classified by membership type and preferred workout time. A member is chosen at random from the members who do NOT prefer the evening. What is the probability that the chosen member has a Premium membership?",
+  "c": [
+   "19/65",
+   "5/13",
+   "19/40",
+   "19/25"
+  ],
+  "a": 2,
+  "e": "Members who do not prefer evening: 40 + 40 = 80. Premium members among them: 16 + 22 = 38. The probability is 38/80 = 19/40.",
+  "w": [
+   "Divides the 38 Premium non-evening members by all 130 members instead of by the 80 non-evening members",
+   "Ignores the condition and computes 50/130, the share of all members who are Premium",
+   "",
+   "Reverses the condition and computes 38/50, the share of Premium members who do not prefer evening"
+  ],
+  "strat": "Restrict to the Morning and Afternoon columns (total 80), count the Premium members there (38), and divide.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 58,
+  "fig": {
+   "type": "table",
+   "columns": [
+    "Membership",
+    "Morning",
+    "Afternoon",
+    "Evening",
+    "Total"
+   ],
+   "rows": [
+    [
+     "Basic",
+     "24",
+     "18",
+     "38",
+     "80"
+    ],
+    [
+     "Premium",
+     "16",
+     "22",
+     "12",
+     "50"
+    ],
+    [
+     "Total",
+     "40",
+     "40",
+     "50",
+     "130"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M3-147",
+  "sec": "math",
+  "sub": "m.s.count",
+  "cat": "S",
+  "model": false,
+  "diff": 1,
+  "steps": 2,
+  "t": 67,
+  "q": "The Venn diagram below shows the results of a survey of all 40 students in a gym class about which sports they play. Each number is the count of students in that region. The 11 students in the region outside both circles play neither sport. How many of the students surveyed do NOT play basketball?",
+  "c": [
+   "14",
+   "25",
+   "31",
+   "40"
+  ],
+  "a": 1,
+  "e": "The students who do not play basketball are the ones outside the Basketball circle: 14 (soccer only) + 11 (neither) = 25.",
+  "w": [
+   "Counts only the soccer-only region and leaves out the students who play neither sport",
+   "",
+   "Subtracts only the basketball-only region from 40 and forgets the 6 students who play both sports",
+   "Gives the total number of students surveyed and ignores the word NOT"
+  ],
+  "strat": "Add the regions outside the Basketball circle: 14 + 11.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 59,
+  "fig": {
+   "type": "geometry",
+   "points": {
+    "P": [
+     0,
+     0
+    ],
+    "Q": [
+     12,
+     0
+    ],
+    "R": [
+     12,
+     8.5
+    ],
+    "S": [
+     0,
+     8.5
+    ]
+   },
+   "polygons": [
+    [
+     "P",
+     "Q",
+     "R",
+     "S"
+    ]
+   ],
+   "circles": [
+    {
+     "c": [
+      4.5,
+      4
+     ],
+     "r": 3
+    },
+    {
+     "c": [
+      7.5,
+      4
+     ],
+     "r": 3
+    }
+   ],
+   "labels": [
+    {
+     "at": [
+      3,
+      4
+     ],
+     "text": "14"
+    },
+    {
+     "at": [
+      6,
+      4
+     ],
+     "text": "6"
+    },
+    {
+     "at": [
+      9,
+      4
+     ],
+     "text": "9"
+    },
+    {
+     "at": [
+      11,
+      7.5
+     ],
+     "text": "11"
+    },
+    {
+     "at": [
+      3,
+      7.6
+     ],
+     "text": "Soccer"
+    },
+    {
+     "at": [
+      9,
+      7.6
+     ],
+     "text": "Basketball"
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-148",
+  "sec": "math",
+  "sub": "m.s.count",
+  "cat": "S",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "The bar graph below shows the number of choices in each menu category at a café. A lunch special consists of exactly 1 entrée and either 1 dessert or 1 drink, but not both. How many different lunch specials are possible?",
+  "c": [
+   "23",
+   "48",
+   "90",
+   "360"
+  ],
+  "a": 1,
+  "e": "From the graph there are 6 entrées, 3 desserts, and 5 drinks. The second item is a dessert or a drink, so there are 3 + 5 = 8 ways to choose it. By the multiplication principle, the number of specials is 6 × 8 = 48.",
+  "w": [
+   "Multiplies 6 by the 3 desserts only and then adds the 5 drinks: 6 × 3 + 5",
+   "",
+   "Multiplies all three categories (6 × 3 × 5) as though both a dessert and a drink were included",
+   "Multiplies all four categories, appetizers included (4 × 6 × 3 × 5)"
+  ],
+  "strat": "Read the bars, add the desserts and drinks (the 'or' choice), and multiply by the number of entrées.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 60,
+  "fig": {
+   "type": "bar",
+   "x": {
+    "label": "Menu category"
+   },
+   "y": {
+    "label": "Number of choices"
+   },
+   "series": [
+    {
+     "name": "Choices",
+     "points": [
+      [
+       "Appetizers",
+       4
+      ],
+      [
+       "Entrées",
+       6
+      ],
+      [
+       "Desserts",
+       3
+      ],
+      [
+       "Drinks",
+       5
+      ]
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-149",
+  "sec": "math",
+  "sub": "m.s.expect",
+  "cat": "S",
+  "model": true,
+  "diff": 3,
+  "steps": 3,
+  "t": 67,
+  "q": "A random variable X can take only the values 0, 1, 2, and 3. The table below gives the probability distribution of X, where k is a constant. What is the expected value of X ?",
+  "c": [
+   "1.5",
+   "1.6",
+   "2.0",
+   "2.1"
+  ],
+  "a": 1,
+  "e": "The probabilities must add to 1: 0.1 + 2k + 0.3 + k = 1, so 3k = 0.6 and k = 0.2. Then P(X = 1) = 0.4 and P(X = 3) = 0.2. E(X) = 0(0.1) + 1(0.4) + 2(0.3) + 3(0.2) = 0.4 + 0.6 + 0.6 = 1.6.",
+  "w": [
+   "Treats the 4 values as equally likely and averages 0, 1, 2, and 3",
+   "",
+   "Swaps the probabilities, giving 0.2 to X = 1 and 0.4 to X = 3",
+   "Reads 2k + k as 2k, which gives k = 0.3, and then uses P(X = 1) = 0.6 and P(X = 3) = 0.3"
+  ],
+  "strat": "Set the probabilities equal to a total of 1 to find k, then add the products x·P(x).",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 61,
+  "fig": {
+   "type": "table",
+   "columns": [
+    "x",
+    "0",
+    "1",
+    "2",
+    "3"
+   ],
+   "rows": [
+    [
+     "P(X = x)",
+     "0.1",
+     "2k",
+     "0.3",
+     "k"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M3-151",
+  "sec": "math",
+  "sub": "m.s.stats",
+  "cat": "S",
+  "model": false,
+  "diff": 2,
+  "steps": 3,
+  "t": 67,
+  "q": "The table below shows the number of push-ups completed by each of 6 students. Dee's count is missing, but the mean of all 6 counts is 25. What is the median of the 6 counts?",
+  "c": [
+   "24.5",
+   "25",
+   "26.5",
+   "32"
+  ],
+  "a": 0,
+  "e": "The total is 6 × 25 = 150, and the other five counts sum to 118, so Dee's count is 32. In order the counts are 18, 21, 22, 27, 30, 32, so the median is (22 + 27)/2 = 24.5.",
+  "w": [
+   "",
+   "Assumes the median equals the given mean",
+   "Averages the 3rd and 4th entries in table order (21 and 32) without sorting the counts",
+   "Stops after finding Dee's missing count"
+  ],
+  "strat": "Use the mean to find the missing value (150 − 118), sort the 6 counts, and average the middle two.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 62,
+  "fig": {
+   "type": "table",
+   "columns": [
+    "Student",
+    "Push-ups"
+   ],
+   "rows": [
+    [
+     "Ana",
+     "18"
+    ],
+    [
+     "Ben",
+     "30"
+    ],
+    [
+     "Cy",
+     "21"
+    ],
+    [
+     "Dee",
+     "?"
+    ],
+    [
+     "Eli",
+     "27"
+    ],
+    [
+     "Fay",
+     "22"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M3-152",
+  "sec": "math",
+  "sub": "m.s.model",
+  "cat": "S",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "The scatterplot below shows the hours studied, x, and the test score, y, for 6 students, together with the line of best fit y = 4x + 62. A residual equals the actual score minus the score predicted by the line. What is the residual for the student who earned the highest test score?",
+  "c": [
+   "−4",
+   "−2",
+   "0",
+   "4"
+  ],
+  "a": 3,
+  "e": "The highest score, 86, belongs to the student who studied 5 hours. The predicted score is 4(5) + 62 = 82, so the residual is 86 − 82 = 4.",
+  "w": [
+   "Computes predicted minus actual (82 − 86)",
+   "Uses the student who studied the most hours (6 hours, score 84, predicted 86)",
+   "Pairs the highest score, 86, with x = 6 and gets the prediction 4(6) + 62 = 86",
+   ""
+  ],
+  "strat": "Find the highest point on the graph (5, 86), substitute x = 5 into the line, and compute actual minus predicted.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 63,
+  "fig": {
+   "type": "scatter",
+   "x": {
+    "label": "Hours studied"
+   },
+   "y": {
+    "label": "Test score"
+   },
+   "series": [
+    {
+     "name": "Students",
+     "points": [
+      [
+       1,
+       68
+      ],
+      [
+       2,
+       69
+      ],
+      [
+       3,
+       75
+      ],
+      [
+       4,
+       76
+      ],
+      [
+       5,
+       86
+      ],
+      [
+       6,
+       84
+      ]
+     ]
+    },
+    {
+     "name": "y = 4x + 62",
+     "points": [
+      [
+       0,
+       62
+      ],
+      [
+       7,
+       90
+      ]
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-153",
+  "sec": "math",
+  "sub": "m.s.model",
+  "cat": "S",
+  "model": true,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "The graph below shows the height of a burning candle, in centimeters, measured every 2 hours after it was lit. The height decreases linearly. According to this model, how many hours after the candle was lit will its height be 9 centimeters?",
+  "c": [
+   "5",
+   "6",
+   "10",
+   "16"
+  ],
+  "a": 2,
+  "e": "The height falls 3 cm every 2 hours, so the rate is 1.5 cm per hour, and h = 24 − 1.5t. Setting 24 − 1.5t = 9 gives 1.5t = 15, so t = 10.",
+  "w": [
+   "Reads the 3 cm drop per 2-hour interval as a rate per hour and computes 15 ÷ 3",
+   "Divides the target height by the rate (9 ÷ 1.5) instead of dividing the 15 cm drop",
+   "",
+   "Computes 24 ÷ 1.5, the time until the candle burns out completely"
+  ],
+  "strat": "Find the slope from the graph (−1.5 cm/h), then solve 24 − 1.5t = 9.",
+  "desmos": "Enter the points as a table and run the regression y1 ~ m x1 + b, then intersect the result with y = 9. Paper is about as fast.",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 64,
+  "fig": {
+   "type": "line",
+   "x": {
+    "label": "Time (hours)"
+   },
+   "y": {
+    "label": "Height (cm)"
+   },
+   "series": [
+    {
+     "name": "Candle height",
+     "points": [
+      [
+       0,
+       24
+      ],
+      [
+       2,
+       21
+      ],
+      [
+       4,
+       18
+      ],
+      [
+       6,
+       15
+      ],
+      [
+       8,
+       12
+      ]
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-150",
+  "sec": "math",
+  "sub": "m.s.expect",
+  "cat": "S",
+  "model": false,
+  "diff": 3,
+  "steps": 3,
+  "t": 67,
+  "q": "A food truck records how many catering orders it receives each day. The number of orders on a randomly chosen day is 0, 1, 2, or 3, with probabilities 0.10, <i>p</i>, <i>q</i>, and 0.20, respectively. The expected number of catering orders per day is 1.8. What is the value of <i>q</i> ?",
+  "c": [
+   "0.2",
+   "0.4",
+   "0.5",
+   "0.9"
+  ],
+  "a": 2,
+  "e": "The probabilities must add to 1: 0.10 + p + q + 0.20 = 1, so p + q = 0.7. The expected value is 0(0.10) + 1p + 2q + 3(0.20) = 1.8, so p + 2q = 1.2. Subtract the first equation from the second: q = 1.2 − 0.7 = 0.5. (Then p = 0.2.)",
+  "w": [
+   "Solves the system correctly but reports p = 0.2 instead of q",
+   "Leaves the 0.10 for 0 orders out of the sum of probabilities because that outcome adds nothing to the mean, so p + q = 0.8, and then p + 2q = 1.2 gives q = 0.4",
+   "",
+   "Adds 0.20 for the 3-order outcome instead of 3(0.20) = 0.60, so p + 2q = 1.6, and then p + q = 0.7 gives q = 0.9"
+  ],
+  "strat": "Write two equations: the probabilities sum to 1 (p + q = 0.7), and the weighted sum equals the mean (p + 2q + 0.6 = 1.8, so p + 2q = 1.2). Subtracting them gives q = 0.5 directly.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 65
+ },
+ {
+  "id": "M3-154",
+  "sec": "math",
+  "sub": "m.ies.ratio",
+  "cat": "IES",
+  "model": false,
+  "diff": 2,
+  "steps": 3,
+  "t": 67,
+  "q": "The positive numbers a, b, and c satisfy a : b = 2 : 3 and b : c = 4 : 5. If a + b + c = 70, what is the value of c ?",
+  "c": [
+   "16",
+   "24",
+   "30",
+   "35"
+  ],
+  "a": 2,
+  "e": "Rewrite both ratios with the same value for b. Since LCM(3, 4) = 12, a : b = 8 : 12 and b : c = 12 : 15, so a : b : c = 8 : 12 : 15. The parts total 8 + 12 + 15 = 35, so each part is 70/35 = 2. Then c = 15(2) = 30.",
+  "w": [
+   "Finds a = 8(2) = 16, the wrong variable, after combining the ratios correctly",
+   "Finds b = 12(2) = 24, the wrong variable, after combining the ratios correctly",
+   "",
+   "Joins the ratios without matching b, using a : b : c = 2 : 3 : 5 (10 parts), so c = 70(5/10) = 35"
+  ],
+  "strat": "Scale both ratios so b is 12, giving 8:12:15. Then 70/35 = 2 per part and c = 30.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 66
+ },
+ {
+  "id": "M3-155",
+  "sec": "math",
+  "sub": "m.ies.ratio",
+  "cat": "IES",
+  "model": true,
+  "diff": 2,
+  "steps": 3,
+  "t": 67,
+  "q": "Marisol drives to a lake 120 miles from her home and then drives the same route back home. Her car travels 30 miles per gallon of gasoline, and gasoline costs $3.20 per gallon. What is the cost of the gasoline she uses for the round trip?",
+  "c": [
+   "$8.00",
+   "$12.80",
+   "$25.60",
+   "$51.20"
+  ],
+  "a": 2,
+  "e": "The round trip is 2(120) = 240 miles. That uses 240/30 = 8 gallons, which cost 8($3.20) = $25.60.",
+  "w": [
+   "Stops at the number of gallons (8) and reports it as dollars",
+   "Finds the cost for one way only: (120/30)($3.20)",
+   "",
+   "Doubles the distance twice (treats 240 as the one-way distance), giving 16 gallons"
+  ],
+  "strat": "Total miles, then gallons, then dollars: 240/30 = 8 and 8 × 3.20 = 25.60.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 67
+ },
+ {
+  "id": "M3-156",
+  "sec": "math",
+  "sub": "m.ies.ratio",
+  "cat": "IES",
+  "model": false,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "In the table below, y is directly proportional to x. What is the value of n ?",
+  "c": [
+   "22",
+   "28",
+   "31",
+   "49.5"
+  ],
+  "a": 0,
+  "e": "Because y is directly proportional to x, y = kx with k = 6/4 = 15/10 = 1.5. Then 33 = 1.5n, so n = 33/1.5 = 22.",
+  "w": [
+   "",
+   "Uses additive reasoning from the second row: x and y change by the same amount, so n = 10 + (33 − 15) = 28",
+   "Assumes y − x is constant, as in the first row (6 − 4 = 2), so n = 33 − 2 = 31",
+   "Multiplies by the constant instead of dividing: n = 33(1.5) = 49.5"
+  ],
+  "strat": "Find k = y/x = 1.5, then divide: n = 33/1.5 = 22.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 68,
+  "fig": {
+   "type": "table",
+   "columns": [
+    "x",
+    "y"
+   ],
+   "rows": [
+    [
+     "4",
+     "6"
+    ],
+    [
+     "10",
+     "15"
+    ],
+    [
+     "n",
+     "33"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M3-157",
+  "sec": "math",
+  "sub": "m.ies.percent",
+  "cat": "IES",
+  "model": true,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "The rectangular patio shown below measures 40 feet by 25 feet. The owner plans to enlarge it by increasing the length by 20% and the width by 10%. By what percent will the area of the patio increase?",
+  "c": [
+   "2%",
+   "24.2%",
+   "30%",
+   "32%"
+  ],
+  "a": 3,
+  "e": "The original area is 40(25) = 1,000 square feet. The new dimensions are 48 ft by 27.5 ft, so the new area is 1,320 square feet. The increase is 320/1,000 = 32%. (Equivalently, 1.2 × 1.1 = 1.32.)",
+  "w": [
+   "Multiplies only the percents (0.20 × 0.10 = 0.02) instead of the growth factors",
+   "Divides the increase by the new area, using the wrong base: 320/1,320 ≈ 24.2%",
+   "Adds the two percents instead of compounding them: 20% + 10%",
+   ""
+  ],
+  "strat": "Multiply the growth factors: 1.2 × 1.1 = 1.32, so the area increases by 32%.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 69,
+  "fig": {
+   "type": "geometry",
+   "points": {
+    "A": [
+     0,
+     0
+    ],
+    "B": [
+     40,
+     0
+    ],
+    "C": [
+     40,
+     25
+    ],
+    "D": [
+     0,
+     25
+    ]
+   },
+   "polygons": [
+    [
+     "A",
+     "B",
+     "C",
+     "D"
+    ]
+   ],
+   "rightAngles": [
+    [
+     "D",
+     "A",
+     "B"
+    ],
+    [
+     "A",
+     "B",
+     "C"
+    ]
+   ],
+   "labels": [
+    {
+     "at": [
+      20,
+      -3
+     ],
+     "text": "40 ft"
+    },
+    {
+     "at": [
+      43,
+      12.5
+     ],
+     "text": "25 ft"
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-159",
+  "sec": "math",
+  "sub": "m.ies.express",
+  "cat": "IES",
+  "model": true,
+  "diff": 2,
+  "steps": 2,
+  "t": 67,
+  "q": "A parking garage charges $6.00 for the first hour and $2.50 for each additional half hour. Which expression gives the total charge, in dollars, to park for h hours, where h is a whole number and h ≥ 1 ?",
+  "c": [
+   "5h + 1",
+   "5h + 6",
+   "5h + 7",
+   "2.5h + 3.5"
+  ],
+  "a": 0,
+  "e": "After the first hour there are h − 1 additional hours, which is 2(h − 1) half hours. The charge is 6 + 2.50 · 2(h − 1) = 6 + 5(h − 1) = 5h + 1.",
+  "w": [
+   "",
+   "Does not subtract the first hour: 6 + 5h",
+   "Doubles the whole expression, including the first-hour fee: 2[6 + 2.5(h − 1)]",
+   "Charges $2.50 per additional hour instead of per half hour: 6 + 2.5(h − 1)"
+  ],
+  "strat": "Write 6 + 5(h − 1) and simplify. As a check, h = 2 should give 6 + 5 = 11.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "solver-verified",
+  "n": 70
+ },
+ {
+  "id": "M3-160",
+  "sec": "math",
+  "sub": "m.ies.data",
+  "cat": "IES",
+  "model": false,
+  "diff": 2,
+  "steps": 3,
+  "t": 67,
+  "q": "The mean of a student's 8 quiz scores is 84. When the student's lowest quiz score is dropped, the mean of the remaining 7 scores is 87. What is the student's lowest quiz score?",
+  "c": [
+   "21",
+   "24",
+   "63",
+   "81"
+  ],
+  "a": 2,
+  "e": "The sum of all 8 scores is 8(84) = 672. The sum of the other 7 is 7(87) = 609. The dropped score is 672 − 609 = 63.",
+  "w": [
+   "Multiplies the difference of the means by 7: 7(87 − 84)",
+   "Multiplies the difference of the means by 8: 8(87 − 84)",
+   "",
+   "Subtracts the change in the mean from the original mean: 84 − (87 − 84)"
+  ],
+  "strat": "Turn each mean into a sum: 8 × 84 − 7 × 87 = 672 − 609 = 63.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 71
+ },
+ {
+  "id": "M3-161",
+  "sec": "math",
+  "sub": "m.ies.geom",
+  "cat": "IES",
+  "model": true,
+  "diff": 2,
+  "steps": 3,
+  "t": 67,
+  "q": "The table below gives the dimensions of 2 rectangular rooms that will be covered with new carpet. The carpet costs $24 per square yard. What is the total cost of carpet to cover both rooms exactly? (Note: 1 yard = 3 feet)",
+  "c": [
+   "$480",
+   "$720",
+   "$2,160",
+   "$6,480"
+  ],
+  "a": 1,
+  "e": "The total area is 15(12) + 10(9) = 180 + 90 = 270 square feet. Since 1 square yard = 9 square feet, this is 270/9 = 30 square yards. The cost is 30($24) = $720.",
+  "w": [
+   "Covers only the bedroom: (180/9)($24)",
+   "",
+   "Divides by 3 instead of 9 when converting square feet to square yards: (270/3)($24)",
+   "Does not convert units and multiplies square feet by the price per square yard: 270($24)"
+  ],
+  "strat": "Add the areas (270 sq ft), divide by 9 (30 sq yd), then multiply by $24.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 72,
+  "fig": {
+   "type": "table",
+   "columns": [
+    "Room",
+    "Length (ft)",
+    "Width (ft)"
+   ],
+   "rows": [
+    [
+     "Bedroom",
+     "15",
+     "12"
+    ],
+    [
+     "Office",
+     "10",
+     "9"
+    ]
+   ]
+  }
+ },
+ {
+  "id": "M3-162",
+  "sec": "math",
+  "sub": "m.ies.geom",
+  "cat": "IES",
+  "model": false,
+  "diff": 3,
+  "steps": 3,
+  "t": 67,
+  "q": "In quadrilateral ABCD shown below, angles A and B are right angles, AB = 12 units, BC = 4 units, and AD = 9 units. What is the perimeter, in units, of ABCD ?",
+  "c": [
+   "37",
+   "38",
+   "40",
+   "42"
+  ],
+  "a": 1,
+  "e": "Draw a segment from C perpendicular to AD. This forms a right triangle with legs 12 (horizontal) and 9 − 4 = 5 (vertical), so CD = √(12² + 5²) = 13. The perimeter is 12 + 4 + 13 + 9 = 38.",
+  "w": [
+   "Assumes the slanted side CD equals the opposite side AB = 12",
+   "",
+   "Uses AD = 9 instead of the difference 9 − 4 = 5 as a leg: CD = √(12² + 9²) = 15",
+   "Adds the legs instead of using the Pythagorean theorem: CD = 12 + 5 = 17"
+  ],
+  "strat": "Drop a perpendicular from C to get a 5-12-13 right triangle, so CD = 13. Then add the four sides.",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 73,
+  "fig": {
+   "type": "geometry",
+   "points": {
+    "A": [
+     0,
+     0
+    ],
+    "B": [
+     12,
+     0
+    ],
+    "C": [
+     12,
+     4
+    ],
+    "D": [
+     0,
+     9
+    ]
+   },
+   "polygons": [
+    [
+     "A",
+     "B",
+     "C",
+     "D"
+    ]
+   ],
+   "rightAngles": [
+    [
+     "D",
+     "A",
+     "B"
+    ],
+    [
+     "A",
+     "B",
+     "C"
+    ]
+   ],
+   "labels": [
+    {
+     "at": [
+      6,
+      -1
+     ],
+     "text": "12"
+    },
+    {
+     "at": [
+      13,
+      2
+     ],
+     "text": "4"
+    },
+    {
+     "at": [
+      -1,
+      4.5
+     ],
+     "text": "9"
+    }
+   ]
+  }
+ },
+ {
+  "id": "M3-158",
+  "sec": "math",
+  "sub": "m.ies.percent",
+  "cat": "IES",
+  "model": false,
+  "diff": 3,
+  "steps": 3,
+  "t": 67,
+  "q": "The graph below shows the points (1, 2,000) and (3, 2,880), which give the value of a quantity Q at t = 1 and at t = 3. From t = 0 to t = 4, Q increases by the same percent for each 1-unit increase in t. By what percent does Q increase from t = 0 to t = 4 ?",
+  "c": [
+   "80%",
+   "88%",
+   "107.36%",
+   "207.36%"
+  ],
+  "a": 2,
+  "e": "From t = 1 to t = 3, Q is multiplied by 2,880/2,000 = 1.44. That is two equal growth factors, so each 1-unit factor is √1.44 = 1.2. From t = 0 to t = 4 there are four 1-unit steps, so the total factor is 1.2<sup>4</sup> = 1.44<sup>2</sup> = 2.0736. A factor of 2.0736 is an increase of 2.0736 − 1 = 1.0736, or 107.36%.",
+  "w": [
+   "Adds the percents instead of compounding them: 4 × 20% = 80%",
+   "Doubles the two-unit increase of 44% instead of squaring the factor 1.44: 2 × 44% = 88%",
+   "",
+   "Reports the growth factor 2.0736 as the percent and forgets to subtract 1: 207.36%"
+  ],
+  "strat": "Two-step factor 2,880/2,000 = 1.44. Four steps make two of those two-step blocks, so the factor is 1.44² = 2.0736. Subtract 1 to get 107.36%. (You don't need the square root.)",
+  "desmos": "",
+  "fastest": "paper",
+  "validated": "code-verified",
+  "n": 74,
+  "fig": {
+   "type": "scatter",
+   "x": {
+    "label": "t",
+    "min": 0,
+    "max": 4,
+    "ticks": [
+     0,
+     1,
+     2,
+     3,
+     4
+    ]
+   },
+   "y": {
+    "label": "Q",
+    "min": 0,
+    "max": 3200,
+    "ticks": [
+     0,
+     2000,
+     2880
+    ]
+   },
+   "series": [
+    {
+     "name": "Q",
+     "points": [
+      [
+       1,
+       2000
+      ],
+      [
+       3,
+       2880
+      ]
+     ],
+     "labels": [
+      "(1, 2,000)",
+      "(3, 2,880)"
+     ]
+    }
+   ],
+   "pointLabels": true
+  }
  }
 ]);
 })(window.ACED_DATA);

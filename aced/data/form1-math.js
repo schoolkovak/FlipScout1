@@ -1830,16 +1830,16 @@ window.ACED_DATA = window.ACED_DATA || {};
   "t": 67,
   "q": "In the xy-plane, the line y = 2x + k and the parabola y = x<sup>2</sup> &minus; 4x + 7 intersect at exactly one point. What is the value of k ?",
   "c": [
-   "2",
    "&minus;2",
+   "2",
    "3",
    "16"
   ],
-  "a": 1,
+  "a": 0,
   "e": "Set the two expressions equal: x<sup>2</sup> &minus; 4x + 7 = 2x + k, so x<sup>2</sup> &minus; 6x + (7 &minus; k) = 0. Exactly one intersection means the discriminant is 0: (&minus;6)<sup>2</sup> &minus; 4(1)(7 &minus; k) = 0, so 36 &minus; 28 + 4k = 0 and 4k = &minus;8, giving k = &minus;2. Check: the double root is x = 3, where the parabola gives y = 4 and the line gives 6 + (&minus;2) = 4.",
   "w": [
-   "Sign slip when moving k: wrote the constant as 7 + k, so 36 &minus; 4(7 + k) = 0 and k = 2.",
    "",
+   "Sign slip when moving k: wrote the constant as 7 + k, so 36 &minus; 4(7 + k) = 0 and k = 2.",
    "Forgot to move the 2x term: used x<sup>2</sup> &minus; 4x + (7 &minus; k) = 0, so 16 &minus; 4(7 &minus; k) = 0 and k = 3.",
    "Misremembered the discriminant as b<sup>2</sup> + 4ac: 36 + 4(7 &minus; k) = 0, so k = 16."
   ],
