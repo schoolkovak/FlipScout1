@@ -277,8 +277,13 @@ function viewSkills() {
   const off = (TAX.official || {})[UI.skSec];
   const modelAtt = UI.skSec === 'math' ? ST.attempts.filter(a => BYID[a.id] && BYID[a.id].model) : [];
   return `<h2>Skills</h2><p class="sub">"Practice weight" is Aced's estimate of how much practice each skill deserves within the section; it is not an official ACT frequency. "At ACT level" is your estimated chance of answering a typical ACT question on that skill correctly.</p>
-  ${off ? `<div class="card" style="margin-bottom:12px"><b>${esc(off.source)}</b><div class="tbl"><table class="t">${off.rows.map(r => `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td></tr>`).join('')}</table></div>${UI.skSec === 'math' ? `<div class="meta small">Modeling questions are tagged on top of their category. Your modeling accuracy: ${modelAtt.length ? pct(modelAtt.filter(a => a.ok).length, modelAtt.length) + '% of ' + modelAtt.length : 'no data yet'}.</div>` : ''}</div>` : ''}
-  <div class="seg" role="group" aria-label="Section">${SECTIONS.map(s => `<button data-act="skSec" data-sec="${s}" aria-pressed="${UI.skSec === s}">${NAMES[s]}</button>`).join('')}</div>
+  <div class="seg" role="group" aria-label="Section" style="margin-bottom:12px">${SECTIONS.map(s => `<button data-act="skSec" data-sec="${s}" aria-pressed="${UI.skSec === s}">${NAMES[s]}</button>`).join('')}</div>
+  ${off ? `<div class="card" style="margin-bottom:12px"><b>${esc(off.source)}</b><div class="tbl"><table class="t"><tr><th>Category</th><th>Share of the test</th><th>Your accuracy</th></tr>${off.rows.map(r => {
+      const name = r[0].trim(), sub = r[0].startsWith('  ');
+      const code = Object.keys(TAX.cats || {}).find(k => TAX.cats[k] === name);
+      const att = code ? ST.attempts.filter(a => a.sec === UI.skSec && (BYID[a.id] || {}).cat === code) : [];
+      return `<tr><td style="${sub ? 'padding-left:28px;color:var(--muted)' : 'font-weight:600'}">${sub ? '↳ ' : ''}${esc(name)}</td><td>${esc(r[1])}</td><td>${att.length ? `${pct(att.filter(a => a.ok).length, att.length)}% <span class="meta small">(${att.length})</span>` : '<span class="meta">—</span>'}</td></tr>`;
+    }).join('')}</table></div>${UI.skSec === 'math' ? `<div class="meta small">Modeling questions are tagged on top of their category. Your modeling accuracy: ${modelAtt.length ? pct(modelAtt.filter(a => a.ok).length, modelAtt.length) + '% of ' + modelAtt.length : 'no data yet'}.</div>` : ''}</div>` : ''}
   <div id="lessonBox"></div>
   <div class="tbl" style="margin-top:12px"><table class="t"><tr><th>Skill</th><th>Practice weight (est.)</th><th>Stage</th><th>Accuracy</th><th>Tries</th><th>Avg time</th><th>At ACT level</th><th>Next review</th><th></th></tr>${rows}</table></div>`;
 }
