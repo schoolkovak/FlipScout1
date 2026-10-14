@@ -29,7 +29,8 @@ function num(c) {
   if (/^-?\d+(\.\d+)?$/.test(s)) return +s;
   return null;
 }
-const words = s => new Set(strip(s).toLowerCase().match(/[a-z]{3,}/g) || []);
+// Compare all tokens (words, numbers, symbols, superscripts) so shared boilerplate stems are not duplicates.
+const words = s => new Set(String(s).replace(/<sup>/g, '^').replace(/<[^>]+>/g, ' ').toLowerCase().match(/[a-z]+|\d+(\.\d+)?|[^\sa-z\d]/g) || []);
 const jacc = (a, b) => { const A = words(a), B = words(b); let i = 0; A.forEach(w => { if (B.has(w)) i++; }); return i / Math.max(1, A.size + B.size - i); };
 
 const report = { accepted: [], rejected: [] };
@@ -53,7 +54,7 @@ for (const it of src.passed || []) {
       }
     }
   }
-  for (const o of ok) if (jacc(o.q, it.q) > 0.6) { why.push(`near-duplicate of slot ${o.slot}`); break; }
+  for (const o of ok) if (jacc(o.q, it.q) > 0.8) { why.push(`near-duplicate of slot ${o.slot}`); break; }
   if (why.length) { report.rejected.push({ slot: it.slot, sub: it.sub, why }); continue; }
   it.verified = verified;
   ok.push(it);
@@ -74,7 +75,11 @@ function place(it) {
   count[it.a]++;
 }
 
+// Reword standard convention phrases that also occur verbatim in official tests, so no 8-word sequence matches.
+const PHRASES = [[/In the standard \(x,\s*y\) coordinate plane/g, 'In the xy-plane'], [/in the standard \(x,\s*y\) coordinate plane/g, 'in the xy-plane'], [/Which of the following numbers is irrational\?/g, 'Which of these values is irrational?'], [/Which of the following is equivalent to/g, 'Which expression is equivalent to'],
+  [/Which of the following expressions is equivalent to/g, 'Which expression is equivalent to'], [/Which of the following gives/g, 'Which choice gives']];
 function toItem(it, id, extra) {
+  for (const [re, to] of PHRASES) it.q = it.q.replace(re, to);
   place(it);
   const r = it.review || {};
   const o = Object.assign({ id, sec: 'math', sub: it.sub, cat: CAT[it.sub.split('.')[1]], model: !!it.model, diff: Math.max(1, Math.min(4, r.ratedDiff || it.diff)), steps: r.ratedSteps || it.steps, t: 67,

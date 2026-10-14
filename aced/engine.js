@@ -326,7 +326,12 @@
         placed = true;
         break;
       }
-      if (!placed) break;
+      if (!placed) {
+        // The chosen skills ran out of questions: widen to the next-ranked skills instead of stopping short.
+        const next = ranked.find(r => !plan.some(p => p.sub === r.sub));
+        if (!next) break;
+        plan.push({ sub: next.sub, label: next.label, sec: next.sec, reasons: next.reasons.length ? next.reasons : ['fills the section'], share: next.score / total, count: 0 });
+      }
     }
     // Keep passage groups contiguous, otherwise preserve interleaving.
     const order = [], seenUnit = new Set();

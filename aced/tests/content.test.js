@@ -97,8 +97,9 @@ test('practice-test math items are validated and span authentic difficulty', () 
   assert.equal(f.length, 45);
   assert.ok(f.every(i => i.validated));
   const d = [1, 2, 3, 4].map(k => f.filter(i => i.diff === k).length);
-  assert.ok(d[2] + d[3] >= 15, `too few level 3-4 items: ${d}`);
-  assert.ok(d[0] <= 9, `too many level-1 items: ${d}`);
+  // Official Tests 1-3 (independently profiled): L1 7-10, L3+L4 14-22 per 45-item section.
+  assert.ok(d[2] + d[3] >= 14 && d[2] + d[3] <= 22, `level 3-4 count outside official range: ${d}`);
+  assert.ok(d[0] <= 10, `too many level-1 items: ${d}`);
 });
 
 test('Aced Practice Test 1 has the enhanced structure and is held out of training', () => {

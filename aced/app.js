@@ -551,6 +551,12 @@ function enterRunner() {
   $('nav').hidden = true;
   $('pauseBtn').hidden = !R.timed; $('pauseBtn').innerHTML = ICON.pause;
   $('flagBtn').hidden = R.kind !== 'exam';
+  $('endBtn').hidden = R.kind !== 'exam';
+  $('indexBtn').hidden = R.kind !== 'exam';
+  $('help').hidden = true; $('nav').hidden = true;
+  $('timeLbl').textContent = R.kind === 'exam' ? (R.timed ? 'TOTAL TIME LEFT' : 'TIME USED') : 'TIME';
+  $('answered').parentElement.hidden = R.kind !== 'exam';
+  paintTools();
   startTick(); showTime(); render();
 }
 function startTick() {
@@ -571,19 +577,22 @@ function startTick() {
 function stopTick() { clearInterval(tick); tick = null; }
 function showTime() {
   if (!R) return;
+  // The timer can be hidden, but it reappears for the final 5 minutes, as on the official test.
+  const hide = timerHidden && !(R.kind === 'exam' && R.timed && R.left < 300);
+  $('timeWrap').style.visibility = hide ? 'hidden' : 'visible';
   if (R.kind === 'exam') { $('timer').textContent = R.timed ? fmt(R.left) : fmt(R.el); $('timer').classList.toggle('low', R.timed && R.left < 300); }
   else $('timer').textContent = fmt(R.el || 0);
 }
 $('pauseBtn').onclick = () => { $('paused').hidden = false; $('pauseBtn').innerHTML = ICON.play; $('pauseBtn').setAttribute('aria-label', 'Resume'); saveRun(); };
 $('resumeBtn').onclick = () => { $('paused').hidden = true; $('pauseBtn').innerHTML = ICON.pause; $('pauseBtn').setAttribute('aria-label', 'Pause'); };
-$('hlBtn').onclick = () => { hl = !hl; $('hlBtn').classList.toggle('on', hl); $('hlBtn').setAttribute('aria-pressed', hl); };
+
 document.addEventListener('mouseup', () => {
   if (!hl) return; const s = getSelection(); if (!s.rangeCount || s.isCollapsed) return;
   const r = s.getRangeAt(0); if (!$('passage').contains(r.commonAncestorContainer)) return;
   try { r.surroundContents(document.createElement('mark')); } catch (e) { /* selection crosses elements */ }
-  s.removeAllRanges();
+  s.removeAllRanges(); savePassageState(); saveRun();
 });
-$('passage').addEventListener('click', e => { if (e.target.tagName === 'MARK' && !hl) e.target.replaceWith(...e.target.childNodes); });
+$('passage').addEventListener('click', e => { if (e.target.tagName === 'MARK' && !hl) { e.target.replaceWith(...e.target.childNodes); savePassageState(); saveRun(); } });
 addEventListener('pagehide', saveRun);
 addEventListener('beforeunload', saveRun);
 document.addEventListener('visibilitychange', () => { if (document.hidden) saveRun(); });
@@ -601,7 +610,11 @@ $('calcClose').onclick = () => { $('calc').hidden = true; };
 
 function setPassage(html, key) {
   $('main').classList.toggle('solo', !html); $('passage').hidden = !html;
-  if (html && $('passage').dataset.p !== key) { $('passage').innerHTML = html; $('passage').dataset.p = key; $('passage').scrollTop = 0; }
+  if (html && $('passage').dataset.p !== key) {
+    const saved = R && R.hlx && R.hlx[key];
+    $('passage').innerHTML = saved || html; $('passage').dataset.p = key;
+    $('passage').scrollTop = (R && R.scr && R.scr[key]) || 0;
+  }
 }
 function choicesHTML(it, opts) {
   return it.c.map((c, k) => {
@@ -609,7 +622,8 @@ function choicesHTML(it, opts) {
     return `<div class="choice ${cls}"><label><input type="radio" name="a" ${opts.sel === k ? 'checked' : ''} ${opts.lock ? 'disabled' : ''} data-pick="${k}"><b>${LET[k]}.</b> <span>${c}</span></label>${opts.lock ? '' : `<button class="elim" data-elim="${k}" aria-label="Cross out choice ${LET[k]}" title="Cross out ${LET[k]}">${LET[k]}̶</button>`}</div>`;
   }).join('');
 }
-function stemHTML(it) { return `${itemFigure(it)}${it.q ? `<div class="stem">${it.q}</div>` : ''}`; }
+// Like the official test: question text first, then any figure or table, then the choices.
+function stemHTML(it) { return `${it.q ? `<div class="stem">${it.q}</div>` : ''}${itemFigure(it)}`; }
 function render() { if (R.kind === 'exam') renderExam(); else renderTrain(); }
 
 // ---------- exam runner (simulations and quizzes) ----------
@@ -622,22 +636,104 @@ function examPassage(p, it) {
 }
 function renderExam() {
   const p = R.parts[R.pi], items = partItems(p), it = items[R.cur], n = R.cur + 1;
-  $("ttl").textContent = R.type === "practice" || R.type === "quiz" ? R.label : `${R.label} — ${NAMES[p.sec]}`;
+  $('ttl').textContent = R.type === 'practice' || R.type === 'quiz' ? R.label : `${R.label} — ${NAMES[p.sec]}`;
+  $('itemLabel').textContent = `Item ${n}`;
   $('calcBtn').hidden = p.sec !== 'math';
   const [ph, key] = examPassage(p, it);
   setPassage(ph, key);
   if (ph) markPassage(it, false);
   $('qpane').innerHTML = `<div class="qnum">Question ${n} of ${items.length}</div>${stemHTML(it)}${choicesHTML(it, { sel: R.ans[n], x: Object.fromEntries([0, 1, 2, 3].map(k => [k, R.x[n + '-' + k]])) })}`;
-  $('flagBtn').classList.toggle('on', !!R.flag[n]);
-  $('bot').innerHTML = `<button class="btn" data-run="exit">Save &amp; exit</button><div class="row"><button class="btn" data-run="prev" ${R.cur === 0 ? 'disabled' : ''}>← Back</button><button class="btn" data-run="navt">Questions</button><button class="btn pri" data-run="next">${R.cur === items.length - 1 ? 'Review →' : 'Next →'}</button></div><button class="btn" data-run="submit">Submit section</button>`;
+  $('flagBtn').setAttribute('aria-pressed', !!R.flag[n]);
+  $('answered').textContent = `${Object.keys(R.ans).length} of ${items.length}`;
+  $('bot').innerHTML = `<button class="tn-nav" data-run="prev" ${R.cur === 0 ? 'disabled' : ''}>‹ PREV</button><button class="tn-nav" data-run="next">NEXT ›</button>`;
+  $('qpane').scrollTop = 0;
   navR();
 }
+// Question index: every item with answered / unanswered / flagged status (like the TestNav index).
 function navR() {
   if (R.kind !== 'exam') return;
   const p = R.parts[R.pi];
-  $('nav').innerHTML = p.items.map((_, k) => `<button class="${R.ans[k + 1] != null ? 'ans' : ''} ${k === R.cur ? 'cur' : ''} ${R.flag[k + 1] ? 'fl' : ''}" data-run="goto" data-k="${k}" aria-label="Question ${k + 1}">${k + 1}</button>`).join('');
+  const answered = Object.keys(R.ans).length, flagged = Object.values(R.flag).filter(Boolean).length;
+  $('nav').innerHTML = `<div class="tn-ph"><b>Index · ${NAMES[p.sec]}</b><button class="tn-x" data-close="nav" aria-label="Close index">×</button></div>
+    <div class="tn-legend"><span>${answered} answered</span><span>${p.items.length - answered} unanswered</span><span>⚑ ${flagged} flagged</span></div>
+    <div class="tn-list">${p.items.map((_, k) => `<button class="${R.ans[k + 1] != null ? 'ans' : ''} ${k === R.cur ? 'cur' : ''} ${R.flag[k + 1] ? 'fl' : ''}" data-run="goto" data-k="${k}"><span>Item ${k + 1}</span><span class="st">${R.ans[k + 1] != null ? 'Answered' : 'Unanswered'}</span></button>`).join('')}</div>`;
 }
-$('flagBtn').onclick = () => { if (R.kind !== 'exam') return; const n = R.cur + 1; R.flag[n] = !R.flag[n]; saveRun(); render(); };
+$('flagBtn').onclick = () => { if (!R || R.kind !== 'exam') return; const n = R.cur + 1; R.flag[n] = !R.flag[n]; saveRun(); render(); };
+// ---------- test tools (TestNav-style) ----------
+const TOOL = { hl: false, elim: false, lr: false, zoom: 1 };
+function closeMenus() { for (const m of ['toolsMenu', 'contrastMenu']) $(m).hidden = true; $('toolsBtn').setAttribute('aria-expanded', 'false'); $('contrastBtn').setAttribute('aria-expanded', 'false'); }
+$('toolsBtn').onclick = e => { e.stopPropagation(); const open = $('toolsMenu').hidden; closeMenus(); $('toolsMenu').hidden = !open; $('toolsBtn').setAttribute('aria-expanded', open); };
+$('contrastBtn').onclick = e => { e.stopPropagation(); const open = $('contrastMenu').hidden; closeMenus(); $('contrastMenu').hidden = !open; $('contrastBtn').setAttribute('aria-expanded', open); };
+document.addEventListener('click', e => { if (!e.target.closest('.tn-menu')) closeMenus(); });
+function paintTools() {
+  $('hlBtn').setAttribute('aria-checked', TOOL.hl);
+  document.querySelector('[data-tool="elim"]').setAttribute('aria-checked', TOOL.elim);
+  document.querySelector('[data-tool="lr"]').setAttribute('aria-checked', TOOL.lr);
+  $('test').classList.toggle('no-elim', !TOOL.elim && R && R.kind === 'exam');
+  $('lineReader').hidden = !TOOL.lr;
+  $('magVal').textContent = Math.round(TOOL.zoom * 100) + '%';
+  $('test').style.setProperty('--tn-zoom', TOOL.zoom);
+}
+$('toolsMenu').addEventListener('click', e => {
+  const b = e.target.closest('[data-tool]'); if (!b) return;
+  const t = b.dataset.tool;
+  if (t === 'hl') { TOOL.hl = !TOOL.hl; hl = TOOL.hl; }
+  if (t === 'elim') TOOL.elim = !TOOL.elim;
+  if (t === 'lr') TOOL.lr = !TOOL.lr;
+  if (t === 'mag') TOOL.zoom = { 1: 1.25, 1.25: 1.5, 1.5: 1.75, 1.75: 1 }[TOOL.zoom] || 1;
+  if (t !== 'calc') { paintTools(); if (t !== 'mag') closeMenus(); }
+});
+$('contrastMenu').addEventListener('click', e => {
+  const b = e.target.closest('[data-contrast]'); if (!b) return;
+  $('test').classList.remove('c-rose', 'c-yb', 'c-wb', 'c-gg');
+  if (b.dataset.contrast) $('test').classList.add('c-' + b.dataset.contrast);
+  store.set('aced-contrast', b.dataset.contrast); closeMenus();
+});
+{ const c = store.get('aced-contrast', ''); if (c) $('test').classList.add('c-' + c); }
+// Line reader: a reading band that follows the pointer; arrow keys move it.
+let lrY = 220;
+function placeLR() { const b = $('lineReader'); b.style.top = (lrY - b.offsetHeight / 2) + 'px'; }
+document.addEventListener('mousemove', e => { if (TOOL.lr && !$('test').hidden) { lrY = e.clientY; placeLR(); } });
+let timerHidden = false;
+$('hideTimer').onclick = () => { timerHidden = !timerHidden; showTime(); $('hideTimer').setAttribute('aria-label', timerHidden ? 'Show timer' : 'Hide timer'); };
+$('indexBtn').onclick = () => { if (!R || R.kind !== 'exam') return; navR(); $('nav').hidden = !$('nav').hidden; $('help').hidden = true; };
+$('helpBtn').onclick = () => { $('help').hidden = !$('help').hidden; $('nav').hidden = true; };
+document.addEventListener('click', e => { const c = e.target.closest('[data-close]'); if (c) $(c.dataset.close).hidden = true; });
+$('endBtn').onclick = () => { if (R && R.kind === 'exam') showReview(); };
+// End Test → review screen with every item's status, then submit (as on the official test).
+function showReview() {
+  const p = R.parts[R.pi], items = p.items;
+  const un = items.length - Object.keys(R.ans).length, fl = Object.values(R.flag).filter(Boolean).length;
+  const box = document.createElement('div'); box.className = 'tn-review'; box.id = 'review';
+  box.innerHTML = `<div class="box"><h2 style="margin-top:0">Review · ${NAMES[p.sec]}</h2>
+    <p>${items.length - un} answered · <b>${un} unanswered</b> · ⚑ ${fl} flagged${R.timed ? ` · ${fmt(R.left)} left` : ''}</p>
+    <div class="tn-list" style="margin:12px 0">${items.map((_, k) => `<button class="${R.ans[k + 1] != null ? 'ans' : ''} ${R.flag[k + 1] ? 'fl' : ''}" data-rv="${k}"><span>Item ${k + 1}</span><span class="st">${R.ans[k + 1] != null ? 'Answered' : 'Unanswered'}</span></button>`).join('')}</div>
+    <p class="meta">Once you submit this section you cannot return to it.</p>
+    <div class="row"><button class="btn" data-rv="back">Return to test</button><button class="btn pri" data-rv="submit">Submit section</button></div></div>`;
+  $('test').appendChild(box);
+  box.onclick = e => {
+    const b = e.target.closest('[data-rv]'); if (!b) return;
+    const v = b.dataset.rv;
+    if (v === 'submit') { if (!b.dataset.armed) { b.dataset.armed = 1; b.textContent = 'Confirm: submit section'; return; } box.remove(); finishPart(); return; }
+    box.remove();
+    if (v !== 'back') { R.cur = +v; saveRun(); render(); }
+  };
+}
+// Highlights and passage scroll position persist per passage for the whole attempt.
+function savePassageState() {
+  if (!R) return; const key = $('passage').dataset.p; if (!key) return;
+  R.hlx = R.hlx || {}; R.scr = R.scr || {};
+  if ($('passage').querySelector('mark')) R.hlx[key] = $('passage').innerHTML; else delete R.hlx[key];
+}
+$('passage').addEventListener('scroll', () => { if (R && $('passage').dataset.p) { R.scr = R.scr || {}; R.scr[$('passage').dataset.p] = $('passage').scrollTop; } });
+document.addEventListener('keydown', e => {
+  if ($('test').hidden || !R) return;
+  if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); RUN.next ? RUN.next() : null; }
+  else if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); RUN.prev(); }
+  else if (e.altKey && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); $('flagBtn').click(); }
+  else if (TOOL.lr && (e.key === 'ArrowDown' || e.key === 'ArrowUp') && !e.target.closest('input,textarea')) { e.preventDefault(); lrY += e.key === 'ArrowDown' ? 24 : -24; placeLR(); }
+  else if (e.key === 'Escape') { closeMenus(); $('nav').hidden = true; $('help').hidden = true; }
+});
 
 $('qpane').addEventListener('change', e => {
   const k = e.target.dataset.pick; if (k == null) return;
@@ -668,10 +764,10 @@ document.addEventListener('click', e => {
 });
 const RUN = {};
 RUN.exit = () => { saveRun(); go(TAB); };
-RUN.prev = () => { if (R.cur > 0) { R.cur--; saveRun(); render(); } };
-RUN.next = () => { const p = R.parts[R.pi]; if (R.cur < p.items.length - 1) { R.cur++; saveRun(); render(); } else { $('nav').hidden = false; navR(); } };
+RUN.prev = () => { if (R.kind === 'exam' && R.cur > 0) { R.cur--; saveRun(); render(); } };
+RUN.next = () => { if (R.kind !== 'exam') return; const p = R.parts[R.pi]; if (R.cur < p.items.length - 1) { R.cur++; saveRun(); render(); } else showReview(); };
 RUN.navt = () => { $('nav').hidden = !$('nav').hidden; };
-RUN.goto = b => { R.cur = +b.dataset.k; saveRun(); render(); };
+RUN.goto = b => { R.cur = +b.dataset.k; $('nav').hidden = true; saveRun(); render(); };
 RUN.submit = b => {
   const un = R.parts[R.pi].items.length - Object.keys(R.ans).length;
   if (!b.dataset.armed) { b.dataset.armed = 1; b.textContent = un ? `${un} unanswered. Click again to submit` : 'Click again to submit'; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = 'Submit section'; } }, 4000); return; }
