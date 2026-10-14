@@ -409,3 +409,4 @@ button.mcImage{border:0;width:100%;cursor:pointer;padding:0}
 .facetLabel{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);min-width:64px}
 .chip:disabled{opacity:.35;cursor:not-allowed}
 .flipMain .flipParts{display:flex;flex-direction:column;gap:2px;color:var(--muted);font-size:12px}
+.modeRow button em.cnt{font-style:normal;opacity:.7;font-size:.9em}

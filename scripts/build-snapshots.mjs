@@ -40,13 +40,14 @@ const NEWEGG_STALE_H = 6;
 const NEWEGG_PER_RUN = Number(args["newegg-per-run"] ?? 45);
 const NEWEGG_GAP_MS = 1500;
 // Amazon search pages: gentler still (each model about every 8 hours).
-const AMAZON_STALE_H = 8;
-const AMAZON_PER_RUN = Number(args["amazon-per-run"] ?? 25);
-const AMAZON_GAP_MS = 4000;
-// AliExpress (US warehouses only): every model about every 12 hours.
-const ALIEXPRESS_STALE_H = 12;
-const ALIEXPRESS_PER_RUN = Number(args["aliexpress-per-run"] ?? 18);
-const ALIEXPRESS_GAP_MS = 5000;
+const AMAZON_STALE_H = 20;
+const AMAZON_PER_RUN = Number(args["amazon-per-run"] ?? 10);
+const AMAZON_GAP_MS = Number(args["aliexpress-gap-s"] ?? 240) * 1000;
+// AliExpress (US warehouses only): it asks for a captcha after ~5 quick
+// searches, so only a few models per run (priority models first).
+const ALIEXPRESS_STALE_H = 20;
+const ALIEXPRESS_PER_RUN = Number(args["aliexpress-per-run"] ?? 10);
+const ALIEXPRESS_GAP_MS = Number(args["aliexpress-gap-s"] ?? 240) * 1000;
 const STORE_PROVIDERS = new Set([NEWEGG_PROVIDER, AMAZON_PROVIDER, ALIEXPRESS_PROVIDER]);
 
 // Parts a gaming-PC flipper buys and sells most: refreshed first.
@@ -157,8 +158,12 @@ async function main() {
 
   const existing = item => readJson(join(DATA, "models", modelSlug(item.name) + ".json"), null);
 
+  // "--only=aliexpress": the slow AliExpress pass that runs while the refresh
+  // chain waits between runs (see snapshots.yml) — nothing else.
+  const slowAli = args.only === "aliexpress";
+
   // 1. Free refresh (eBay / Best Buy official APIs): every model.
-  if (freeApis) {
+  if (freeApis && !slowAli) {
     const force = args["force-free"] === "1";
     const due = models.filter(m => force || hoursSince(state.models[m.name]?.freeAt) > FREE_STALE_H);
     await pool(due, 6, async item => {
@@ -186,7 +191,7 @@ async function main() {
     const prio = new Set(PRIORITY);
     const due = models
       .map(m => ({ m, age: hoursSince(state.models[m.name]?.neweggAt), p: prio.has(m.name) }))
-      .filter(x => args["force-free"] === "1" || x.age > NEWEGG_STALE_H)
+      .filter(x => !slowAli && (args["force-free"] === "1" || x.age > NEWEGG_STALE_H))
       .sort((a, b) => (b.p - a.p) || (b.age - a.age))
       .slice(0, NEWEGG_PER_RUN).map(x => x.m);
     let fails = 0;
@@ -231,16 +236,21 @@ async function main() {
             const { market, ranked } = rerank([...fresh, ...kept], item);
             saveModel(item, { ...(old || {}), available: true, searchedAt: old?.searchedAt || now(), market, resultCount: ranked.length, results: capResults(ranked) });
           }
-        } catch (e) { log.errors.push(key + " " + item.name + ": " + e.message); if (/captcha|HTTP 50|HTTP 429|HTTP 403/.test(e.message)) break; }
+        } catch (e) { log.errors.push(key + " " + item.name + ": " + e.message); if (/captcha|blocked|HTTP 50|HTTP 429|HTTP 403/.test(e.message)) break; }
         await new Promise(r => setTimeout(r, gapMs));
       }
       if (log[key]) console.log(`${key}: ${log[key]} models checked`);
     };
-    await storePass({ key: "amazon", provider: AMAZON_PROVIDER, listings: amazonListings, perRun: AMAZON_PER_RUN, staleH: AMAZON_STALE_H, gapMs: AMAZON_GAP_MS });
-    await storePass({ key: "aliexpress", provider: ALIEXPRESS_PROVIDER, listings: aliexpressListings, perRun: ALIEXPRESS_PER_RUN, staleH: ALIEXPRESS_STALE_H, gapMs: ALIEXPRESS_GAP_MS });
+    // Amazon and AliExpress block quick repeat searches (503 / captcha), so
+    // they are never rushed: only in the slow pass between refreshes, one
+    // search every few minutes, the two stores alternating.
+    if (slowAli) await Promise.all([
+      storePass({ key: "aliexpress", provider: ALIEXPRESS_PROVIDER, listings: aliexpressListings, perRun: ALIEXPRESS_PER_RUN, staleH: ALIEXPRESS_STALE_H, gapMs: ALIEXPRESS_GAP_MS }),
+      new Promise(r => setTimeout(r, ALIEXPRESS_GAP_MS / 2)).then(() => storePass({ key: "amazon", provider: AMAZON_PROVIDER, listings: amazonListings, perRun: AMAZON_PER_RUN, staleH: AMAZON_STALE_H, gapMs: AMAZON_GAP_MS }))
+    ]);
 
     // Newegg combo deals (Flipper Deals), about every 6 hours.
-    if (args["force-free"] === "1" || hoursSince(state.combosAt) > NEWEGG_STALE_H) {
+    if (!slowAli && (args["force-free"] === "1" || hoursSince(state.combosAt) > NEWEGG_STALE_H)) {
       try {
         const combos = await fetchNeweggCombos();
         if (combos.length) {
@@ -254,7 +264,7 @@ async function main() {
   }
 
   // 2. Paid refresh: priority models first, then the stalest, within budget.
-  if (paidOk) {
+  if (paidOk && !slowAli) {
     const prio = new Set(PRIORITY);
     const due = models
       .map(m => ({ m, age: hoursSince(state.models[m.name]?.paidAt), p: prio.has(m.name) }))
@@ -300,7 +310,7 @@ async function main() {
     }
     return { live, gone };
   };
-  if (freeApis && (log.free > 0 || log.newegg > 0 || log.amazon > 0 || log.aliexpress > 0)) {
+  if (freeApis && !slowAli && (log.free > 0 || log.newegg > 0 || log.amazon > 0 || log.aliexpress > 0)) {
     try {
       const read = async path => readJson(join(DATA, path), null);
       const urls = new Set();
@@ -326,7 +336,7 @@ async function main() {
 
   // 3. Great-deal alerts from the saved listings (no credits).
   const topic = process.env.NTFY_TOPIC || "";
-  if (topic && (log.free > 0 || log.paid > 0 || log.newegg > 0 || log.amazon > 0 || log.aliexpress > 0)) {
+  if (topic && !slowAli && (log.free > 0 || log.paid > 0 || log.newegg > 0 || log.amazon > 0 || log.aliexpress > 0)) {
     try {
       const deals = await findGreatDeals(DATA);
       // Ask eBay (through the site) which deal listings are still for sale.

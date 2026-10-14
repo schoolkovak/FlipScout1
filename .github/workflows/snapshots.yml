@@ -66,20 +66,53 @@ jobs:
           git add -A
           git commit -qm "Listings snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
           git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" data
-  # Keep refreshing about hourly: wait, then start the next run, unless
-  # another refresh is already queued or running (no duplicate chains).
+  # Between refreshes: read AliExpress slowly (one search every ~4 minutes,
+  # so its captcha never trips), publish, then start the next refresh unless
+  # another one is already queued or running (no duplicate chains).
   next:
     needs: build
     if: always() && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Wait, then start the next refresh
+      - run: echo "NEXT_START=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Check out saved listings
+        run: |
+          git fetch --depth=1 origin data
+          git worktree add snapdata FETCH_HEAD
+      - name: Slow AliExpress pass
+        id: refresh
+        continue-on-error: true
+        env:
+          SITE: ${{ vars.SNAPSHOT_SITE || 'https://flip-scout-ebon.vercel.app' }}
+        run: node scripts/build-snapshots.mjs --site="$SITE" --data=snapdata --only=aliexpress --aliexpress-per-run=10 --aliexpress-gap-s=240 --time-limit=2700000
+      - name: Publish saved listings
+        if: steps.refresh.outputs.changed == 'true'
+        run: |
+          rm -rf publish && mkdir publish
+          cp -r snapdata/models snapdata/links.json snapdata/state.json snapdata/combos.json publish/ 2>/dev/null || true
+          echo '{"git":{"deploymentEnabled":false}}' > publish/vercel.json
+          cd publish
+          git init -q -b data
+          git config user.name "flipscout-snapshots"
+          git config user.email "snapshots@users.noreply.github.com"
+          git add -A
+          git commit -qm "Listings snapshot (AliExpress) $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" data
+      - name: Start the next refresh
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
-          sleep 2700
+          # Keep refreshes about an hour apart even when there was little to do.
+          wait=$(( 2700 - ($(date +%s) - NEXT_START) )); if [ "$wait" -gt 0 ]; then sleep "$wait"; fi
           others=$(gh run list --workflow snapshots.yml --limit 20 --json databaseId,status \
             -q '[.[] | select(.databaseId != ${{ github.run_id }}) | select(.status != "completed")] | length')
           if [ "$others" = "0" ]; then gh workflow run snapshots.yml --ref main; echo "next refresh started"; else echo "another refresh is already queued/running"; fi

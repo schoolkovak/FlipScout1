@@ -59,6 +59,9 @@ export async function fetchAmazonSearch(query, { fetchImpl = fetch, timeoutMs = 
   if (!r.ok) throw new Error("Amazon HTTP " + r.status);
   const html = await r.text();
   if (/validateCaptcha|api-services-support@amazon\.com/.test(html)) throw new Error("Amazon asked for a captcha");
+  // A results page without any result blocks is Amazon's soft block ("Sorry!
+  // Something went wrong"), not "no listings": keep the saved ones.
+  if (!/data-component-type="s-search-result"/.test(html)) throw new Error("Amazon returned no results page (blocked)");
   return html;
 }
 
