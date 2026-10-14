@@ -37,8 +37,8 @@ const RUN_LIMIT_MS = Number(args["time-limit"] ?? 20 * 60 * 1000);
 // Newegg store pages (free, read politely one at a time): each model about
 // every 6 hours, at most NEWEGG_PER_RUN models per run.
 const NEWEGG_STALE_H = 6;
-const NEWEGG_PER_RUN = Number(args["newegg-per-run"] ?? 45);
-const NEWEGG_GAP_MS = 1500;
+const NEWEGG_PER_RUN = Number(args["newegg-per-run"] ?? 30);
+const NEWEGG_GAP_MS = 4000;
 // Amazon search pages: gentler still (each model about every 8 hours).
 const AMAZON_STALE_H = 20;
 const AMAZON_PER_RUN = Number(args["amazon-per-run"] ?? 10);
@@ -254,7 +254,7 @@ async function main() {
       .slice(0, NEWEGG_PER_RUN).map(x => x.m);
     let fails = 0;
     for (const item of due) {
-      if (Date.now() - started > RUN_LIMIT_MS * 0.9 || fails >= 3) break;
+      if (Date.now() - started > RUN_LIMIT_MS * 0.9 || fails >= 5) break;
       try {
         const fresh = await neweggListings(item);
         const old = existing(item);
@@ -268,7 +268,11 @@ async function main() {
           const { market, ranked } = rerank(merged, item);
           saveModel(item, { ...(old || {}), available: true, searchedAt: old?.searchedAt || now(), market, resultCount: ranked.length, results: capResults(ranked) });
         }
-      } catch (e) { fails++; log.errors.push("newegg " + item.name + ": " + e.message); }
+      } catch (e) {
+        fails++; log.errors.push("newegg " + item.name + ": " + e.message);
+        // Count it as checked so the next run moves on to other models.
+        (state.models[item.name] ||= {}).neweggAt = now();
+      }
       await new Promise(r => setTimeout(r, NEWEGG_GAP_MS));
     }
     if (log.newegg) console.log(`newegg: ${log.newegg} models checked`);
@@ -304,7 +308,7 @@ async function main() {
     // search every few minutes, the two stores alternating.
     if (slowAli) await Promise.all([
       storePass({ key: "aliexpress", provider: ALIEXPRESS_PROVIDER, listings: aliexpressListings, perRun: ALIEXPRESS_PER_RUN, staleH: ALIEXPRESS_STALE_H, gapMs: ALIEXPRESS_GAP_MS }),
-      new Promise(r => setTimeout(r, ALIEXPRESS_GAP_MS / 2)).then(() => storePass({ key: "amazon", provider: AMAZON_PROVIDER, listings: amazonListings, perRun: AMAZON_PER_RUN, staleH: AMAZON_STALE_H, gapMs: AMAZON_GAP_MS }))
+      new Promise(r => setTimeout(r, ALIEXPRESS_GAP_MS / 2)).then(() => storePass({ key: "amazon", provider: AMAZON_PROVIDER, listings: item => amazonListings(item, { site: SITE }), perRun: AMAZON_PER_RUN, staleH: AMAZON_STALE_H, gapMs: AMAZON_GAP_MS }))
     ]);
 
     // Newegg combo deals (Flipper Deals), about every 6 hours.
