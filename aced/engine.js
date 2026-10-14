@@ -193,9 +193,9 @@
     if (due && !mastered) { mult *= 1.35; reasons.push('due for spaced review'); }
     if (mastered) { if (due) { mult *= 0.6; reasons.push('retention check due'); } else mult *= 0.12; }
     if (!mastered && p >= 0.55 && p < 0.8 && sk.n >= 3) { mult *= 1.25; reasons.push('close to mastery'); }
-    if (sk.n < 2) { mult *= 1.15; reasons.push('not enough data yet'); }
+    if (sk.n < 2) { mult *= 1.15; reasons.push(sk.prior ? 'estimated from your section score; not measured yet' : 'not enough data yet'); }
     if (sk.stuck) reasons.push('progress stalled, switching to step-by-step practice');
-    if (info.weight >= 0.06) reasons.push(`appears often (${Math.round(info.weight * 100)}% of ${cap(sec)})`);
+    if (info.weight >= 0.04) reasons.push(`a large share of ${cap(sec)} (about ${Math.round(info.weight * 100)}% of practice, Aced estimate)`);
     return { sub, sec, score: base * mult, base, p, pts, reasons, stage: sk.stage, label: info.label || sub };
   }
 
@@ -301,7 +301,7 @@
     const plan = chosen.map(r => ({ sub: r.sub, label: r.label, sec: r.sec, reasons: r.reasons, share: r.score / total, count: 0 }));
     let spent = 0, guard = 0;
     // Weighted round-robin: each pick goes to the skill furthest below its target share.
-    while (spent < budget && guard++ < 400) {
+    while ((opts.count ? steps.length < opts.count : spent < budget) && guard++ < 600) {
       const n = steps.length + 1;
       plan.sort((a, b) => (a.count / n - a.share) - (b.count / n - b.share));
       let placed = false;
@@ -388,8 +388,8 @@
   }
 
   /** Top priorities with an explanation and a practice recommendation. */
-  function topPriorities(state, tax, k, now) {
-    return rankSkills(state, tax, { now }).slice(0, k || 5).map(r => {
+  function topPriorities(state, tax, k, now, sections) {
+    return rankSkills(state, tax, { now, sections }).slice(0, k || 5).map(r => {
       const sk = state.skills[r.sub] || newSkill();
       const items = clamp(Math.round(6 + 14 * (1 - r.p)), 6, 20);
       const sessions = r.p < 0.5 ? 3 : 2;
@@ -438,7 +438,46 @@
     };
   }
 
+  /**
+   * Seed untested skills from a student's real section scale scores, so nothing starts at "zero".
+   * The scale score is turned into an expected share of questions correct using the conversion curve,
+   * and each untested subskill gets the ability that predicts that share at its typical difficulty.
+   */
+  function applyPriors(state, tax, scores) {
+    for (const sec of SECTIONS) {
+      const sc = scores && +scores[sec];
+      const conv = tax.conv && tax.conv[sec];
+      if (!sc || !conv) continue;
+      let best = 0;
+      conv.forEach((v, r) => { if (Math.abs(v - sc) < Math.abs(conv[best] - sc) || (Math.abs(v - sc) === Math.abs(conv[best] - sc) && r < best)) best = r; });
+      const f = clamp(best / (conv.length - 1), 0.05, 0.95);
+      for (const [sub, info] of Object.entries(tax.subs)) {
+        if (info.sec !== sec) continue;
+        const sk = state.skills[sub] || (state.skills[sub] = newSkill());
+        if (sk.n) continue;
+        sk.theta = Math.log(f / (1 - f)) + bOf(info.diff || 3);
+        sk.prior = true;
+      }
+    }
+    return state;
+  }
+
+  /**
+   * Diagnostic spillover: one answer is also weak evidence about untested sibling skills in the
+   * same reporting category, which lets a short diagnostic cover the whole taxonomy.
+   */
+  function spread(state, tax, sub, delta, share) {
+    const info = tax.subs[sub]; if (!info || !delta) return;
+    for (const [s, i] of Object.entries(tax.subs)) {
+      if (s === sub || i.sec !== info.sec || i.cat !== info.cat) continue;
+      const sk = state.skills[s] || (state.skills[s] = newSkill());
+      if (sk.n) continue;
+      sk.theta = clamp(sk.theta + delta * (share || 0.35), -4, 4);
+    }
+  }
+
   return {
+    applyPriors, spread,
     DAY, SECTIONS, SCORED, STAGES, STAGE_LABEL, REASONS,
     newState, migrate, record, pCorrect, diffForP, targetDifficulty, pickItem, planSession, followUp,
     skillPriority, rankSkills, topPriorities, estimateScores, estimateRaw, evaluate, advice, credit
