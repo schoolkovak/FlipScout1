@@ -11,13 +11,27 @@ jobs:
       - run: |
           cat > p.mjs <<'JS'
           import { fetchAliexpressSearch, aliexpressItems, aliexpressOffers, aliexpressListings } from "./scripts/aliexpress.mjs";
-          for (const [q, c, msrp] of [["RTX 3060 12GB", "GPU", 329], ["650W PSU", "Power Supply / PSU", 0], ["ARGB PC case", "PC Case", 0], ["Ryzen 5 5600", "CPU", 199], ["1TB NVMe SSD", "NVMe SSD", 0], ["240mm AIO liquid cooler", "AIO Liquid Cooler", 0]]) {
+          import { fetchAmazonSearch, amazonOffers, amazonListings } from "./scripts/amazon.mjs";
+          import { qualifyOffers } from "./api/_lib/market.js";
+          for (const [q, c, msrp] of [["RTX 3070", "GPU", 499], ["RTX 4060", "GPU", 299], ["Ryzen 7 7800X3D", "CPU", 449]]) {
+            try {
+              const html = await fetchAmazonSearch(q);
+              const raw = amazonOffers(html);
+              const { items, stats } = qualifyOffers(raw, { query: q, category: c, msrp, condition: "any" });
+              console.log("\n#### AMAZON", q, "html", html.length, "results", (html.match(/data-component-type="s-search-result"/g)||[]).length, "raw", raw.length, "kept", items.length);
+              for (const [, s] of stats) console.log("   dropped", JSON.stringify(s.dropped), JSON.stringify(s.examples.slice(0, 4)));
+              for (const o of raw.slice(0, 4)) console.log("   RAW", o.itemPrice, o.title.slice(0, 70));
+              if (!raw.length) { const i = html.indexOf("s-search-result"); console.log(html.slice(i, i + 1500)); }
+            } catch (e) { console.log("AMAZON", q, "ERR", e.message); }
+            await new Promise(r => setTimeout(r, 4000));
+          }
+          for (const [q, c, msrp] of [["RTX 3060 12GB", "GPU", 329], ["650W PSU", "Power Supply / PSU", 0], ["ARGB PC case", "PC Case", 0], ["1TB NVMe SSD", "NVMe SSD", 0]]) {
             try {
               const raw = aliexpressOffers(aliexpressItems(await fetchAliexpressSearch(q)));
               const kept = await aliexpressListings({ query: q, category: c, msrp });
-              console.log("\n####", q, "raw", raw.length, "kept", kept.length);
-              for (const x of kept.slice(0, 6)) console.log("   ", x.totalPrice, x.shippingEstimated ? "(ship est)" : "", x.condition, x.title.slice(0, 80), x.url);
-            } catch (e) { console.log(q, "ERR", e.message); }
+              console.log("\n#### ALI", q, "raw", raw.length, "kept", kept.length);
+              for (const x of kept.slice(0, 5)) console.log("   ", x.totalPrice, x.title.slice(0, 80), x.url);
+            } catch (e) { console.log("ALI", q, "ERR", e.message); }
             await new Promise(r => setTimeout(r, 5000));
           }
           JS

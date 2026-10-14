@@ -1,4 +1,4 @@
-import { searchMarketplaces, providerStatus } from "../_lib/market.js";
+import { searchMarketplaces, providerStatus, checkEbayAvailability } from "../_lib/market.js";
 import { findSeries } from "../../shared/partCatalog.js";
 import { readSnapshot, modelPath, ageHours } from "../_lib/snapshots.js";
 import { cardFromResults } from "../_lib/summary.js";
@@ -21,7 +21,10 @@ export default async function handler(req, res) {
       if (!snap?.results?.length || ageHours(snap.searchedAt) > SNAPSHOT_MAX_AGE_H) {
         return { id: item.name, available: false, pending: true, count: 0, listings: [], searchedAt: snap?.searchedAt || null };
       }
-      return cardFromResults(item.name, snap.results, {
+      // Ask eBay whether each card's cheapest listings are still for sale
+      // (sold out / ended / box-only → dropped before the card is built).
+      const live = await checkEbayAvailability(snap.results, { limit: 3 }).catch(() => ({ items: snap.results }));
+      return cardFromResults(item.name, live.items, {
         median: snap.market?.median ?? null, searchedAt: snap.searchedAt,
         sources: (snap.providers || []).map(p => ({ name: p.name, status: p.status, message: p.message, raw: p.raw, kept: p.kept, dropped: p.dropped }))
       });
