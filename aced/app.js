@@ -150,7 +150,7 @@ function show(which) {
 function go(tab) { TAB = tab; store.set('aced-tab', tab); show('app'); renderView(); }
 function renderView() {
   document.querySelectorAll('#tabs [data-tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === TAB));
-  const v = { study: viewStudy, simulate: viewSimulate, skills: viewSkills, progress: viewProgress, settings: viewSettings }[TAB] || viewStudy;
+  const v = { study: viewStudy, simulate: viewSimulate, official: viewOfficial, skills: viewSkills, progress: viewProgress, settings: viewSettings }[TAB] || viewStudy;
   $('view').innerHTML = v();
   paintTheme();
 }
@@ -191,7 +191,7 @@ function viewStudy() {
   <div class="card hero">
     <div class="spread"><div><h3>Today's session</h3><div class="meta">Picks the questions most likely to raise your score: your weakest frequent skills, questions you answer slowly, reviews that are due, and a retention check.</div></div>
     <div class="seg" role="group" aria-label="Session length">${lens.map(m => `<button data-act="len" data-m="${m}" aria-pressed="${UI.len === m}">${m} min</button>`).join('')}</div></div>
-    ${none ? `<div class="note">First session: it starts with a spread of skills so Aced can find where you lose points.${noBaseline ? ' For the most accurate plan, also take an official ACT practice test and log the result under Practice tests.' : ''}</div>` : ''}
+    ${none ? `<div class="note">First session: it starts with a spread of skills so Aced can find where you lose points.${noBaseline ? ' For the most accurate plan, also take an official ACT practice test and log the result under Official Scores.' : ''}</div>` : ''}
     <div>${priorityList(3)}</div>
     <div class="row"><button class="btn pri" data-act="startMax">Start ${UI.len}-minute session</button></div>
   </div>
@@ -221,8 +221,6 @@ function viewSimulate() {
   const mins = s => (s.items || []).length * SECS[s.sec] / 60;
   const formSecs = f => SECTIONS.filter(s => f.sections[s] && (sci || s !== 'science'));
   const sims = (ST.sims || []).slice().reverse();
-  const cps = (ST.checkpoints || []).slice().reverse();
-  const t = OFFICIAL.tests[UI.cpTest] || {};
   return `${resumeList()}
   <h2>Real ACT simulation</h2>
   <p class="sub">Full-length Aced practice tests in the current enhanced format: English 50, Math 45, Reading 36, optional Science 40. Every question is original. Unscored field-test questions are mixed in as on the real test. No hints or feedback until you finish. Scores are estimates: Aced forms are not officially equated.</p>
@@ -233,11 +231,19 @@ function viewSimulate() {
     const done = (ST.sims || []).some(x => x.form === f.id && x.full);
     return `<div class="card"><h3>${esc(f.name)}</h3><div class="meta">${secs.map(s => `${NAMES[s]} ${f.sections[s].items.length}`).join(' · ')}</div>
       <div class="meta">${total.toFixed(1)} min of testing + optional 10-minute break${done ? ' · taken before' : ''}</div>
-      <div class="row"><button class="btn pri" data-act="startForm" data-f="${f.id}" data-timed="1">Timed</button><button class="btn" data-act="startForm" data-f="${f.id}" data-timed="0">Untimed</button></div>
-      <details><summary class="meta">Single sections</summary><div class="row" style="margin-top:6px">${SECTIONS.filter(s => f.sections[s]).map(s => `<button class="btn sm" data-act="startFormSection" data-f="${f.id}" data-sec="${s}" data-timed="1">${NAMES[s]} timed</button><button class="btn sm ghost" data-act="startFormSection" data-f="${f.id}" data-sec="${s}" data-timed="0">untimed</button>`).join('')}</div></details></div>`;
+      <div class="row"><button class="btn pri" data-act="startForm" data-f="${f.id}" data-timed="1">Timed</button><button class="btn" data-act="startForm" data-f="${f.id}" data-timed="0">Untimed</button></div></div>`;
   }).join('') : '<p class="meta">No practice tests are loaded.</p>'}</div>
+  <h2>Full-length sections</h2>
+  <p class="sub">Take one complete section on its own, timed at ${SECS.english}s per English question, ${SECS.math}s per Math question, ${SECS.reading}s per Reading question and ${SECS.science}s per Science question.</p>
+  <div class="grid">${forms.flatMap(f => SECTIONS.filter(s => f.sections[s]).map(s => `<div class="card"><h3>${NAMES[s]}</h3><div class="meta">${esc(f.name)} · ${f.sections[s].items.length} questions · ${(f.sections[s].items.length * SECS[s] / 60).toFixed(1)} min${s === 'science' ? ' · optional on the real test' : ''}</div><div class="row"><button class="btn pri" data-act="startFormSection" data-f="${f.id}" data-sec="${s}" data-timed="1">Timed</button><button class="btn" data-act="startFormSection" data-f="${f.id}" data-sec="${s}" data-timed="0">Untimed</button></div></div>`)).join('')}</div>
   ${sims.length ? `<h3 style="margin-top:18px">Your Aced test results</h3><div class="tbl"><table class="t"><tr><th>Date</th><th>Test</th><th>Mode</th><th>English</th><th>Math</th><th>Reading</th><th>Science</th><th>Composite</th></tr>${sims.map(s => `<tr><td>${new Date(s.at).toLocaleDateString()}</td><td>${esc(s.label)}</td><td>${s.timed ? 'Timed' : 'Untimed'}</td>${SECTIONS.map(k => `<td>${s.scores[k] ?? '—'}</td>`).join('')}<td><b>${s.composite ?? '—'}</b></td></tr>`).join('')}</table></div>` : ''}
-  <h2>Official practice test checkpoints</h2>
+`;
+}
+
+function viewOfficial() {
+  const cps = (ST.checkpoints || []).slice().reverse();
+  const t = OFFICIAL.tests[UI.cpTest] || {};
+  return `  <h2>Official practice test scores</h2>
   <p class="sub">Take an official ACT practice test outside Aced, then enter your raw scores here (number correct on scored questions). These are your baseline and your proof that practice transfers to the real test. Aced also uses them to calibrate its estimates.</p>
   <div class="card"><div class="row">
     <label class="field">Official test<select data-change="cpTest">${Object.keys(OFFICIAL.tests).map(k => `<option value="${k}" ${k === UI.cpTest ? 'selected' : ''}>${esc(OFFICIAL.tests[k].name || 'Practice Test ' + k)}</option>`).join('')}</select></label>
@@ -245,7 +251,6 @@ function viewSimulate() {
   </div><div class="meta" id="cpPreview">Enter raw scores to see scale scores.</div><div class="row"><button class="btn pri" data-act="saveCheckpoint">Save checkpoint</button></div></div>
   ${cps.length ? `<div class="tbl" style="margin-top:10px"><table class="t"><tr><th>Date</th><th>Official test</th><th>English</th><th>Math</th><th>Reading</th><th>Science</th><th>Composite</th><th></th></tr>${cps.map(c => `<tr><td>${new Date(c.at).toLocaleDateString()}</td><td>${esc(c.name)}</td>${SECTIONS.map(k => `<td>${c.scores[k] ?? '—'}${c.raw[k] != null ? ` <span class="meta">(${c.raw[k]})</span>` : ''}</td>`).join('')}<td><b>${c.composite ?? '—'}</b></td><td><button class="btn sm ghost" data-act="delCheckpoint" data-at="${c.at}">Remove</button></td></tr>`).join('')}</table></div>` : ''}`;
 }
-
 function viewSkills() {
   const now = Date.now();
   const rows = Object.entries(TAX.subs).filter(([, i]) => i.sec === UI.skSec).sort((a, b) => b[1].weight - a[1].weight).map(([s, i]) => {
@@ -321,7 +326,7 @@ function viewProgress() {
     <div class="meta">${est.composite == null ? 'Needs enough evidence in English, Math and Reading.' : 'Average of the English, Math and Reading estimates. Treat it as a range of about ±2.'}</div></div>
   <h2>Is it working?</h2>
   <div class="grid">
-    <div class="card"><h3>Official practice tests</h3>${ev.official ? `<div class="big">${ev.official.last}</div><div class="meta">Baseline ${ev.official.first} → latest ${ev.official.last} (${ev.official.delta >= 0 ? '+' : ''}${ev.official.delta})</div>` : '<div class="meta">No official checkpoint yet. Log one under Practice tests to set your baseline.</div>'}</div>
+    <div class="card"><h3>Official practice tests</h3>${ev.official ? `<div class="big">${ev.official.last}</div><div class="meta">Baseline ${ev.official.first} → latest ${ev.official.last} (${ev.official.delta >= 0 ? '+' : ''}${ev.official.delta})</div>` : '<div class="meta">No official checkpoint yet. Log one under Official Scores to set your baseline.</div>'}</div>
     <div class="card"><h3>Previously weak skills</h3>${ev.weakSkills ? `<div class="big">${ev.weakBefore}% → ${ev.weakAfter}%</div><div class="meta">First 5 vs latest 5 tries on ${ev.weakSkills} skill(s) that started under 60%</div>` : '<div class="meta">Shows once a weak skill has 8+ tries.</div>'}</div>
     <div class="card"><h3>Under time pressure</h3>${ev.timedN >= 10 ? `<div class="big">${ev.timedEarly}% → ${ev.timedLate}%</div><div class="meta">Earlier vs recent timed questions (${ev.timedN})</div>` : '<div class="meta">Needs 10+ timed questions.</div>'}</div>
     <div class="card"><h3>Retention</h3>${ev.retentionN ? `<div class="big">${ev.retentionAcc}%</div><div class="meta">Accuracy on skills after a week or more away (${ev.retentionN} questions)</div>` : '<div class="meta">Measured when you return to a skill after 7+ days.</div>'}</div>
