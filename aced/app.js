@@ -229,7 +229,8 @@ function viewSimulate() {
   const sims = (ST.sims || []).slice().reverse();
   return `${resumeList()}
   <h2>Real ACT simulation</h2>
-  <p class="sub">Full-length Aced practice tests in the current enhanced format: English 50, Math 45, Reading 36, optional Science 40. Every question is original. Unscored field-test questions are mixed in as on the real test. No hints or feedback until you finish. Scores are estimates: Aced forms are not officially equated.</p>
+  <p class="sub">Full-length Aced practice tests in the current enhanced format: English 50, Math 45, Reading 36, optional Science 40. Every question is original. Unscored field-test questions are mixed in as on the real test. No hints or feedback until you finish.</p>
+  <div class="warn">Uncalibrated: Aced Practice Test 1 is being rebuilt. An audit found its Math difficulty below real Enhanced ACT level, and its English and Reading passages shorter than official ones. Results show raw scores only.</div>
   <label class="switch"><input type="checkbox" data-change="simSci" ${sci ? 'checked' : ''}> Include the optional Science section</label>
   <div class="grid" style="margin-top:10px">${forms.length ? forms.map(f => {
     const secs = formSecs(f);
@@ -242,7 +243,7 @@ function viewSimulate() {
   <h2>Full-length sections</h2>
   <p class="sub">Take one complete section on its own, timed at ${SECS.english}s per English question, ${SECS.math}s per Math question, ${SECS.reading}s per Reading question and ${SECS.science}s per Science question.</p>
   <div class="grid">${forms.flatMap(f => SECTIONS.filter(s => f.sections[s]).map(s => `<div class="card"><h3>${NAMES[s]}</h3><div class="meta">${esc(f.name)} · ${f.sections[s].items.length} questions · ${(f.sections[s].items.length * SECS[s] / 60).toFixed(1)} min${s === 'science' ? ' · optional on the real test' : ''}</div><div class="row"><button class="btn pri" data-act="startFormSection" data-f="${f.id}" data-sec="${s}" data-timed="1">Timed</button><button class="btn" data-act="startFormSection" data-f="${f.id}" data-sec="${s}" data-timed="0">Untimed</button></div></div>`)).join('')}</div>
-  ${sims.length ? `<h3 style="margin-top:18px">Your Aced test results</h3><div class="tbl"><table class="t"><tr><th>Date</th><th>Test</th><th>Mode</th><th>English</th><th>Math</th><th>Reading</th><th>Science</th><th>Composite</th></tr>${sims.map(s => `<tr><td>${new Date(s.at).toLocaleDateString()}</td><td>${esc(s.label)}</td><td>${s.timed ? 'Timed' : 'Untimed'}</td>${SECTIONS.map(k => `<td>${s.scores[k] ?? '—'}</td>`).join('')}<td><b>${s.composite ?? '—'}</b></td></tr>`).join('')}</table></div>` : ''}
+  ${sims.length ? `<h3 style="margin-top:18px">Your Aced test results</h3><div class="tbl"><table class="t"><tr><th>Date</th><th>Test</th><th>Mode</th><th>English raw</th><th>Math raw</th><th>Reading raw</th><th>Science raw</th></tr>${sims.map(s => `<tr><td>${new Date(s.at).toLocaleDateString()}</td><td>${esc(s.label)}</td><td>${s.timed ? 'Timed' : 'Untimed'}</td>${SECTIONS.map(k => `<td>${(s.raw && s.raw[k]) || (s.scores && s.scores[k] != null ? s.scores[k] + ' (old est.)' : '—')}</td>`).join('')}</tr>`).join('')}</table></div>` : ''}
 `;
 }
 
@@ -295,7 +296,7 @@ function viewProgress() {
   const est = E.estimateScores(ST, TAX);
   const ev = E.evaluate(ST);
   const att = ST.attempts;
-  const lvl = { insufficient: 'Not enough data yet', preliminary: 'Preliminary estimate', calibrated: 'Calibrated to your official tests' };
+  const lvl = { insufficient: 'Not enough data yet', preliminary: 'Preliminary, unvalidated', calibrated: 'Adjusted to your official tests' };
   const cards = SECTIONS.map(s => {
     const a = att.filter(x => x.sec === s), tm = a.filter(x => x.timed), ut = a.filter(x => !x.timed);
     const avg = a.filter(x => x.ms != null);
@@ -329,7 +330,7 @@ function viewProgress() {
   const lastCp = (ST.checkpoints || []).filter(s => s.composite).slice(-1)[0];
   const hist = store.get('aced-hist', []);
   return `<h2>Progress</h2>
-  <p class="sub">Estimates come from your skill-level results weighted by how often each skill appears on the ACT. They stay labeled preliminary until there is enough evidence, and they become calibrated once you log an official practice test.</p>
+  <p class="sub">These ranges are preliminary model estimates built from practice on uncalibrated Aced questions. They are not validated predictions of an ACT score. Only official practice tests (Official Scores tab) give trustworthy scale scores.</p>
   <div class="grid">${cards}</div>
   <div class="card" style="margin-top:14px"><div class="spread"><h3>Estimated composite</h3><span class="big">${est.composite ?? '—'}</span></div>
     <div class="meta">${est.composite == null ? 'Needs enough evidence in English, Math and Reading.' : 'Average of the English, Math and Reading estimates. Treat it as a range of about ±2.'}</div></div>
@@ -786,14 +787,13 @@ function showExamResults(sess) {
   const comp = full && sc.english && sc.math && sc.reading ? roundHalfUp((sc.english + sc.math + sc.reading) / 3) : null;
   const stem = full && sc.math && sc.science ? roundHalfUp((sc.math + sc.science) / 2) : null;
   if (sess.form) {
-    ST.sims.push({ at: Date.now(), form: sess.form, full, label: sess.label, timed: sess.timed, scores: sc, composite: comp });
+    ST.sims.push({ at: Date.now(), form: sess.form, full, label: sess.label, timed: sess.timed, raw: Object.fromEntries(sess.results.map(r => [r.sec, `${r.raw}/${r.tot}`])), scores: {}, composite: null, uncalibrated: true });
     if (full && !ST.prefs.released.includes(sess.form)) ST.prefs.released.push(sess.form);
     saveState();
   }
   const missed = new Set();
-  const tiles = (comp != null ? `<div class="card"><div class="meta">Composite (estimated)</div><div class="big">${comp}</div></div>` : '') +
-    sess.results.map(r => `<div class="card"><div class="meta">${NAMES[r.sec]}</div><div class="big">${r.scale ?? '—'}</div><div class="meta">${r.raw}/${r.tot} scored correct · ${fmt(r.el)}</div></div>`).join('') +
-    (stem != null ? `<div class="card"><div class="meta">STEM (estimated)</div><div class="big">${stem}</div></div>` : '');
+  // Aced forms are uncalibrated: report raw results only, never an implied ACT scale score.
+  const tiles = sess.results.map(r => `<div class="card"><div class="meta">${NAMES[r.sec]} · raw score</div><div class="big">${r.raw}/${r.tot}</div><div class="meta">${pct(r.raw, r.tot)}% of scored questions · ${fmt(r.el)}</div></div>`).join('');
   const detail = sess.results.map((r, pi) => {
     const p = sess.parts[pi], items = partItems(p);
     const cats = Object.entries(r.cats).map(([k, v]) => `<tr><td>${esc((TAX.cats && TAX.cats[k]) || k)}</td><td>${v[0]} / ${v[1]}</td></tr>`).join('');
@@ -814,7 +814,7 @@ function showExamResults(sess) {
   store.set('aced-hist', h.slice(-100));
   const missedList = [...missed];
   $('view').innerHTML = `<div class="spread"><h2>${esc(sess.label)} results</h2><button class="btn" data-act="backHome">Back</button></div>
-    <p class="sub">Scale scores are estimates from a conversion averaged across official enhanced ACT forms. Aced tests are not officially equated, so treat them as ±2. ${full ? 'Composite is the rounded average of English, Math and Reading.' : ''}</p>
+    <div class="warn">Uncalibrated practice result. Aced questions have not been validated against official ACT performance, so this raw score does not convert to an ACT scale score. Use official practice tests (Official Scores tab) for score estimates.</div>
     <div class="grid">${tiles}</div>
     ${missedList.length ? `<div class="card" style="margin-top:12px"><div class="spread"><div><b>Turn misses into points</b><div class="meta">${missedList.length} skills had misses. Practice them with new questions.</div></div><button class="btn pri" data-act="trainMissed" data-subs="${esc(missedList.join('|'))}">Practice missed skills</button></div></div>` : ''}
     ${detail}`;
