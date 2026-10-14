@@ -4,18 +4,21 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci --silent
       - run: |
           cat > p.mjs <<'JS'
-          const B = { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36", "accept": "text/html,application/xhtml+xml", "accept-language": "en-US,en;q=0.9", "sec-fetch-mode": "navigate", "sec-fetch-site": "none", "sec-fetch-dest": "document", "upgrade-insecure-requests": "1" };
-          const t = await (await fetch("https://www.aliexpress.com/w/wholesale-rtx-3060.html?shipFromCountry=US", { headers: B, signal: AbortSignal.timeout(25000) })).text();
-          const i = t.indexOf("_init_data_"); console.log("INIT at", i, t.slice(i, i + 300));
-          const m = t.match(/window\._dida_config_\._init_data_\s*=\s*\{\s*data:\s*(\{[\s\S]*?\})\s*\}\s*<\/script>/) || t.match(/_init_data_\s*=\s*\{\s*data:\s*(\{[\s\S]*?\})\s*\}\s*(?:;|<\/script>)/);
-          if (!m) { console.log("no match"); const j = t.indexOf('"itemList"'); console.log(t.slice(j, j + 3000)); process.exit(0); }
-          let d; try { d = JSON.parse(m[1]); } catch (e) { console.log("parse fail", e.message, m[1].slice(0, 300)); process.exit(0); }
-          const find = (o, depth = 0) => { if (!o || typeof o !== "object" || depth > 8) return null; if (Array.isArray(o.content) && o.content[0]?.productId) return o.content; for (const k of Object.keys(o)) { const r = find(o[k], depth + 1); if (r) return r; } return null; };
-          const items = find(d) || [];
-          console.log("items", items.length);
-          console.log(JSON.stringify(items[0]).slice(0, 4000));
-          for (const x of items.slice(0, 10)) console.log(JSON.stringify({ id: x.productId, title: x.title?.displayTitle?.slice(0, 70), price: x.prices?.salePrice, ship: x.sellingPoints?.map(s => s.tagContent?.tagText).filter(Boolean).slice(0,4), img: x.image?.imgUrl?.slice(0, 60) }));
+          import { fetchAliexpressSearch, aliexpressItems, aliexpressOffers, aliexpressListings } from "./scripts/aliexpress.mjs";
+          for (const [q, c, msrp] of [["RTX 3060 12GB", "GPU", 329], ["650W PSU", "Power Supply / PSU", 0], ["ARGB PC case", "PC Case", 0], ["Ryzen 5 5600", "CPU", 199], ["1TB NVMe SSD", "NVMe SSD", 0], ["240mm AIO liquid cooler", "AIO Liquid Cooler", 0]]) {
+            try {
+              const raw = aliexpressOffers(aliexpressItems(await fetchAliexpressSearch(q)));
+              const kept = await aliexpressListings({ query: q, category: c, msrp });
+              console.log("\n####", q, "raw", raw.length, "kept", kept.length);
+              for (const x of kept.slice(0, 6)) console.log("   ", x.totalPrice, x.shippingEstimated ? "(ship est)" : "", x.condition, x.title.slice(0, 80), x.url);
+            } catch (e) { console.log(q, "ERR", e.message); }
+            await new Promise(r => setTimeout(r, 5000));
+          }
           JS
-          node p.mjs
+          SNAPSHOTS_OFF=1 node p.mjs

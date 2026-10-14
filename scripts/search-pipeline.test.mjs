@@ -749,3 +749,18 @@ test("overnight audit misfits: SATA-not-NVMe, CAMM laptop RAM, rack/test-bench c
   assert.equal(ok("HotYeah 16.1in IPS 1080p 144Hz Portable Gaming Monitor USB-C", "144Hz gaming monitor", "Monitor"), false);
   assert.equal(ok("ASRock 27 inch Full HD 144Hz IPS Gaming Monitor", "144Hz gaming monitor", "Monitor"), true);
 });
+
+test("aliexpress: search-page itemList becomes flagged real item listings", async () => {
+  const { aliexpressItems, aliexpressOffers } = await import("./aliexpress.mjs");
+  const item = (id, title, price, extra = {}) => ({ productId: id, productType: "natural", title: { displayTitle: title }, image: { imgUrl: "//ae-pic-a1.aliexpress-media.com/kf/" + id + ".webp" }, prices: { salePrice: { currencyCode: "USD", minPrice: price } }, ...extra });
+  const list = [item("3256813170166416", "MSI Ventus GeForce RTX 3060 12G", 532.73), item("3256800000000001", "Ad RTX 3060", 99, { productType: "ad" }), item("3256800000000002", "RTX 3060 EUR", 300, { prices: { salePrice: { currencyCode: "EUR", minPrice: 300 } } })];
+  const html = `<script>window.x={"data":{"root":{"fields":{"mods":{"itemList":{"content":${JSON.stringify(list)},"x":"]"}}}}}};</script>`;
+  const items = aliexpressItems(html);
+  assert.equal(items.length, 3);
+  const o = aliexpressOffers(items);
+  assert.equal(o.length, 1, "ads and non-USD prices skipped");
+  assert.equal(o[0].url, "https://www.aliexpress.com/item/3256813170166416.html");
+  assert.equal(o[0].itemPrice, 532.73);
+  assert.equal(o[0].priceIsRange, true, "flagged as the listing's lowest option");
+  assert.equal(o[0].image, "https://ae-pic-a1.aliexpress-media.com/kf/3256813170166416.webp");
+});

@@ -23,6 +23,7 @@ import { flipperSection, FLIPPER_SECTIONS } from "../api/_lib/flipper.js";
 import { readdirSync } from "node:fs";
 import { neweggListings, fetchNeweggCombos, NEWEGG_PROVIDER } from "./newegg.mjs";
 import { amazonListings, AMAZON_PROVIDER } from "./amazon.mjs";
+import { aliexpressListings, ALIEXPRESS_PROVIDER } from "./aliexpress.mjs";
 
 const args = Object.fromEntries(process.argv.slice(2).map(a => { const [k, v] = a.replace(/^--/, "").split("="); return [k, v ?? "1"]; }));
 const SITE = (args.site || "https://flip-scout-ebon.vercel.app").replace(/\/$/, "");
@@ -42,7 +43,11 @@ const NEWEGG_GAP_MS = 1500;
 const AMAZON_STALE_H = 8;
 const AMAZON_PER_RUN = Number(args["amazon-per-run"] ?? 25);
 const AMAZON_GAP_MS = 4000;
-const STORE_PROVIDERS = new Set([NEWEGG_PROVIDER, AMAZON_PROVIDER]);
+// AliExpress (US warehouses only): every model about every 12 hours.
+const ALIEXPRESS_STALE_H = 12;
+const ALIEXPRESS_PER_RUN = Number(args["aliexpress-per-run"] ?? 18);
+const ALIEXPRESS_GAP_MS = 5000;
+const STORE_PROVIDERS = new Set([NEWEGG_PROVIDER, AMAZON_PROVIDER, ALIEXPRESS_PROVIDER]);
 
 // Parts a gaming-PC flipper buys and sells most: refreshed first.
 // (Flipper Deals sections are built from these too.)
@@ -204,31 +209,35 @@ async function main() {
       await new Promise(r => setTimeout(r, NEWEGG_GAP_MS));
     }
     if (log.newegg) console.log(`newegg: ${log.newegg} models checked`);
-    // Amazon: same idea, fewer pages per run; stop at the first captcha.
-    if (args.amazon !== "0") {
-      const dueA = models
-        .map(m => ({ m, age: hoursSince(state.models[m.name]?.amazonAt), p: prio.has(m.name) }))
-        .filter(x => x.age > AMAZON_STALE_H)
+    // Amazon and AliExpress: same idea, fewer pages per run, gentler pace;
+    // each store stops for this run at its first captcha / block.
+    const storePass = async ({ key, provider, listings, perRun, staleH, gapMs }) => {
+      if (args[key] === "0") return;
+      const due = models
+        .map(m => ({ m, age: hoursSince(state.models[m.name]?.[key + "At"]), p: prio.has(m.name) }))
+        .filter(x => x.age > staleH)
         .sort((a, b) => (b.p - a.p) || (b.age - a.age))
-        .slice(0, AMAZON_PER_RUN).map(x => x.m);
-      for (const item of dueA) {
+        .slice(0, perRun).map(x => x.m);
+      for (const item of due) {
         if (Date.now() - started > RUN_LIMIT_MS * 0.9) break;
         try {
-          const fresh = await amazonListings(item);
+          const fresh = await listings(item);
           const old = existing(item);
-          const kept = (old?.results || []).filter(x => x.provider !== AMAZON_PROVIDER);
+          const kept = (old?.results || []).filter(x => x.provider !== provider);
           const st = (state.models[item.name] ||= {});
-          st.amazonAt = now(); st.amazon = fresh.length;
-          log.amazon = (log.amazon || 0) + 1;
-          if (fresh.length || old?.results?.some(x => x.provider === AMAZON_PROVIDER)) {
+          st[key + "At"] = now(); st[key] = fresh.length;
+          log[key] = (log[key] || 0) + 1;
+          if (fresh.length || old?.results?.some(x => x.provider === provider)) {
             const { market, ranked } = rerank([...fresh, ...kept], item);
             saveModel(item, { ...(old || {}), available: true, searchedAt: old?.searchedAt || now(), market, resultCount: ranked.length, results: capResults(ranked) });
           }
-        } catch (e) { log.errors.push("amazon " + item.name + ": " + e.message); if (/captcha|HTTP 50|HTTP 429/.test(e.message)) break; }
-        await new Promise(r => setTimeout(r, AMAZON_GAP_MS));
+        } catch (e) { log.errors.push(key + " " + item.name + ": " + e.message); if (/captcha|HTTP 50|HTTP 429|HTTP 403/.test(e.message)) break; }
+        await new Promise(r => setTimeout(r, gapMs));
       }
-      if (log.amazon) console.log(`amazon: ${log.amazon} models checked`);
-    }
+      if (log[key]) console.log(`${key}: ${log[key]} models checked`);
+    };
+    await storePass({ key: "amazon", provider: AMAZON_PROVIDER, listings: amazonListings, perRun: AMAZON_PER_RUN, staleH: AMAZON_STALE_H, gapMs: AMAZON_GAP_MS });
+    await storePass({ key: "aliexpress", provider: ALIEXPRESS_PROVIDER, listings: aliexpressListings, perRun: ALIEXPRESS_PER_RUN, staleH: ALIEXPRESS_STALE_H, gapMs: ALIEXPRESS_GAP_MS });
 
     // Newegg combo deals (Flipper Deals), about every 6 hours.
     if (args["force-free"] === "1" || hoursSince(state.combosAt) > NEWEGG_STALE_H) {
@@ -291,7 +300,7 @@ async function main() {
     }
     return { live, gone };
   };
-  if (freeApis && (log.free > 0 || log.newegg > 0 || log.amazon > 0)) {
+  if (freeApis && (log.free > 0 || log.newegg > 0 || log.amazon > 0 || log.aliexpress > 0)) {
     try {
       const read = async path => readJson(join(DATA, path), null);
       const urls = new Set();
@@ -317,7 +326,7 @@ async function main() {
 
   // 3. Great-deal alerts from the saved listings (no credits).
   const topic = process.env.NTFY_TOPIC || "";
-  if (topic && (log.free > 0 || log.paid > 0 || log.newegg > 0 || log.amazon > 0)) {
+  if (topic && (log.free > 0 || log.paid > 0 || log.newegg > 0 || log.amazon > 0 || log.aliexpress > 0)) {
     try {
       const deals = await findGreatDeals(DATA);
       // Ask eBay (through the site) which deal listings are still for sale.
@@ -330,7 +339,7 @@ async function main() {
     } catch (e) { log.errors.push("alerts: " + e.message); }
   }
 
-  const changed = log.free > 0 || log.paid > 0 || log.newegg > 0 || log.amazon > 0 || log.combos > 0;
+  const changed = log.free > 0 || log.paid > 0 || log.newegg > 0 || log.amazon > 0 || log.aliexpress > 0 || log.combos > 0;
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, "changed=" + changed + "\n");
   if (!changed) { console.log("nothing to refresh this run", JSON.stringify(log)); return; }
   state.runs = [log, ...(state.runs || [])].slice(0, 30);

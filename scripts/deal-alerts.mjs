@@ -37,6 +37,9 @@ export async function findGreatDeals(dataDir) {
       // Cases are skipped — their "market" mixes every case model, so any
       // cheap new case looked 50% under it.
       if (id === "cases" || id === "combos" || (x.usedComps ?? 0) < 5) continue;
+      // AliExpress search prices are a listing's cheapest variant: shown on
+      // the site (flagged), never pushed as an alert.
+      if (x.marketplace === "aliexpress") continue;
       // A launch MSRP under a quarter of today's used price is a data error
       // (e.g. "$5"), so it can't block a real deal.
       const launch = await msrp(x.model);
