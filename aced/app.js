@@ -11,8 +11,10 @@ const SECTIONS = ['english', 'math', 'reading', 'science'];
 // Seconds per question for every timed quiz and test (user rule): English 42, Math 67, Reading 67, Science 60.
 const SECS = { english: 42, math: 67, reading: 67, science: 60 };
 // Generated math pool: answers are computed by construction, so these add fresh variety for training.
+// Retired: template questions were too mechanical for ACT-level practice (audit 2026-10-14). Kept for
+// reference only; practice and diagnostics use independently validated questions.
 (function addGenerated() {
-  if (!window.ACED_MATHGEN) return;
+  if (!window.ACED_MATHGEN || !window.ACED_USE_TEMPLATES) return;
   const rnd = mulberry(20261014);
   const CAT = { n: 'N', a: 'A', f: 'F', g: 'G', s: 'S', ies: 'IES' };
   for (let i = 0; i < ACED_MATHGEN.count * 6; i++) {
