@@ -1,0 +1,31 @@
+name: diag
+on: push
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          cat > p.mjs <<'JS'
+          const B = { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36", "accept": "text/html,application/xhtml+xml", "accept-language": "en-US,en;q=0.9", "sec-fetch-mode": "navigate", "sec-fetch-site": "none", "sec-fetch-dest": "document", "upgrade-insecure-requests": "1" };
+          const M = { ...B, "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1" };
+          const urls = [
+            ["https://www.aliexpress.com/robots.txt", B],
+            ["https://www.aliexpress.com/w/wholesale-rtx-3060.html", B],
+            ["https://www.aliexpress.com/w/wholesale-rtx-3060.html?shipFromCountry=US", B],
+            ["https://aliexpress.com/w/wholesale-rtx-3060.html", B],
+            ["https://m.aliexpress.com/wholesale/rtx-3060.html", M],
+            ["https://www.aliexpress.us/w/wholesale-rtx-3060.html", B],
+            ["https://best.aliexpress.com/", B],
+            ["https://www.aliexpress.com/af/rtx-3060.html", B],
+          ];
+          for (const [u, h] of urls) {
+            try {
+              const r = await fetch(u, { headers: h, redirect: "follow", signal: AbortSignal.timeout(20000) });
+              const t = await r.text();
+              const ids = (t.match(/"productId":"?\d{10,}/g) || []).length, item = (t.match(/\/item\/\d{10,}\.html/g) || []).length;
+              console.log("\n=====", u, "->", r.status, r.url.slice(0, 90), "len", t.length, "productIds", ids, "itemLinks", item, "init:", /_init_data_|window\.runParams|"itemList"/.test(t), "captcha:", /punish|captcha|x5sec|slide to verify/i.test(t));
+              if (u.endsWith("robots.txt")) console.log(t.split("\n").filter(l => /user-agent: \*|disallow: \/(w|wholesale|af|item)/i.test(l)).slice(0, 15).join("\n"));
+            } catch (e) { console.log("\n=====", u, "ERR", e.cause?.code || e.message); }
+          }
+          JS
+          node p.mjs
