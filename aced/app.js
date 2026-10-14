@@ -283,7 +283,7 @@ function viewSkills() {
       const code = Object.keys(TAX.cats || {}).find(k => TAX.cats[k] === name);
       const att = code ? ST.attempts.filter(a => a.sec === UI.skSec && (BYID[a.id] || {}).cat === code) : [];
       return `<tr><td style="${sub ? 'padding-left:28px;color:var(--muted)' : 'font-weight:600'}">${sub ? '↳ ' : ''}${esc(name)}</td><td>${esc(r[1])}</td><td>${att.length ? `${pct(att.filter(a => a.ok).length, att.length)}% <span class="meta small">(${att.length})</span>` : '<span class="meta">—</span>'}</td></tr>`;
-    }).join('')}</table></div>${UI.skSec === 'math' ? `<div class="meta small">Modeling questions are tagged on top of their category. Your modeling accuracy: ${modelAtt.length ? pct(modelAtt.filter(a => a.ok).length, modelAtt.length) + '% of ' + modelAtt.length : 'no data yet'}.</div>` : ''}</div>` : ''}
+    }).join('')}</table></div>${UI.skSec === 'math' ? `<div class="meta small">Totals: Preparing for Higher Math 80% + Integrating Essential Skills 20% = 100%. The indented rows are parts of the 80% (official ranges overlap; Aced practice uses 11 + 18.5 + 18.5 + 18.5 + 13.5 = 80). Modeling overlaps other categories, so it is not added.</div><div class="meta small">Modeling questions are tagged on top of their category. Your modeling accuracy: ${modelAtt.length ? pct(modelAtt.filter(a => a.ok).length, modelAtt.length) + '% of ' + modelAtt.length : 'no data yet'}.</div>` : ''}</div>` : ''}
   <div id="lessonBox"></div>
   <div class="tbl" style="margin-top:12px"><table class="t"><tr><th>Skill</th><th>Practice weight (est.)</th><th>Stage</th><th>Accuracy</th><th>Tries</th><th>Avg time</th><th>At ACT level</th><th>Next review</th><th></th></tr>${rows}</table></div>`;
 }
