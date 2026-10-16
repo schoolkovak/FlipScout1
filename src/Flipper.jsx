@@ -1,6 +1,8 @@
 import React,{useEffect,useState} from "react";
 import {MemoryStick,HardDrive,Box,Plug,Cpu,Flame,ExternalLink,Info,Package,CircuitBoard} from "lucide-react";
 import {PriceTotal,money} from "./DealResults.jsx";
+import {finalPrice} from "./pricing.js";
+import {useTaxState} from "./taxContext.js";
 
 // Flipper Deals: the parts a gaming-PC flipper buys most, ranked the way a
 // flipper shops. Built from saved listings, so opening it costs no credits.
@@ -12,11 +14,11 @@ const BLURB={
   whitecases:"White cases that come with ARGB fans, Micro-ATX or bigger, $70 or less. Well-known case brands first.",
   bulkram:"Lots of 4+ DDR4 8GB sticks at 3000MHz or faster, shown only when they work out under $60 per 2 sticks. Cheapest per pair first.",
   bulkssd:"Lots of 2+ SSDs of the same size (450GB+ each), shown only when they work out under $60 per drive. Compared with single used drives of that size.",
-  mobo:"Used motherboards (AM4 B450/B550/X570, AM5, Intel) at $150 or less, at least 10% under that board type's used market. Biggest discount first.",
+  mobo:"Used motherboards (AM4 B450/B550/X570, Intel; no AM5) at $150 or less, at least 10% under that board type's used market. Biggest discount first.",
   psunew:"New 550–750W 80+ rated desktop PSUs at $45 or less, compared with the typical new price for that wattage.",
   psu:"550W / 650W first, then 750W, at least 10% under the going price for that wattage. 80+ Bronze and Gold ranked ahead of everything else.",
   ryzen:"Ryzen chips at $65 or less (shipping included), at least 10% under their own used market price, ranked by buyer appeal per dollar.",
-  combos:"Newegg bundles (CPU + motherboard, case + PSU, GPU + PSU…) that cost less than buying the parts separately, biggest % saved first. Total includes FL sales tax. Checked every few hours.",
+  combos:"Newegg bundles (CPU + motherboard, case + PSU, GPU + PSU…) that cost less than buying the parts separately, biggest % saved first. No AM5 CPUs or boards; bundles with RAM only at 20%+ savings. Total includes FL sales tax. Checked every few hours.",
   gpu:"Ranked by what buyers want: newer, popular cards (RTX 50 / 40, RX 9000) rank high as long as the price is justified. Every card is at least 10% under its own used market price."
 };
 const KEY="fs-flipper-v1";
@@ -29,10 +31,19 @@ function Deal({x}){
   return <span className="flipDeal">{x.underPct}% under {vs} (~{money(x.market,0)}{x.perUnit?" per drive":x.perPair?" per pair":""})</span>;
 }
 
+// Bulk lots: what one unit (a drive, or 2 sticks) really costs once the lot's
+// shipping and sales tax are added, e.g. "$57.57 ea. after shipping + tax".
+function EachAfter({x,units}){
+  const st=useTaxState();
+  if(!units)return null;
+  const f=finalPrice(x,st);
+  return <small className="flipEach">{money(f.total/units,2)} ea. after shipping + tax{x.shippingKnown?"":" (shipping est.)"}</small>;
+}
+
 function Extra({id,x}){
   if(id==="ddr4")return <span className="flipTag">{x.bulk?"BULK · ":""}{money(x.perPair,2)} per 2×8GB · {x.sticks} stick{x.sticks>1?"s":""} · {x.speed}MHz</span>;
-  if(id==="bulkram")return <span className="flipTag">BULK · {money(x.perPair,2)} per 2 sticks · {x.tag}</span>;
-  if(id==="bulkssd")return <span className="flipTag">BULK · {money(x.perUnit,2)} per drive · {x.tag}</span>;
+  if(id==="bulkram")return <><span className="flipTag">BULK · {money(x.perPair,2)} per 2 sticks · {x.tag}</span><EachAfter x={x} units={x.sticks/2}/></>;
+  if(id==="bulkssd")return <><span className="flipTag">BULK · {money(x.perUnit,2)} per drive · {x.tag}</span><EachAfter x={x} units={x.count}/></>;
   if(id==="whitecases")return x.tag?<span className="flipTag">{x.tag}</span>:null;
   if(id==="psu"||id==="psunew"||id==="mobo")return <span className="flipTag">{x.tag}</span>;
   if(id==="combos")return <>

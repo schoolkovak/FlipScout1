@@ -468,3 +468,4 @@ button.mcImage{border:0;width:100%;cursor:pointer;padding:0}
 .flipJump a:hover{border-color:var(--green)}
 .flipJump em{font-style:normal;color:var(--muted);font-size:12px}
 .flipSection{scroll-margin-top:80px}
+.flipMain .flipEach{color:var(--muted);font-size:12px}
