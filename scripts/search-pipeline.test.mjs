@@ -777,3 +777,16 @@ test("bulk DDR4 lots match the lot model; white ARGB cases need white + ARGB fan
   assert.equal(whiteArgbCaseOk("Montech AIR 903 Base Black ATX Mid Tower Case ARGB fans"), false, "not white");
   assert.equal(whiteArgbCaseOk("White Mini ITX case ARGB fans"), false, "Mini-ITX");
 });
+
+test("bulk lots: per-drive and per-2-stick math with the $60 caps", async () => {
+  const { ssdLotInfo, ddr4StickInfo } = await import("../api/_lib/flipper.js");
+  assert.deepEqual(ssdLotInfo('Lot of 10 Samsung 870 EVO 500GB 2.5" SATA SSD'), { count: 10, capacityGb: 500 });
+  assert.deepEqual(ssdLotInfo("5x Crucial MX500 1TB SSD"), { count: 5, capacityGb: 1000 });
+  assert.deepEqual(ssdLotInfo("10pcs 256GB M.2 NVMe SSD OEM"), { count: 10, capacityGb: 256 });
+  assert.equal(ssdLotInfo("SSD lot 128GB 256GB 512GB mixed"), null, "mixed sizes");
+  assert.equal(ssdLotInfo("Samsung 970 EVO 500GB NVMe"), null, "single drive");
+  assert.equal(ssdLotInfo('ADATA SU720 500GB SATA 2.5" SSD Drive'), null, "2.5-inch is a size, not a count");
+  assert.deepEqual(ssdLotInfo("Lot of 3 SSDs Samsung 860 EVO 1TB 2.5in"), { count: 3, capacityGb: 1000 });
+  assert.equal(ddr4StickInfo("Lot of 8 8GB DDR4 2666 desktop RAM"), null, "below 3000MHz");
+  assert.deepEqual(ddr4StickInfo("Lot of 8 8GB DDR4 3200 desktop RAM"), { sticks: 8, speed: "3200" });
+});

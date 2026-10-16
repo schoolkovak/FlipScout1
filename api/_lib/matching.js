@@ -444,6 +444,13 @@ export function evaluateListing({ title, query, category, structuredCondition = 
     }
   } else if (kind === "nvme" || kind === "ssd" || kind === "sata" || kind === "hdd") {
     if (/\b(?:enclosure|duplicator|docking|dock|caddy|adapter card|to usb|usb adapter|sata cable)\b/.test(t)) return reject("accessory", "storage accessory");
+    // Bulk lots ("SSD lot"): the title must say it's several drives; count and
+    // per-drive price are worked out later (Flipper Deals).
+    if (/\blot\b/.test(q)) {
+      if (!/\b(?:lot|lots|bulk|qty|pcs|pieces|set of|pack of)\b|\b\d{1,2}\s*(?:x\b|x\s*\d|pcs\b|pack\b|ct\b|count\b)/.test(t)) return reject("model-not-stated", "not a lot");
+      if (/\b(?:hdd|hard drive|rpm)\b/.test(t) && !/\bssd\b/.test(t)) return reject("interface-mismatch", "HDD");
+      consumed.add("lot");
+    }
     const wantsExternal = /\b(?:external|portable|usb)\b/.test(q);
     if (!wantsExternal && /\b(?:external|portable|usb c|usb 3|usb3|thunderbolt)\b/.test(t)) return reject("form-factor-mismatch", "external drive");
     const wantNvme = kind === "nvme" || /\bnvme\b|\bpcie\b/.test(q);

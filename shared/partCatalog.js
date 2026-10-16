@@ -158,6 +158,7 @@ export const PART_GROUPS = [
         spec("500GB SSD", "SSD / NVMe", [["Capacity", "500 GB"], ["Type", "NVMe or SATA"]]),
         spec("500GB NVMe SSD", "NVMe SSD", [["Capacity", "500 GB"], ["Interface", "M.2 NVMe"]]),
         spec("500GB SATA SSD", "SATA SSD", [["Capacity", "500 GB"], ["Form", "2.5\""]]),
+        spec("SSD lot", "SSD / Storage", [["Kit", "Lot of SSDs"], ["Capacity", "450 GB+ each"]], { query: "SSD lot" }),
         spec("1TB SSD", "SSD / NVMe", [["Capacity", "1 TB"], ["Type", "NVMe or SATA"]])
       ] },
       { id: "nvme", label: "NVMe SSD", items: [

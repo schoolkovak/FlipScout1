@@ -99,6 +99,52 @@ async function ddr4(read) {
   return { ...s, listings };
 }
 
+// ---- Bulk lots ------------------------------------------------------------
+// DDR4: 4+ sticks of 8GB at 3000MHz+, under $60 per 2 sticks.
+// SSDs: 2+ drives of one capacity (450GB+), under $60 per drive.
+export const BULK_RAM_MAX_PER_PAIR = 60;
+export const BULK_SSD_MAX_EACH = 60;
+export function ssdLotInfo(title) {
+  const t = normalizeListingText(title);
+  if (!/\b(?:ssds?|nvme|solid state)\b/.test(t) || /\b(?:hdd|hard drive|rpm)\b/.test(t) && !/\bssd\b/.test(t)) return null;
+  const caps = [...new Set([...t.matchAll(/(?<![\d.])(\d{3,4}|\d(?:\.\d)?)\s?(gb|tb)\b/g)].map(m => Math.round(Number(m[1]) * (m[2] === "tb" ? 1000 : 1))))]
+    .map(c => (c >= 900 && c <= 1100 ? 1000 : c >= 1900 && c <= 2100 ? 2000 : c)).filter(c => c >= 100);
+  const sizes = [...new Set(caps)];
+  if (sizes.length !== 1) return null; // capacity missing or a mixed lot
+  // (?<![\d.]) keeps "2.5 SSD" (the drive size) from reading as "5 SSDs".
+  const raw = String(title || "").toLowerCase();
+  const count = Number(t.match(/\b(?:lot of|lot|qty|set of|pack of|bulk)\s*(\d{1,2})\b/)?.[1] || raw.match(/(?<![\d.]|gen\s?)\b(\d{1,2})\s*(?:x\s(?!\d\b)|x(?=\d{3})|pcs\b|pieces\b|pack\b|ct\b|count\b|drives\b|ssds\b)/)?.[1] || raw.match(/\((\d{1,2})\)/)?.[1]);
+  if (!count || count < 2 || count > 50) return null;
+  return { count, capacityGb: sizes[0] };
+}
+async function bulkRam(read) {
+  const s = await saved(["8GB DDR4 RAM lot", "8GB DDR4 3200", "16GB DDR4 3200", "16GB DDR4 3600"], read);
+  const all = uniqueById(s.rows).map(x => ({ x, info: ddr4StickInfo(x.title) })).filter(r => r.info && r.info.sticks >= 4)
+    .map(r => ({ ...slim(r.x), sticks: r.info.sticks, speed: r.info.speed, perPair: Math.round(r.x.totalPrice / r.info.sticks * 2 * 100) / 100 }))
+    .filter(x => !/\b(?:ecc|rdimm|registered|reg|server|buffered)\b/.test(normalizeListingText(x.title)));
+  // Market = typical per-pair price across all saved DDR4 8GB listings.
+  const ref = (await ddr4(read)).listings;
+  const market = median(ref.map(x => x.perPair));
+  const listings = all.filter(x => x.perPair > 8 && x.perPair < BULK_RAM_MAX_PER_PAIR)
+    .map(x => ({ ...x, ...dealFields(x.perPair, market, ref.filter(y => USED.has(y.condition)).length), tag: x.sticks + " sticks · " + x.speed + "MHz" }))
+    .sort((a, b) => a.perPair - b.perPair);
+  return { ...s, listings };
+}
+async function bulkSsd(read) {
+  const singles = ["500GB SSD", "500GB NVMe SSD", "500GB SATA SSD", "1TB NVMe SSD"];
+  const s = await saved(["SSD lot", ...singles], read);
+  const all = uniqueById(s.rows).map(x => ({ x, info: ssdLotInfo(x.title) })).filter(r => r.info && r.info.capacityGb >= 450)
+    .map(r => ({ ...slim(r.x), count: r.info.count, capacityGb: r.info.capacityGb, perUnit: Math.round(r.x.totalPrice / r.info.count * 100) / 100 }));
+  // Market per drive = typical used price of single drives of that capacity.
+  const singleRows = s.perModel.filter(p => singles.includes(p.name)).flatMap(p => p.snap.results).filter(x => !ssdLotInfo(x.title));
+  const capOf = x => { const m = normalizeListingText(x.title).match(/\b(\d{3,4}|\d)\s?(gb|tb)\b/); if (!m) return null; const c = Number(m[1]) * (m[2] === "tb" ? 1000 : 1); return c >= 900 && c <= 1100 ? 1000 : c; };
+  const marketFor = cap => { const rows = singleRows.filter(x => { const c = capOf(x); return c && Math.abs(c - cap) / cap < 0.1; }); return { m: usedMarket(rows), n: usedCount(rows) }; };
+  const listings = all.filter(x => x.perUnit > 5 && x.perUnit < BULK_SSD_MAX_EACH)
+    .map(x => { const { m, n } = marketFor(x.capacityGb); return { ...x, ...dealFields(x.perUnit, m, n), tag: x.count + " × " + (x.capacityGb >= 1000 ? x.capacityGb / 1000 + "TB" : x.capacityGb + "GB") }; })
+    .sort((a, b) => a.perUnit - b.perUnit);
+  return { ...s, listings };
+}
+
 // ---- 500GB NVMe, under market ----------------------------------------------
 async function nvme500(read) {
   const s = await saved(["500GB NVMe SSD", "500GB SSD"], read);
@@ -275,6 +321,8 @@ async function combos(read) {
 export const FLIPPER_SECTIONS = {
   ddr4: { title: "DDR4 bulk 8GB sticks", run: ddr4 },
   nvme500: { title: "500GB NVMe SSDs", run: nvme500 },
+  bulkram: { title: "Bulk DDR4 lots (under $60 per 2 sticks)", run: bulkRam },
+  bulkssd: { title: "Bulk SSD lots (under $60 per drive)", run: bulkSsd },
   cases: { title: "RGB cases under $52 (Micro-ATX+)", run: cases },
   whitecases: { title: "White cases with ARGB fans (≤ $70)", run: whiteArgbCases },
   psunew: { title: "New PSUs under $45", run: cheapNewPsus },
