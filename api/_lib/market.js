@@ -628,8 +628,10 @@ export async function searchEbay(input) {
   else if (condition === "used") filters.push("conditions:{USED}");
   else filters.push("conditionIds:{" + (EBAY_CONDITION_IDS[condition] || EBAY_CONDITION_IDS.any) + "}");
   const category = EBAY_CATEGORY[categoryKind(input.category)];
-  const params = new URLSearchParams({ q: input.query, limit: "200", filter: filters.join(",") });
+  const params = new URLSearchParams({ q: input.query, limit: String(input.limit || 200), filter: filters.join(",") });
   if (category) params.set("category_ids", category);
+  // "newlyListed": the deal watcher asks for the newest listings first.
+  if (input.sort) params.set("sort", input.sort);
   let data = await ebaySearchCall(params, token);
   if (category && !(data.itemSummaries || []).length) { params.delete("category_ids"); data = await ebaySearchCall(params, token); }
   return mapEbaySummaries(data);

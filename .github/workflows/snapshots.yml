@@ -86,11 +86,12 @@ jobs:
         run: |
           git fetch --depth=1 origin data
           git worktree add snapdata FETCH_HEAD
-      - name: Slow AliExpress pass
+      - name: Slow lane (Amazon, AliExpress) + real-time deal watcher
         id: refresh
         continue-on-error: true
         env:
           SITE: ${{ vars.SNAPSHOT_SITE || 'https://flip-scout-ebon.vercel.app' }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC || 'flipscout-deals-7f3c9a2e51b84d06' }}
         run: node scripts/build-snapshots.mjs --site="$SITE" --data=snapdata --only=aliexpress --aliexpress-per-run=10 --aliexpress-gap-s=240 --time-limit=2700000
       - name: Publish saved listings
         if: steps.refresh.outputs.changed == 'true'

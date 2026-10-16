@@ -21,8 +21,8 @@ export function inQuietHours(date = new Date(), q = QUIET_HOURS) {
 
 const money = n => "$" + Number(n).toFixed(2).replace(/\.00$/, "");
 
-export async function findGreatDeals(dataDir) {
-  const read = async path => { try { return JSON.parse(readFileSync(join(dataDir, path), "utf8")); } catch { return null; } };
+export async function findGreatDeals(dataDir, { read: readOverride } = {}) {
+  const read = readOverride || (async path => { try { return JSON.parse(readFileSync(join(dataDir, path), "utf8")); } catch { return null; } });
   const deals = [];
   // Never alert on anything priced above its model's launch MSRP.
   const msrpOf = new Map();
