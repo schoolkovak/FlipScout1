@@ -1,15 +1,16 @@
 import React,{useEffect,useState} from "react";
-import {MemoryStick,HardDrive,Box,Plug,Cpu,Flame,ExternalLink,Info,Package} from "lucide-react";
+import {MemoryStick,HardDrive,Box,Plug,Cpu,Flame,ExternalLink,Info,Package,CircuitBoard} from "lucide-react";
 import {PriceTotal,money} from "./DealResults.jsx";
 
 // Flipper Deals: the parts a gaming-PC flipper buys most, ranked the way a
 // flipper shops. Built from saved listings, so opening it costs no credits.
-const ICONS={ddr4:MemoryStick,nvme500:HardDrive,cases:Box,whitecases:Box,psu:Plug,psunew:Plug,ryzen:Cpu,gpu:Flame,combos:Package};
+const ICONS={ddr4:MemoryStick,nvme500:HardDrive,cases:Box,whitecases:Box,psu:Plug,psunew:Plug,ryzen:Cpu,gpu:Flame,combos:Package,mobo:CircuitBoard};
 const BLURB={
   ddr4:"8GB DDR4 sticks at 3000MHz or faster, under $65 per pair (2×8GB) and at least 10% under the going price. Bulk lots (8+ sticks) and kits are split into a per-pair price.",
   nvme500:"500GB / 512GB NVMe M.2 SSDs at least 10% under the going used price, cheapest first.",
   cases:"RGB cases at $52 or less, Micro-ATX or bigger. No open-air frames, test benches or Mini-ITX.",
   whitecases:"White cases that come with ARGB fans, Micro-ATX or bigger, $70 or less. Well-known case brands first.",
+  mobo:"Used motherboards (AM4 B450/B550/X570, AM5, Intel) at $150 or less, at least 10% under that board type's used market. Biggest discount first.",
   psunew:"New 550–750W 80+ rated desktop PSUs at $45 or less, compared with the typical new price for that wattage.",
   psu:"550W / 650W first, then 750W, at least 10% under the going price for that wattage. 80+ Bronze and Gold ranked ahead of everything else.",
   ryzen:"Ryzen chips at $65 or less (shipping included), at least 10% under their own used market price, ranked by buyer appeal per dollar.",
@@ -29,7 +30,7 @@ function Deal({x}){
 function Extra({id,x}){
   if(id==="ddr4")return <span className="flipTag">{x.bulk?"BULK · ":""}{money(x.perPair,2)} per 2×8GB · {x.sticks} stick{x.sticks>1?"s":""} · {x.speed}MHz</span>;
   if(id==="whitecases")return x.tag?<span className="flipTag">{x.tag}</span>:null;
-  if(id==="psu"||id==="psunew")return <span className="flipTag">{x.tag}</span>;
+  if(id==="psu"||id==="psunew"||id==="mobo")return <span className="flipTag">{x.tag}</span>;
   if(id==="combos")return <>
     <span className="flipTag">{x.tag}{x.freeGift?" · free gift included":""}</span>
     <span className="flipDeal">Save {money(x.savings,2)} ({x.savingsPct}%) vs {money(x.separate,2)} separately · {money(x.totalAfterTax,2)} total after tax</span>
