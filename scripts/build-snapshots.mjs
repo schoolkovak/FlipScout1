@@ -16,7 +16,7 @@ import { mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs"
 import { join } from "node:path";
 import { PART_GROUPS } from "../shared/partCatalog.js";
 import { modelSlug } from "../api/_lib/snapshots.js";
-import { buildMarket, rankDeals, shippingFields } from "../api/_lib/market.js";
+import { buildMarket, rankDeals, shippingFields, qualifyOffers } from "../api/_lib/market.js";
 import { normalizeListingText, evaluateListing } from "../api/_lib/matching.js";
 import { findGreatDeals, sendAlerts } from "./deal-alerts.mjs";
 import { flipperSection, FLIPPER_SECTIONS } from "../api/_lib/flipper.js";
@@ -39,6 +39,11 @@ const RUN_LIMIT_MS = Number(args["time-limit"] ?? 20 * 60 * 1000);
 const NEWEGG_STALE_H = 6;
 const NEWEGG_PER_RUN = Number(args["newegg-per-run"] ?? 30);
 const NEWEGG_GAP_MS = 4000;
+// Deal watcher: every few minutes, the newest eBay listings per part type
+// (one eBay call each) are checked against the saved used markets and good
+// deals are pushed right away. 7 calls / 6 min ≈ 1,200 eBay calls a day.
+const WATCH_GAP_MS = Number(args["watch-gap-s"] ?? 360) * 1000;
+const WATCH_TYPES = { gpu: "gpu", cpu: "cpu", ram: "ram", ssd: "ssd", psu: "psu", mobo: "motherboard", case: "case" };
 // Amazon search pages: gentler still (each model about every 8 hours).
 const AMAZON_STALE_H = 20;
 const AMAZON_PER_RUN = Number(args["amazon-per-run"] ?? 10);
@@ -123,14 +128,14 @@ function capResults(ranked) {
 
 // Each save adds a point to the model's price history (lowest new / used /
 // overall price), so the model page can chart prices without new searches.
-function saveModel(item, payload) {
+function saveModel(item, payload, { history: addPoint = true } = {}) {
   const file = join(DATA, "models", modelSlug(item.name) + ".json");
   const { credits, resolved, sources, ...rest } = payload;
   const prev = readJson(file, null);
   const low = list => list.length ? Math.min(...list.map(x => x.totalPrice)) : null;
   const res = rest.results || [];
   const point = { at: rest.searchedAt || now(), low: low(res), newLow: low(res.filter(x => x.condition === "new")), usedLow: low(res.filter(x => x.condition !== "new")), usedMed: rest.market?.conditionMedians?.used ?? null };
-  const history = [...(prev?.history || []), point].filter(p => p.low != null).slice(-90);
+  const history = [...(prev?.history || []), ...(addPoint ? [point] : [])].filter(p => p.low != null).slice(-90);
   writeFileSync(file, JSON.stringify({ model: item.name, query: item.query, category: item.category, msrp: item.msrp || 0, ...rest, history }));
 }
 
@@ -256,7 +261,7 @@ async function main() {
     for (const item of due) {
       if (Date.now() - started > RUN_LIMIT_MS * 0.9 || fails >= 5) break;
       try {
-        const fresh = await neweggListings(item);
+        const fresh = await neweggListings(item, { site: SITE });
         const old = existing(item);
         const kept = (old?.results || []).filter(x => x.provider !== NEWEGG_PROVIDER);
         const merged = [...fresh, ...kept];
@@ -306,7 +311,70 @@ async function main() {
     // Amazon and AliExpress block quick repeat searches (503 / captcha), so
     // they are never rushed: only in the slow pass between refreshes, one
     // search every few minutes, the two stores alternating.
+    // Real-time deal watcher (runs alongside the slow lane between refreshes).
+    const watchLoop = async () => {
+      const topic = process.env.NTFY_TOPIC || "";
+      if (!topic || args.watch === "0") return;
+      const seen = new Set(state.watchSeen || []);
+      const byGroup = Object.fromEntries(PART_GROUPS.map(g => [g.id, [...new Map(g.series.flatMap(x => x.items).map(i => [i.name, i])).values()]]));
+      const verify = async urls => {
+        const live = new Map();
+        for (let i = 0; i < urls.length; i += 20) {
+          const r = await getJson(SITE + "/api/deals/search?q=check&check=" + encodeURIComponent(urls.slice(i, i + 20).join(",")), 45000).catch(() => ({}));
+          for (const x of r.live || []) live.set(x.url, x.totalPrice);
+        }
+        return live;
+      };
+      while (Date.now() - started < RUN_LIMIT_MS * 0.9 - 60000) {
+        const cycle = Date.now();
+        const fresh = [];
+        for (const [type, group] of Object.entries(WATCH_TYPES)) {
+          try {
+            const d = await getJson(SITE + "/api/deals/search?q=watch&watch=" + type, 30000);
+            for (const o of d.ok ? d.offers || [] : []) {
+              const id = o.providerItemId || o.url;
+              if (!id || seen.has(id)) continue;
+              seen.add(id);
+              if (o.freshness && hoursSince(o.freshness) > 3) continue; // only just-posted listings
+              fresh.push({ o, group });
+            }
+          } catch (e) { log.errors.push("watch " + type + ": " + e.message); }
+        }
+        log.watched = (log.watched || 0) + fresh.length;
+        // Put each new listing under every catalog model it really matches.
+        const overlay = new Map(), newUrls = new Set();
+        for (const { o, group } of fresh) for (const item of byGroup[group] || []) {
+          const { items } = qualifyOffers([o], { query: item.query, category: item.category, msrp: item.msrp || 0, condition: "any" });
+          if (!items.length) continue;
+          const path = "models/" + modelSlug(item.name) + ".json";
+          const snap = overlay.get(path)?.snap || existing(item) || { results: [] };
+          overlay.set(path, { item, snap: { ...snap, results: [...items, ...(snap.results || []).filter(x => x.url !== items[0].url)] } });
+          newUrls.add(items[0].url);
+        }
+        if (newUrls.size) {
+          const read = async p => overlay.get(p)?.snap || readJson(join(DATA, p), null);
+          const deals = (await findGreatDeals(DATA, { read })).filter(d => newUrls.has(d.key));
+          if (deals.length) {
+            const r = await sendAlerts(deals, { topic, alerted: state.alerted || [], verify });
+            state.alerted = [...r.sent, ...(state.alerted || [])].slice(0, 2000);
+            log.watchAlerts = (log.watchAlerts || 0) + r.sent.length;
+            if (r.sent.length) console.log(`watcher: ${r.sent.length} new deal alert(s) sent`);
+          }
+          // Keep the new listings so the site shows them too.
+          for (const { item, snap } of overlay.values()) {
+            const { market, ranked } = rerank(snap.results, item);
+            saveModel(item, { ...snap, market, resultCount: ranked.length, results: capResults(ranked) }, { history: false });
+          }
+          log.watchNew = (log.watchNew || 0) + newUrls.size;
+        }
+        state.watchSeen = [...seen].slice(-5000);
+        await new Promise(r => setTimeout(r, Math.max(5000, WATCH_GAP_MS - (Date.now() - cycle))));
+      }
+      if (log.watched) console.log(`watcher: ${log.watched} new listings seen, ${log.watchNew || 0} matched, ${log.watchAlerts || 0} alerts`);
+    };
+
     if (slowAli) await Promise.all([
+      watchLoop(),
       storePass({ key: "aliexpress", provider: ALIEXPRESS_PROVIDER, listings: aliexpressListings, perRun: ALIEXPRESS_PER_RUN, staleH: ALIEXPRESS_STALE_H, gapMs: ALIEXPRESS_GAP_MS }),
       new Promise(r => setTimeout(r, ALIEXPRESS_GAP_MS / 2)).then(() => storePass({ key: "amazon", provider: AMAZON_PROVIDER, listings: item => amazonListings(item, { site: SITE }), perRun: AMAZON_PER_RUN, staleH: AMAZON_STALE_H, gapMs: AMAZON_GAP_MS }))
     ]);
@@ -314,7 +382,7 @@ async function main() {
     // Newegg combo deals (Flipper Deals), about every 6 hours.
     if (!slowAli && (args["force-free"] === "1" || hoursSince(state.combosAt) > NEWEGG_STALE_H)) {
       try {
-        const combos = await fetchNeweggCombos();
+        const combos = await fetchNeweggCombos({ site: SITE });
         if (combos.length) {
           writeFileSync(join(DATA, "combos.json"), JSON.stringify({ updatedAt: now(), combos }));
           state.combosAt = now();
@@ -411,7 +479,7 @@ async function main() {
     } catch (e) { log.errors.push("alerts: " + e.message); }
   }
 
-  const changed = log.free > 0 || log.paid > 0 || log.newegg > 0 || log.amazon > 0 || log.aliexpress > 0 || log.combos > 0;
+  const changed = log.free > 0 || log.paid > 0 || log.newegg > 0 || log.amazon > 0 || log.aliexpress > 0 || log.combos > 0 || log.watched > 0;
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, "changed=" + changed + "\n");
   if (!changed) { console.log("nothing to refresh this run", JSON.stringify(log)); return; }
   state.runs = [log, ...(state.runs || [])].slice(0, 30);

@@ -1,4 +1,4 @@
-import { searchMarketplaces, providerStatus, buildMarket, checkEbayAvailability } from "../_lib/market.js";
+import { searchMarketplaces, providerStatus, buildMarket, checkEbayAvailability, searchEbay } from "../_lib/market.js";
 import { withMeter } from "../_lib/meter.js";
 import { readSnapshot, modelPath, ageHours } from "../_lib/snapshots.js";
 import { modelPayload, filterByCondition } from "../_lib/summary.js";
@@ -18,6 +18,20 @@ export default async function handler(req, res) {
   const isGet = req.method === "GET";
   if (!isGet && req.method !== "POST") return res.status(405).json({ error: "GET or POST required" });
   const q = isGet ? req.query || {} : {};
+  // GET ?watch=<part type> (deal watcher): the newest Buy It Now listings in
+  // that eBay category, newest first, as raw offers. One eBay call.
+  if (isGet && q.watch) {
+    const WATCH = { gpu: ["graphics card", "GPU"], cpu: ["ryzen processor", "CPU"], ram: ["ddr4 8gb desktop", "RAM / Memory"], ssd: ["ssd", "SSD / Storage"], psu: ["power supply", "Power Supply / PSU"], mobo: ["motherboard", "Motherboard"], case: ["pc case", "PC Case"] };
+    const w = WATCH[String(q.watch)];
+    if (!w) return res.status(400).json({ error: "unknown watch type" });
+    try {
+      const offers = await searchEbay({ query: w[0], category: w[1], condition: "any", sort: "newlyListed", limit: 100 });
+      res.setHeader?.("Cache-Control", "no-store");
+      return res.status(200).json({ ok: true, offers });
+    } catch (error) {
+      return res.status(200).json({ ok: false, error: String(error?.message || error).slice(0, 160) });
+    }
+  }
   // GET ?check=<eBay item URL>,... (deal alerts): which of these listings eBay
   // confirms are still for sale right now, with their current price.
   if (isGet && q.check) {

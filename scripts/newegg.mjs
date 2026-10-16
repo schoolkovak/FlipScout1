@@ -88,9 +88,19 @@ export async function fetchNeweggSearch(query, { fetchImpl = fetch, timeoutMs = 
 
 // Qualified listings for one catalog model, filtered exactly like every
 // other store's listings (wrong model, accessories, laptops, bundles...).
-export async function neweggListings(item, opts = {}) {
-  const state = await fetchNeweggSearch(item.query, opts);
-  const raw = neweggOffers(state);
+// Newegg now shows GitHub's runners a Cloudflare check, so the builder asks
+// the site (Vercel) first and only falls back to fetching the page itself.
+async function viaSite(site, q, combos = false) {
+  if (!site) return null;
+  try {
+    const r = await fetch(site + "/api/stores/newegg?q=" + encodeURIComponent(q) + (combos ? "&combos=1" : ""), { signal: AbortSignal.timeout(30000) });
+    const d = await r.json();
+    return d.ok ? d : null;
+  } catch { return null; }
+}
+export async function neweggListings(item, { site = "", ...opts } = {}) {
+  const d = await viaSite(site, item.query);
+  const raw = d ? d.offers || [] : neweggOffers(await fetchNeweggSearch(item.query, opts));
   const { items } = qualifyOffers(raw, { query: item.query, category: item.category, msrp: item.msrp || 0, condition: "any" });
   return items;
 }
@@ -158,12 +168,13 @@ export function neweggCombos(state) {
 }
 
 // All current combos from a few Newegg searches (one page each, politely).
-export async function fetchNeweggCombos({ fetchImpl = fetch, gapMs = 1500 } = {}) {
+export async function fetchNeweggCombos({ fetchImpl = fetch, gapMs = 1500, site = "" } = {}) {
   const seen = new Map();
   for (const q of COMBO_QUERIES) {
     try {
-      const state = await fetchNeweggSearch(q, { fetchImpl });
-      for (const c of neweggCombos(state)) if (!seen.has(c.comboId)) seen.set(c.comboId, c);
+      const d = await viaSite(site, q, true);
+      const combos = d ? d.combos || [] : neweggCombos(await fetchNeweggSearch(q, { fetchImpl }));
+      for (const c of combos) if (!seen.has(c.comboId)) seen.set(c.comboId, c);
     } catch (e) { console.log("newegg combos " + q + ": " + e.message); }
     if (gapMs) await new Promise(r => setTimeout(r, gapMs));
   }
