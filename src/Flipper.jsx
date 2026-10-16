@@ -4,12 +4,14 @@ import {PriceTotal,money} from "./DealResults.jsx";
 
 // Flipper Deals: the parts a gaming-PC flipper buys most, ranked the way a
 // flipper shops. Built from saved listings, so opening it costs no credits.
-const ICONS={ddr4:MemoryStick,nvme500:HardDrive,cases:Box,whitecases:Box,psu:Plug,psunew:Plug,ryzen:Cpu,gpu:Flame,combos:Package,mobo:CircuitBoard};
+const ICONS={ddr4:MemoryStick,bulkram:MemoryStick,nvme500:HardDrive,bulkssd:HardDrive,cases:Box,whitecases:Box,psu:Plug,psunew:Plug,ryzen:Cpu,gpu:Flame,combos:Package,mobo:CircuitBoard};
 const BLURB={
   ddr4:"8GB DDR4 sticks at 3000MHz or faster, under $65 per pair (2×8GB) and at least 10% under the going price. Bulk lots (8+ sticks) and kits are split into a per-pair price.",
   nvme500:"500GB / 512GB NVMe M.2 SSDs at least 10% under the going used price, cheapest first.",
   cases:"RGB cases at $52 or less, Micro-ATX or bigger. No open-air frames, test benches or Mini-ITX.",
   whitecases:"White cases that come with ARGB fans, Micro-ATX or bigger, $70 or less. Well-known case brands first.",
+  bulkram:"Lots of 4+ DDR4 8GB sticks at 3000MHz or faster, shown only when they work out under $60 per 2 sticks. Cheapest per pair first.",
+  bulkssd:"Lots of 2+ SSDs of the same size (450GB+ each), shown only when they work out under $60 per drive. Compared with single used drives of that size.",
   mobo:"Used motherboards (AM4 B450/B550/X570, AM5, Intel) at $150 or less, at least 10% under that board type's used market. Biggest discount first.",
   psunew:"New 550–750W 80+ rated desktop PSUs at $45 or less, compared with the typical new price for that wattage.",
   psu:"550W / 650W first, then 750W, at least 10% under the going price for that wattage. 80+ Bronze and Gold ranked ahead of everything else.",
@@ -24,11 +26,13 @@ const ago=iso=>{if(!iso)return "";const h=(Date.now()-Date.parse(iso))/3600000;r
 function Deal({x}){
   if(x.underPct==null||!x.market)return null;
   const vs=x.marketKind==="new"?"typical new price":"used market";
-  return <span className="flipDeal">{x.underPct}% under {vs} (~{money(x.market,0)}{x.perPair?" per pair":""})</span>;
+  return <span className="flipDeal">{x.underPct}% under {vs} (~{money(x.market,0)}{x.perUnit?" per drive":x.perPair?" per pair":""})</span>;
 }
 
 function Extra({id,x}){
   if(id==="ddr4")return <span className="flipTag">{x.bulk?"BULK · ":""}{money(x.perPair,2)} per 2×8GB · {x.sticks} stick{x.sticks>1?"s":""} · {x.speed}MHz</span>;
+  if(id==="bulkram")return <span className="flipTag">BULK · {money(x.perPair,2)} per 2 sticks · {x.tag}</span>;
+  if(id==="bulkssd")return <span className="flipTag">BULK · {money(x.perUnit,2)} per drive · {x.tag}</span>;
   if(id==="whitecases")return x.tag?<span className="flipTag">{x.tag}</span>:null;
   if(id==="psu"||id==="psunew"||id==="mobo")return <span className="flipTag">{x.tag}</span>;
   if(id==="combos")return <>
@@ -44,7 +48,7 @@ function Section({s}){
   const Icon=ICONS[s.id]||Flame;
   const [all,setAll]=useState(false);
   const rows=all?s.listings:s.listings.slice(0,8);
-  return <section className="panelBox flipSection">
+  return <section className="panelBox flipSection" id={"flip-"+s.id}>
     <h3><Icon size={16}/>{s.title}<small>{s.count} found{s.searchedAt?" · updated "+ago(s.searchedAt):""}</small></h3>
     <p className="flipBlurb">{BLURB[s.id]}</p>
     {!s.listings.length?<div className="emptyState">{s.missing?.length?"Waiting for the first background update of "+waitList(s.missing)+".":"Nothing matches these rules right now."}</div>:
@@ -73,6 +77,7 @@ export default function Flipper(){
     <p className="pageSub">Cheap parts that sell gaming PCs. Every listing links to a real store item page, and prices include tax and shipping.</p>
     {error&&<div className="notice"><Info size={18}/><div><p>{error}</p></div></div>}
     {!data&&!error&&<div className="emptyState">Loading…</div>}
+    {data?.sections?.length>0&&<nav className="flipJump" aria-label="Jump to section">{data.sections.map(s=><a key={s.id} href={"#flip-"+s.id} onClick={e=>{e.preventDefault();document.getElementById("flip-"+s.id)?.scrollIntoView({behavior:"smooth",block:"start"});}}>{s.title.replace(/\s*\(.*\)$/,"").replace(/ — .*$/,"")}<em>{s.count}</em></a>)}</nav>}
     <div className="flipGrid">{data?.sections?.map(s=><Section key={s.id} s={s}/>)}</div>
   </div>;
 }

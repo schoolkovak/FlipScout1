@@ -10,7 +10,7 @@ import { modelPath } from "../api/_lib/snapshots.js";
 export const ALERT_MIN_PCT = 10;
 const MAX_PER_RUN = 15;
 // Variety: no single part type can take a whole batch.
-const PER_SECTION = { gpu: 6, ryzen: 3, ddr4: 3, nvme500: 2, psu: 2, psunew: 3, whitecases: 2, mobo: 2 };
+const PER_SECTION = { gpu: 6, ryzen: 3, ddr4: 3, nvme500: 2, psu: 2, psunew: 3, whitecases: 2, mobo: 2, bulkram: 2, bulkssd: 2 };
 // No pushes overnight (US Eastern, where the user lives); deals found then
 // are sent at 8am if they're still for sale.
 export const QUIET_HOURS = { from: 3, to: 8, tz: "America/New_York" };
@@ -50,11 +50,13 @@ export async function findGreatDeals(dataDir) {
       // (e.g. "$5"), so it can't block a real deal.
       const launch = await msrp(x.model);
       if (launch && launch >= x.market * 0.25 && x.totalPrice > launch) continue;
-      const price = x.perPair || x.totalPrice;
+      const price = x.perUnit || x.perPair || x.totalPrice;
       // Estimated profit = what it resells for on the used market minus what
       // you pay (before selling fees; shipping and tax-free local resale).
-      const profit = Math.round((x.market - price) * (x.perPair ? (x.sticks || 2) / 2 : 1) * 100) / 100;
-      deals.push({ key: x.url, sectionId: id, marketKind: x.marketKind || (id === "whitecases" ? "similar" : "used"), section: s.title, title: x.title, price: x.totalPrice, market: x.market, underPct: x.underPct, profit, url: x.url, model: x.model || x.tag || null, perPair: x.perPair || null, image: x.image || null });
+      // Lots: per-unit margin × number of units (pairs of sticks / drives).
+      const units = x.perUnit ? x.count : x.perPair ? (x.sticks || 2) / 2 : 1;
+      const profit = Math.round((x.market - price) * units * 100) / 100;
+      deals.push({ key: x.url, sectionId: id, marketKind: x.marketKind || (id === "whitecases" ? "similar" : "used"), section: s.title, title: x.title, price: x.totalPrice, market: x.market, underPct: x.underPct, profit, url: x.url, model: x.model || x.tag || null, perPair: x.perPair || null, perUnit: x.perUnit || null, count: x.count || null, image: x.image || null });
     }
   }
   return deals.sort((a, b) => b.profit - a.profit);
@@ -77,7 +79,7 @@ export async function sendAlerts(deals, { topic, alerted = [], fetchImpl = fetch
   const sent = [];
   for (const d of fresh) {
     const vs = d.marketKind === "new" ? "typical new price" : d.marketKind === "similar" ? "similar cases" : "used market";
-    const body = `${money(d.price)} incl. shipping · ${vs} ~${money(d.market)} (${d.underPct}% under)\nEst. profit ~${money(d.profit)}${d.perPair ? " (" + money(d.perPair) + " per 2×8GB)" : ""}\n${d.title}`;
+    const body = `${money(d.price)} incl. shipping · ${vs} ~${money(d.market)} (${d.underPct}% under)\nEst. profit ~${money(d.profit)}${d.perUnit ? " (" + money(d.perUnit) + " per drive × " + d.count + ")" : d.perPair ? " (" + money(d.perPair) + " per 2×8GB)" : ""}\n${d.title}`;
     if (topic) {
       const r = await fetchImpl(server + "/" + encodeURIComponent(topic), {
         method: "POST", body,

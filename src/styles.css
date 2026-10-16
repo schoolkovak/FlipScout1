@@ -462,3 +462,9 @@ button.mcImage{border:0;width:100%;cursor:pointer;padding:0}
 .anTbl td.down{color:var(--green)}.anTbl td.up{color:var(--amber)}
 .anTbl a{color:var(--cyan);display:inline-flex;align-items:center;gap:4px;text-decoration:none}
 @media (max-width:820px){.anTiles{grid-template-columns:1fr 1fr}.anGrid,.anTwo{grid-template-columns:1fr}.anBarRow{grid-template-columns:90px 1fr 56px}.anTbl.wide th:nth-child(2),.anTbl.wide td:nth-child(2){display:none}}
+
+.flipJump{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 16px}
+.flipJump a{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--line2);border-radius:999px;background:var(--card);color:var(--text);font-size:13px;text-decoration:none}
+.flipJump a:hover{border-color:var(--green)}
+.flipJump em{font-style:normal;color:var(--muted);font-size:12px}
+.flipSection{scroll-margin-top:80px}
