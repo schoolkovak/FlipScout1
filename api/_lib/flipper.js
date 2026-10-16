@@ -9,7 +9,7 @@ import { GPUS, CPUS } from "../../shared/catalog.js";
 function slim(x, extra = {}) {
   return {
     id: x.id, title: x.title, source: x.source, marketplace: x.marketplace, condition: x.condition,
-    itemPrice: x.itemPrice, shipping: x.shipping, shippingKnown: x.shippingKnown, totalPrice: x.totalPrice,
+    itemPrice: x.itemPrice, shipping: x.shipping, shippingKnown: x.shippingKnown, shippingEstimated: x.shippingEstimated || false, totalPrice: x.totalPrice,
     url: x.url, image: x.image || null, ...extra
   };
 }
@@ -224,17 +224,21 @@ async function psus(read) {
   return { ...s, listings };
 }
 
+// AM5 platform parts are left out of Flipper Deals (not what budget flips use).
+const AM5_RE = /\b(?:am5|b650e?|b850|x670e?|x870e?|a620|ryzen [579] [79]\d{3}x?3?d?|ryzen [579] (?:7|9)\d{3}|ryzen [579] [79]\d{3}[a-z0-9]*)\b/;
+export const isAm5 = title => AM5_RE.test(normalizeListingText(title));
+
 // ---- Motherboards: budget boards a flipper builds on, under their own used
 // market (AM4 B450/B550/X570, AM5 B650, Intel B660/B760…), $150 or less ----
 async function mobos(read) {
-  const names = catalogNames("motherboard", () => true);
+  const names = catalogNames("motherboard", n => !/\bAM5\b/.test(n));
   const s = await saved(names, read);
   const rows = [];
   for (const { name, snap } of s.perModel) {
     const market = usedMarket(snap.results);
     const n = usedCount(snap.results);
     rows.push(...snap.results
-      .filter(x => x.totalPrice <= 150 && sane(x.totalPrice, market))
+      .filter(x => x.totalPrice <= 150 && sane(x.totalPrice, market) && !isAm5(x.title))
       .map(x => ({ ...slim(x), model: name, ...dealFields(x.totalPrice, market, n), tag: name.replace(/ motherboard$/, "") }))
       .filter(d => d.underPct == null || d.underPct >= DEAL_MIN_PCT)
       .sort((a, b) => a.totalPrice - b.totalPrice).slice(0, 5));
@@ -302,6 +306,9 @@ async function combos(read) {
     // Every paid item must be a flip part (no paste/cable add-ons), and the
     // combo must save at least $10.
     .filter(c => c.comboPrice > 0 && c.comboPrice <= 1500 && c.savings >= 10 && (c.items || []).filter(x => !x.gift).every(x => COMBO_PARTS.has(comboKind(x.title))))
+    // No AM5 CPUs / boards; combos with RAM only when the saving is big (20%+).
+    .filter(c => !(c.items || []).some(x => isAm5(x.title)) && !isAm5(c.title || ""))
+    .filter(c => !(c.items || []).some(x => !x.gift && comboKind(x.title) === "ram") || (c.savingsPct || 0) >= 20)
     .map(c => ({ ...c, kinds: [...new Set((c.items || []).filter(x => !x.gift).map(x => comboKind(x.title)))] }))
     .map(c => {
       const tax = Math.round(c.comboPrice * COMBO_TAX * 100) / 100;
