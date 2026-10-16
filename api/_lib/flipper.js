@@ -86,9 +86,9 @@ const sane = (price, market) => !market || price >= market * 0.4;
 
 // ---- DDR4: 8GB sticks >= 3000MHz, under $65 per pair, under market ---------
 async function ddr4(read) {
-  const s = await saved(["8GB DDR4 3200", "16GB DDR4 3200", "16GB DDR4 3600"], read);
+  const s = await saved(["8GB DDR4 3200", "16GB DDR4 3200", "16GB DDR4 3600", "8GB DDR4 RAM lot"], read);
   const all = uniqueById(s.rows).map(x => ({ x, info: ddr4StickInfo(x.title) })).filter(r => r.info)
-    .map(r => ({ ...slim(r.x), sticks: r.info.sticks, speed: r.info.speed, perPair: Math.round(r.x.totalPrice / r.info.sticks * 2 * 100) / 100 }))
+    .map(r => ({ ...slim(r.x), sticks: r.info.sticks, speed: r.info.speed, bulk: r.info.sticks >= 8, perPair: Math.round(r.x.totalPrice / r.info.sticks * 2 * 100) / 100 }))
     // Desktop gaming RAM only: no server ECC/registered sticks.
     .filter(x => !/\b(?:ecc|rdimm|registered|reg|server|buffered)\b/.test(normalizeListingText(x.title)));
   const market = usedMarket(all, x => x.perPair);
@@ -130,6 +130,39 @@ async function cases(read) {
   return { ...s, listings };
 }
 
+// ---- White cases with ARGB fans included, Micro-ATX or bigger, <= $70 -------
+// Well-regarded case makers/models (budget favorites) rank first.
+const GOOD_CASE_RE = /\b(?:montech|lian li|lancool|phanteks|nzxt|corsair|fractal|cougar|darkflash|deepcool|antec|thermaltake|zalman|jonsbo|okinos|sama|musetex|aerocool|cooler master|be quiet|asus|msi|gamdias|diypc|vetroo|segotep|apevia|rosewill|hyte|kolink|silverstone)\b/;
+export function whiteArgbCaseOk(title) {
+  const t = normalizeListingText(title);
+  if (!flipCaseOk(title)) return false;
+  if (!/\bwhite\b/.test(t)) return false;
+  // ARGB fans must come with it.
+  return /\b(?:argb|a rgb|addressable)\b/.test(t) && /\bfans?\b/.test(t);
+}
+async function whiteArgbCases(read) {
+  const s = await saved(["White ARGB PC case", "White Micro ATX ARGB case", "White PC case", "ARGB PC case", "RGB gaming PC case"], read);
+  const all = uniqueById(s.rows).filter(x => whiteArgbCaseOk(x.title) && x.totalPrice <= 70);
+  const market = usedMarket(all);
+  const listings = all.map(x => ({ ...slim(x), ...dealFields(x.totalPrice, market, usedCount(all)), tag: GOOD_CASE_RE.test(normalizeListingText(x.title)) ? "Popular brand" : null }))
+    .sort((a, b) => (b.tag ? 1 : 0) - (a.tag ? 1 : 0) || a.totalPrice - b.totalPrice);
+  return { ...s, listings };
+}
+
+// ---- New PSUs under $45: 550–750W, 80+ rated desktop units ---------------
+// Compared with the typical NEW price for that wattage (used PSUs are rare).
+async function cheapNewPsus(read) {
+  const s = await saved(["650W 80+ Gold PSU", "650W PSU", "550W PSU", "750W 80+ Gold PSU", "750W PSU"], read);
+  const watts = x => Number(normalizeListingText(x.title).match(/\b(\d{3,4})\s?w\b/)?.[1]) || null;
+  const all = uniqueById(s.rows).map(x => ({ ...slim(x), watts: watts(x), rating: psuRating(x.title) }))
+    .filter(x => [550, 600, 650, 700, 750].includes(x.watts) && x.condition === "new" && (x.rating || /\bwhite\b/.test(normalizeListingText(x.title))));
+  const newMed = w => median(all.filter(x => x.watts === w).map(x => x.totalPrice));
+  const listings = all.filter(x => x.totalPrice <= 45)
+    .map(x => { const m = newMed(x.watts); const n = all.filter(y => y.watts === x.watts).length; return { ...x, market: m ? Math.round(m * 100) / 100 : null, underPct: m ? Math.round((m - x.totalPrice) / m * 100) : null, newComps: n, marketKind: "new", tag: x.watts + "W" + (x.rating ? " " + x.rating[0].toUpperCase() + x.rating.slice(1) : " 80+ White") }; })
+    .sort((a, b) => a.totalPrice - b.totalPrice);
+  return { ...s, listings };
+}
+
 // ---- PSUs: 650W / 550W (sometimes 750W), Bronze or Gold, under market -------
 async function psus(read) {
   const s = await saved(["650W 80+ Gold PSU", "650W PSU", "550W PSU", "750W 80+ Gold PSU", "750W PSU"], read);
@@ -167,7 +200,7 @@ async function appeal(read, names, table, { maxPrice = Infinity, appealPower = 1
       .filter(x => x.totalPrice <= maxPrice && sane(x.totalPrice, market))
       .map(x => ({ x, ...dealFields(x.totalPrice, market, usedCount(snap.results)) }))
       .filter(d => d.underPct == null || d.underPct >= DEAL_MIN_PCT)
-      .sort((a, b) => a.x.totalPrice - b.x.totalPrice).slice(0, 3);
+      .sort((a, b) => a.x.totalPrice - b.x.totalPrice).slice(0, 4);
     for (const d of deals) {
       const appealPer100 = Math.round(meta.appeal / d.x.totalPrice * 10000) / 100;
       const score = Math.round(Math.pow(meta.appeal, appealPower) / d.x.totalPrice * (1 + Math.max(0, d.underPct || 0) / 200) * 10000) / 100;
@@ -224,6 +257,8 @@ export const FLIPPER_SECTIONS = {
   ddr4: { title: "DDR4 bulk 8GB sticks", run: ddr4 },
   nvme500: { title: "500GB NVMe SSDs", run: nvme500 },
   cases: { title: "RGB cases under $52 (Micro-ATX+)", run: cases },
+  whitecases: { title: "White cases with ARGB fans (≤ $70)", run: whiteArgbCases },
+  psunew: { title: "New PSUs under $45", run: cheapNewPsus },
   psu: { title: "PSUs 550–750W Bronze/Gold", run: psus },
   ryzen: { title: "Ryzen CPUs under $65", run: ryzen },
   gpu: { title: "GPUs buyers want — appeal for the money", run: gpus },

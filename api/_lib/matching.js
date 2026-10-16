@@ -475,7 +475,15 @@ export function evaluateListing({ title, query, category, structuredCondition = 
     const tGens = new Set([...t.matchAll(/\bddr([345])\b/g)].map(m => m[1]));
     if (tGens.size > 1) return reject("multiple-variants", "DDR generations");
     if (qGen && tGens.size && !tGens.has(qGen)) return reject("generation-mismatch", "DDR" + [...tGens][0]);
-    const qTotal = ramTotal(q);
+    // Bulk lots ("8GB DDR4 RAM lot"): any number of 8GB sticks; the stick
+    // count and per-kit price are worked out later (Flipper Deals).
+    const bulk = /\blot\b/.test(q);
+    if (bulk) {
+      if (!/(?:\b|x)8gb\b/.test(t)) return reject("capacity-mismatch", "not 8GB sticks");
+      if (/\b(?:4|16|32|64)gb\b/.test(t.replace(/\b\d{1,2}\s*x\s*8gb\b/g, " ").replace(/\b(?:16|32|64|80|96|128|160)gb\s*\(?\s*\d{1,2}\s*x\s*8gb/g, " ")) && !/\b\d{1,2}\s*x\s*8gb\b/.test(t)) return reject("multiple-variants", "mixed stick sizes");
+      consumed.add("lot"); consumed.add("8gb");
+    }
+    const qTotal = bulk ? 0 : ramTotal(q);
     if (qTotal) {
       const tTotal = ramTotal(t);
       if (!tTotal) return reject("capacity-not-stated");

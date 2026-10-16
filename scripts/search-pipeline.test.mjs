@@ -764,3 +764,16 @@ test("aliexpress: search-page itemList becomes flagged real item listings", asyn
   assert.equal(o[0].priceIsRange, true, "flagged as the listing's lowest option");
   assert.equal(o[0].image, "https://ae-pic-a1.aliexpress-media.com/kf/3256813170166416.webp");
 });
+
+test("bulk DDR4 lots match the lot model; white ARGB cases need white + ARGB fans", async () => {
+  const ok = t => evaluateListing({ title: t, query: "8GB DDR4 desktop RAM lot", category: "RAM / Memory" }).ok;
+  assert.equal(ok("OWC 64GB (8x8GB) DDR4 3200MHz Non-ECC UDIMM 288pin Memory RAM"), true);
+  assert.equal(ok("Lot of 10 Corsair Vengeance LPX 8GB DDR4 3200 Desktop RAM"), true);
+  assert.equal(ok("Patriot Viper Steel 8GB 16GB 32GB DDR4-3200 UDIMM XMP PC RAM Lot"), false, "mixed sizes");
+  assert.equal(ok("Kingston 8GB DDR4 3200 SODIMM laptop lot of 6"), false, "laptop");
+  const { ddr4StickInfo, whiteArgbCaseOk } = await import("../api/_lib/flipper.js");
+  assert.deepEqual(ddr4StickInfo("OWC 64GB (8x8GB) DDR4 3200MHz Non-ECC UDIMM"), { sticks: 8, speed: "3200" });
+  assert.equal(whiteArgbCaseOk("SAMA V40 White ATX Mid Tower PC Case, 6 Pre-Installed 120mm ARGB PWM Fans"), true);
+  assert.equal(whiteArgbCaseOk("Montech AIR 903 Base Black ATX Mid Tower Case ARGB fans"), false, "not white");
+  assert.equal(whiteArgbCaseOk("White Mini ITX case ARGB fans"), false, "Mini-ITX");
+});

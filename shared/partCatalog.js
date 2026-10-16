@@ -147,7 +147,8 @@ export const PART_GROUPS = [
         spec("16GB DDR4 3200", "RAM / Memory", [["Kit", "2×8 GB"], ["Speed", "3200 MT/s"]]),
         spec("32GB DDR4 3200", "RAM / Memory", [["Kit", "2×16 GB"], ["Speed", "3200 MT/s"]]),
         spec("32GB DDR4 3600", "RAM / Memory", [["Kit", "2×16 GB"], ["Speed", "3600 MT/s"]]),
-        spec("64GB DDR4 3200", "RAM / Memory", [["Kit", "2×32 GB"], ["Speed", "3200 MT/s"]])
+        spec("64GB DDR4 3200", "RAM / Memory", [["Kit", "2×32 GB"], ["Speed", "3200 MT/s"]]),
+        spec("8GB DDR4 RAM lot", "RAM / Memory", [["Kit", "Lot of 8GB sticks"], ["Speed", "3000+ MT/s"]], { query: "8GB DDR4 desktop RAM lot" })
       ] }
     ]
   },
@@ -237,7 +238,9 @@ export const PART_GROUPS = [
         spec("Mini ITX PC case", "PC Case", [["Size", "Mini ITX"]]),
         spec("RGB gaming PC case", "PC Case", [["Lighting", "RGB / ARGB"]]),
         spec("ARGB PC case", "PC Case", [["Lighting", "ARGB"]]),
-        spec("White PC case", "PC Case", [["Color", "White"]])
+        spec("White PC case", "PC Case", [["Color", "White"]]),
+        spec("White ARGB PC case", "PC Case", [["Color", "White"], ["Lighting", "ARGB fans"]], { query: "white ARGB PC case fans" }),
+        spec("White Micro ATX ARGB case", "PC Case", [["Color", "White"], ["Size", "Micro ATX"], ["Lighting", "ARGB fans"]], { query: "white micro ATX ARGB case" })
       ] }
     ]
   },

@@ -54,7 +54,7 @@ const STORE_PROVIDERS = new Set([NEWEGG_PROVIDER, AMAZON_PROVIDER, ALIEXPRESS_PR
 // (Flipper Deals sections are built from these too.)
 const PRIORITY = [
   "GTX 1660 Super", "GTX 1660 Ti", "RTX 3060 12GB", "16GB DDR4 3200", "500GB NVMe SSD", "Ryzen 5 3600", "650W PSU",
-  "RGB gaming PC case", "ARGB PC case", "White PC case", "ATX mid tower PC case", "Micro ATX PC case", "RTX 3060 Ti", "RTX 3070", "RTX 2060", "Ryzen 5 2600", "Ryzen 5 5600", "8GB DDR4 3200",
+  "RGB gaming PC case", "ARGB PC case", "White PC case", "White ARGB PC case", "White Micro ATX ARGB case", "8GB DDR4 RAM lot", "ATX mid tower PC case", "Micro ATX PC case", "RTX 3060 Ti", "RTX 3070", "RTX 2060", "Ryzen 5 2600", "Ryzen 5 5600", "8GB DDR4 3200",
   "650W 80+ Gold PSU", "550W PSU", "GTX 1660", "RX 6600", "RX 580 8GB", "RX 5700 XT", "Ryzen 5 3500X", "Ryzen 5 5600X",
   "16GB DDR4 3600", "RTX 2060 Super", "RTX 2070 Super", "GTX 1070", "GTX 1080", "RX 6700 XT",
   "RTX 3080 10GB", "RTX 4060", "Ryzen 7 5700X", "Ryzen 7 5800X3D", "750W 80+ Gold PSU", "500GB SSD",
