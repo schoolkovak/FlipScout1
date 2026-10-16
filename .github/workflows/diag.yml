@@ -1,0 +1,26 @@
+name: diag
+on: push
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          cat > p.mjs <<'JS'
+          const H = { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36", "accept": "text/html", "accept-language": "en-US,en;q=0.9" };
+          const state = t => { const m = t.match(/window\.__initialState__\s*=\s*(\{[\s\S]*?\});?\s*<\/script>/); return m ? JSON.parse(m[1]) : null; };
+          for (const q of ["ryzen 5 5500", "ryzen 5 5600", "b550 motherboard"]) {
+            const t = await (await fetch("https://www.newegg.com/p/pl?d=" + encodeURIComponent(q), { headers: H })).text();
+            const s = state(t); if (!s) { console.log(q, "no state"); continue; }
+            console.log("\n####", q, "DynamicCombo top:", JSON.stringify(s.DynamicCombo).slice(0, 800));
+            for (const p of s.Products.slice(0, 15)) {
+              const c = p.ItemCell; if (!c) continue;
+              if (p.ItemHasDyanmicCombo || p.DynamicCombo || p.DynamicGroupCount) console.log("ITEM", c.Item, c.FinalPrice, (c.Description?.Title || "").slice(0, 50), "hasDyn", p.ItemHasDyanmicCombo, "dyn", JSON.stringify(p.DynamicCombo).slice(0, 1500), "grp", p.DynamicGroupCount);
+            }
+            const i = t.indexOf("DynamicCombo"); console.log("ctx", t.slice(i, i + 300));
+          }
+          // known combo/bundle endpoints
+          for (const u of ["https://www.newegg.com/product/api/ProductRealtime?ItemNumber=19-113-736", "https://www.newegg.com/p/N82E16819113736", "https://www.newegg.com/Product/ComboBundleDetails?ItemList=19-113-736"]) {
+            const r = await fetch(u, { headers: H, redirect: "manual" }); const tt = await r.text(); console.log("\nURL", u, r.status, r.headers.get("location"), tt.length, tt.slice(0, 200).replace(/\s+/g, " "));
+          }
+          JS
+          node p.mjs
