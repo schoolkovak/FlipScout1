@@ -10,7 +10,7 @@ import { modelPath } from "../api/_lib/snapshots.js";
 export const ALERT_MIN_PCT = 10;
 const MAX_PER_RUN = 15;
 // Variety: no single part type can take a whole batch.
-const PER_SECTION = { gpu: 6, ryzen: 3, ddr4: 3, nvme500: 2, psu: 2, psunew: 3, whitecases: 2 };
+const PER_SECTION = { gpu: 6, ryzen: 3, ddr4: 3, nvme500: 2, psu: 2, psunew: 3, whitecases: 2, mobo: 2 };
 // No pushes overnight (US Eastern, where the user lives); deals found then
 // are sent at 8am if they're still for sale.
 export const QUIET_HOURS = { from: 3, to: 8, tz: "America/New_York" };

@@ -178,6 +178,25 @@ async function psus(read) {
   return { ...s, listings };
 }
 
+// ---- Motherboards: budget boards a flipper builds on, under their own used
+// market (AM4 B450/B550/X570, AM5 B650, Intel B660/B760…), $150 or less ----
+async function mobos(read) {
+  const names = catalogNames("motherboard", () => true);
+  const s = await saved(names, read);
+  const rows = [];
+  for (const { name, snap } of s.perModel) {
+    const market = usedMarket(snap.results);
+    const n = usedCount(snap.results);
+    rows.push(...snap.results
+      .filter(x => x.totalPrice <= 150 && sane(x.totalPrice, market))
+      .map(x => ({ ...slim(x), model: name, ...dealFields(x.totalPrice, market, n), tag: name.replace(/ motherboard$/, "") }))
+      .filter(d => d.underPct == null || d.underPct >= DEAL_MIN_PCT)
+      .sort((a, b) => a.totalPrice - b.totalPrice).slice(0, 5));
+  }
+  rows.sort((a, b) => (b.underPct || 0) - (a.underPct || 0) || a.totalPrice - b.totalPrice);
+  return { ...s, listings: rows };
+}
+
 // ---- Appeal per dollar, only under each model's used market ----------------
 // GPUs: appeal matters most. A newer, popular card (e.g. an RTX 5060 at ~$300)
 // should beat an older card that is cheaper and even faster (a 3070), but a
@@ -261,11 +280,12 @@ export const FLIPPER_SECTIONS = {
   psunew: { title: "New PSUs under $45", run: cheapNewPsus },
   psu: { title: "PSUs 550–750W Bronze/Gold", run: psus },
   ryzen: { title: "Ryzen CPUs under $65", run: ryzen },
+  mobo: { title: "Motherboards under their used market (≤ $150)", run: mobos },
   gpu: { title: "GPUs buyers want — appeal for the money", run: gpus },
   combos: { title: "Newegg combo deals", run: combos }
 };
 
-export async function flipperSection(id, read) {
+export async function flipperSection(id, read = readSnapshot) {
   const section = FLIPPER_SECTIONS[id];
   if (!section) return null;
   const r = await section.run(read);

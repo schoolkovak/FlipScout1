@@ -7,7 +7,8 @@ export default async function handler(req, res) {
   const ids = id === "all" ? Object.keys(FLIPPER_SECTIONS) : [id];
   if (!ids.every(x => FLIPPER_SECTIONS[x])) return res.status(400).json({ error: "Unknown section", sections: Object.keys(FLIPPER_SECTIONS) });
   try {
-    const sections = await Promise.all(ids.map(x => flipperSection(x)));
+    // One broken section must never take the whole page down.
+    const sections = await Promise.all(ids.map(x => flipperSection(x).catch(e => ({ id: x, title: FLIPPER_SECTIONS[x].title, listings: [], count: 0, error: String(e?.message || e).slice(0, 120) }))));
     res.setHeader?.("Cache-Control", "public, s-maxage=300, stale-while-revalidate=3600");
     res.status(200).json(id === "all" ? { sections } : sections[0]);
   } catch (error) {
