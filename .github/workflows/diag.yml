@@ -1,0 +1,25 @@
+name: diag
+on: push
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          cat > p.mjs <<'JS'
+          const H = { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36", "accept": "application/json,text/html", "accept-language": "en-US,en;q=0.9" };
+          const rb = await (await fetch("https://www.newegg.com/robots.txt", { headers: H })).text();
+          console.log("robots:", rb.split("\n").filter(l => /user-agent: \*|api|combo|product/i.test(l)).slice(0, 25).join(" | "));
+          for (const id of ["19-113-736", "19-113-666", "13-145-526"]) {
+            const r = await fetch("https://www.newegg.com/product/api/ProductRealtime?ItemNumber=" + id, { headers: H });
+            const j = await r.json().catch(() => null);
+            console.log("\n####", id, r.status, j ? Object.keys(j).join(",") : "no json");
+            if (!j) continue;
+            const m = j.MainItem || {};
+            console.log("main", (m.Description?.Title || "").slice(0, 60), "final", m.FinalPrice, "instock", m.Instock);
+            const s = JSON.stringify(j);
+            for (const k of ["Combo", "Bundle", "Dynamic", "Gift", "Promotion"]) { const i = s.indexOf(k); if (i >= 0) console.log("KEY", k, s.slice(Math.max(0, i - 80), i + 600)); }
+          }
+          const t = await (await fetch("https://www.newegg.com/p/pl?d=ryzen+5+5500", { headers: H })).text();
+          console.log("\nsearch status len", t.length, /Just a moment/.test(t));
+          JS
+          node p.mjs
