@@ -8,7 +8,9 @@ import { flipperSection, FLIPPER_SECTIONS } from "../api/_lib/flipper.js";
 import { modelPath } from "../api/_lib/snapshots.js";
 
 export const ALERT_MIN_PCT = 10;
-const MAX_PER_RUN = 10;
+const MAX_PER_RUN = 15;
+// Variety: no single part type can take a whole batch.
+const PER_SECTION = { gpu: 6, ryzen: 3, ddr4: 3, nvme500: 2, psu: 2, psunew: 3, whitecases: 2 };
 // No pushes overnight (US Eastern, where the user lives); deals found then
 // are sent at 8am if they're still for sale.
 export const QUIET_HOURS = { from: 3, to: 8, tz: "America/New_York" };
@@ -36,7 +38,11 @@ export async function findGreatDeals(dataDir) {
       // Only alert against a real used-market price: at least 5 used comps.
       // Cases are skipped — their "market" mixes every case model, so any
       // cheap new case looked 50% under it.
-      if (id === "cases" || id === "combos" || (x.usedComps ?? 0) < 5) continue;
+      if (id === "cases" || id === "combos") continue;
+      // Used-market sections need >= 5 used comps; the new-price sections
+      // (cheap new PSUs, white ARGB cases) need >= 5 comparable listings.
+      if (id === "psunew" ? (x.newComps ?? 0) < 5 : id !== "whitecases" && (x.usedComps ?? 0) < 5) continue;
+      if (id === "whitecases" && (x.underPct ?? 0) < 15) continue;
       // AliExpress search prices are a listing's cheapest variant: shown on
       // the site (flagged), never pushed as an alert.
       if (x.marketplace === "aliexpress") continue;
@@ -48,7 +54,7 @@ export async function findGreatDeals(dataDir) {
       // Estimated profit = what it resells for on the used market minus what
       // you pay (before selling fees; shipping and tax-free local resale).
       const profit = Math.round((x.market - price) * (x.perPair ? (x.sticks || 2) / 2 : 1) * 100) / 100;
-      deals.push({ key: x.url, section: s.title, title: x.title, price: x.totalPrice, market: x.market, underPct: x.underPct, profit, url: x.url, model: x.model || x.tag || null, perPair: x.perPair || null, image: x.image || null });
+      deals.push({ key: x.url, sectionId: id, marketKind: x.marketKind || (id === "whitecases" ? "similar" : "used"), section: s.title, title: x.title, price: x.totalPrice, market: x.market, underPct: x.underPct, profit, url: x.url, model: x.model || x.tag || null, perPair: x.perPair || null, image: x.image || null });
     }
   }
   return deals.sort((a, b) => b.profit - a.profit);
@@ -60,16 +66,18 @@ export async function findGreatDeals(dataDir) {
 export async function sendAlerts(deals, { topic, alerted = [], fetchImpl = fetch, server = "https://ntfy.sh", verify = null, now = new Date() } = {}) {
   if (inQuietHours(now)) return { sent: [], candidates: deals.length, quiet: true };
   const seen = new Set(alerted);
-  let fresh = deals.filter(d => !seen.has(d.key)).slice(0, MAX_PER_RUN * 3);
+  let fresh = deals.filter(d => !seen.has(d.key)).slice(0, MAX_PER_RUN * 4);
   if (verify) {
     const ebay = fresh.filter(d => /ebay\.com\/itm\//.test(d.url)).map(d => d.url);
     const live = ebay.length ? await verify(ebay).catch(() => new Map()) : new Map();
     fresh = fresh.filter(d => !/ebay\.com\/itm\//.test(d.url) || (live.has(d.url) && live.get(d.url) <= d.price + 0.5));
   }
-  fresh = fresh.slice(0, MAX_PER_RUN);
+  const taken = {};
+  fresh = fresh.filter(d => { const cap = PER_SECTION[d.sectionId] ?? 3; taken[d.sectionId] = (taken[d.sectionId] || 0) + 1; return taken[d.sectionId] <= cap; }).slice(0, MAX_PER_RUN);
   const sent = [];
   for (const d of fresh) {
-    const body = `${money(d.price)} incl. shipping · used market ~${money(d.market)} (${d.underPct}% under)\nEst. profit ~${money(d.profit)}${d.perPair ? " (" + money(d.perPair) + " per 2×8GB)" : ""}\n${d.title}`;
+    const vs = d.marketKind === "new" ? "typical new price" : d.marketKind === "similar" ? "similar cases" : "used market";
+    const body = `${money(d.price)} incl. shipping · ${vs} ~${money(d.market)} (${d.underPct}% under)\nEst. profit ~${money(d.profit)}${d.perPair ? " (" + money(d.perPair) + " per 2×8GB)" : ""}\n${d.title}`;
     if (topic) {
       const r = await fetchImpl(server + "/" + encodeURIComponent(topic), {
         method: "POST", body,
