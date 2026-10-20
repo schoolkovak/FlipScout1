@@ -661,6 +661,38 @@ test("deal alerts: great deals from saved listings, each sent once, with est. pr
   assert.equal(live.sent.length, 1);
 });
 
+test("deal alerts: ranked by value, mixed part types, ❗ on great deals", async () => {
+  const { sendAlerts, valueScore, diversify } = await import("./deal-alerts.mjs");
+  const D = (sectionId, n, underPct, itemProfit, extra = {}) => ({ key: sectionId + n, sectionId, url: "https://example.com/" + sectionId + n, title: sectionId + " " + n, section: sectionId, price: 50, market: 80, underPct, itemProfit, profit: itemProfit, score: valueScore(underPct, itemProfit), ...extra });
+  // A 46-drive SSD lot with a big total profit but a small per-drive margin
+  // ranks under a single card that's far under its market.
+  assert.ok(valueScore(40, 130) > valueScore(18, 11));
+  const deals = [
+    ...Array.from({ length: 8 }, (_, i) => D("bulkssd", i, 30, 20)),
+    ...Array.from({ length: 4 }, (_, i) => D("nvme500", i, 29, 18)),
+    ...Array.from({ length: 6 }, (_, i) => D("gpu", i, 28, 60)),
+    D("psu", 0, 20, 15), D("mobo", 0, 20, 30), D("ryzen", 0, 15, 12),
+    D("gpu", "great", 52, 106, { great: true })
+  ].sort((a, b) => b.score - a.score);
+  assert.deepEqual(diversify(deals).slice(0, 4).map(d => d.sectionId), ["gpu", "bulkssd", "gpu", "mobo"], "best first, then other part types");
+  const posts = [];
+  const fakeFetch = async (url, opts) => { posts.push(opts); return { ok: true }; };
+  const noon = new Date("2026-10-13T16:00:00Z");
+  const r = await sendAlerts(deals, { topic: "t", fetchImpl: fakeFetch, now: noon });
+  const fams = r.log.map(x => x.f);
+  assert.equal(fams.filter(f => f === "ssd").length, 2, "SSD sections share one family, 2 per batch");
+  assert.equal(fams.filter(f => f === "gpu").length, 2);
+  assert.deepEqual(new Set(fams), new Set(["ssd", "gpu", "psu", "mobo", "cpu"]));
+  assert.equal(posts[0].headers.Tags, "exclamation,moneybag", "great deal first, with ❗");
+  assert.equal(posts[0].headers.Priority, "high");
+  assert.match(posts[0].body, /^Great deal!/);
+  assert.equal(posts[1].headers.Tags, "moneybag");
+  // A family that already had its day's alerts only gets great deals.
+  const recent = Array.from({ length: 6 }, () => ({ f: "gpu", at: noon.toISOString() }));
+  const later = await sendAlerts(deals, { topic: "t", fetchImpl: fakeFetch, now: noon, recent });
+  assert.deepEqual(later.sent.filter(k => k.startsWith("gpu")), ["gpugreat"]);
+});
+
 test("deal alerts: skip anything over its MSRP (GPUs over $500 are fine)", async () => {
   const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");

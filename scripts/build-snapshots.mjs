@@ -18,7 +18,7 @@ import { PART_GROUPS } from "../shared/partCatalog.js";
 import { modelSlug } from "../api/_lib/snapshots.js";
 import { buildMarket, rankDeals, shippingFields, qualifyOffers } from "../api/_lib/market.js";
 import { normalizeListingText, evaluateListing } from "../api/_lib/matching.js";
-import { findGreatDeals, sendAlerts } from "./deal-alerts.mjs";
+import { findGreatDeals, sendAlerts, recentAlerts } from "./deal-alerts.mjs";
 import { flipperSection, FLIPPER_SECTIONS } from "../api/_lib/flipper.js";
 import { readdirSync } from "node:fs";
 import { neweggListings, fetchNeweggCombos, NEWEGG_PROVIDER } from "./newegg.mjs";
@@ -355,8 +355,9 @@ async function main() {
           const read = async p => overlay.get(p)?.snap || readJson(join(DATA, p), null);
           const deals = (await findGreatDeals(DATA, { read })).filter(d => newUrls.has(d.key));
           if (deals.length) {
-            const r = await sendAlerts(deals, { topic, alerted: state.alerted || [], verify });
+            const r = await sendAlerts(deals, { topic, alerted: state.alerted || [], recent: state.alertLog || [], verify });
             state.alerted = [...r.sent, ...(state.alerted || [])].slice(0, 2000);
+            state.alertLog = recentAlerts([...(state.alertLog || []), ...r.log]);
             log.watchAlerts = (log.watchAlerts || 0) + r.sent.length;
             if (r.sent.length) console.log(`watcher: ${r.sent.length} new deal alert(s) sent`);
           }
@@ -471,9 +472,10 @@ async function main() {
       const deals = await findGreatDeals(DATA);
       // Ask eBay (through the site) which deal listings are still for sale.
       const verify = async urls => (await checkEbay(urls)).live;
-      const { sent, candidates, quiet } = await sendAlerts(deals, { topic, alerted: state.alerted || [], verify });
+      const { sent, log: sentLog, candidates, quiet } = await sendAlerts(deals, { topic, alerted: state.alerted || [], recent: state.alertLog || [], verify });
       if (quiet) console.log("deal alerts: quiet hours, none sent");
       state.alerted = [...sent, ...(state.alerted || [])].slice(0, 2000);
+      state.alertLog = recentAlerts([...(state.alertLog || []), ...sentLog]);
       log.alerts = sent.length;
       console.log(`deal alerts: ${sent.length} sent of ${candidates} deals`);
     } catch (e) { log.errors.push("alerts: " + e.message); }
