@@ -41,9 +41,10 @@ const NEWEGG_PER_RUN = Number(args["newegg-per-run"] ?? 30);
 const NEWEGG_GAP_MS = 4000;
 // Deal watcher: every few minutes, the newest eBay listings per part type
 // (one eBay call each) are checked against the saved used markets and good
-// deals are pushed right away. 7 calls / 6 min ≈ 1,200 eBay calls a day.
+// deals are pushed right away. 8 calls / 6 min ≈ 1,400 eBay calls a day.
+// ("xeon": newest "xeon e5" listings: CPUs and X99 combos.)
 const WATCH_GAP_MS = Number(args["watch-gap-s"] ?? 360) * 1000;
-const WATCH_TYPES = { gpu: "gpu", cpu: "cpu", ram: "ram", ssd: "ssd", psu: "psu", mobo: "motherboard", case: "case" };
+const WATCH_TYPES = { gpu: "gpu", cpu: "cpu", ram: "ram", ssd: "ssd", psu: "psu", mobo: "motherboard", case: "case", xeon: "xeon" };
 // Amazon search pages: gentler still (each model about every 8 hours).
 const AMAZON_STALE_H = 20;
 const AMAZON_PER_RUN = Number(args["amazon-per-run"] ?? 10);

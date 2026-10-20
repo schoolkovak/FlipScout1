@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { flipperSection, FLIPPER_SECTIONS, isAm5 } from "../api/_lib/flipper.js";
 import { modelPath } from "../api/_lib/snapshots.js";
 import { PART_GROUPS } from "../shared/partCatalog.js";
+import { xeonSections, XEON_SECTIONS, XEON_GREAT_PCT, XEON_GREAT_PROFIT } from "./xeon-deals.mjs";
 
 export const ALERT_MIN_PCT = 10;
 // A deal must make at least this much per item (per drive / per 2 sticks):
@@ -82,8 +83,9 @@ export async function findGreatDeals(dataDir, { read: readOverride } = {}) {
     if (!msrpOf.has(model)) msrpOf.set(model, Number((await read(modelPath(model)))?.msrp) || 0);
     return msrpOf.get(model);
   };
-  for (const id of [...Object.keys(FLIPPER_SECTIONS), "cpus"]) {
-    const s = id === "cpus" ? await extraCpus(read) : await flipperSection(id, read);
+  const xeon = await xeonSections(read);
+  for (const id of [...Object.keys(FLIPPER_SECTIONS), "cpus", ...Object.keys(XEON_SECTIONS)]) {
+    const s = id === "cpus" ? await extraCpus(read) : xeon[id] || await flipperSection(id, read);
     for (const x of s?.listings || []) {
       if (x.underPct == null || x.underPct < ALERT_MIN_PCT || !x.market || !x.url) continue;
       // Only alert against a real used-market price: at least 5 used comps.
@@ -109,8 +111,8 @@ export async function findGreatDeals(dataDir, { read: readOverride } = {}) {
       const itemProfit = Math.round((x.market - price) * 100) / 100;
       if (itemProfit < MIN_ITEM_PROFIT) continue;
       const profit = Math.round(itemProfit * units * 100) / 100;
-      const great = x.underPct >= GREAT_PCT && itemProfit >= GREAT_PROFIT;
-      deals.push({ key: x.url, sectionId: id, family: familyOf(id), score: valueScore(x.underPct, itemProfit), great, itemProfit, marketKind: x.marketKind || (id === "whitecases" ? "similar" : "used"), section: s.title, title: x.title, price: x.totalPrice, market: x.market, underPct: x.underPct, profit, url: x.url, model: id === "whitecases" ? "White ARGB case" : id === "ddr4" && x.sticks ? `${x.sticks}×8GB DDR4 ${x.speed}` : x.model || x.tag || null, perPair: x.perPair || null, perUnit: x.perUnit || null, count: x.count || null, image: x.image || null });
+      const great = (x.underPct >= GREAT_PCT && itemProfit >= GREAT_PROFIT) || (id in XEON_SECTIONS && x.underPct >= XEON_GREAT_PCT && itemProfit >= XEON_GREAT_PROFIT[id]);
+      deals.push({ key: x.url, sectionId: id, family: familyOf(id), score: Math.round((valueScore(x.underPct, itemProfit) + (x.perfBonus || 0)) * 10) / 10, great, itemProfit, marketKind: x.marketKind || (id === "whitecases" ? "similar" : "used"), section: s.title, title: x.title, price: x.totalPrice, market: x.market, underPct: x.underPct, profit, url: x.url, model: id === "whitecases" ? "White ARGB case" : id === "ddr4" && x.sticks ? `${x.sticks}×8GB DDR4 ${x.speed}` : x.model || x.tag || null, perPair: x.perPair || null, perUnit: x.perUnit || null, count: x.count || null, image: x.image || null, note: x.note || null, unitLabel: x.unitLabel || null, unitNoun: x.unitNoun || null });
     }
   }
   // The same item listed twice (same title and price, different link) and
@@ -174,11 +176,11 @@ export const recentAlerts = (log, now = new Date()) => log.filter(r => now - new
 // The ntfy message for one deal. Great deals get ❗ (ntfy shows the
 // "exclamation" tag as an emoji before the title) and high priority.
 export function alertMessage(d) {
-  const vs = d.marketKind === "new" ? "typical new price" : d.marketKind === "similar" ? "similar cases" : "used market";
+  const vs = d.marketKind === "new" ? "typical new price" : d.marketKind === "similar" ? "similar cases" : d.marketKind === "parts" ? "parts sold separately" : "used market";
   // Lots compare per drive / per 2 sticks, so say so next to both prices.
-  const unit = d.perUnit ? " per drive" : d.perPair ? " per 2×8GB" : "";
+  const unit = d.unitLabel || (d.perUnit ? " per drive" : d.perPair ? " per 2×8GB" : "");
   const each = d.perUnit || d.perPair;
-  const body = `${d.great ? "Great deal! " : ""}${money(d.price)} incl. shipping${each && each !== d.price ? " = " + money(each) + unit : ""} · ${vs} ~${money(d.market)}${unit} (${d.underPct}% under)\nEst. profit ~${money(d.profit)}${d.perUnit ? " across " + d.count + " drives" : ""}\n${d.title}`;
+  const body = `${d.great ? "Great deal! " : ""}${money(d.price)} incl. shipping${each && each !== d.price ? " = " + money(each) + unit : ""} · ${vs} ~${money(d.market)}${unit} (${d.underPct}% under)\nEst. profit ~${money(d.profit)}${d.perUnit ? " across " + d.count + " " + (d.unitNoun || "drives") : ""}${d.note ? "\n" + d.note : ""}\n${d.title}`;
   return {
     body,
     headers: { "Title": `FlipScout deal: ${d.model || d.section} ${money(d.price)}`, "Click": d.url, "Tags": d.great ? "exclamation,moneybag" : "moneybag", "Priority": d.great ? "high" : "default", ...(d.image ? { "Attach": d.image } : {}) }
