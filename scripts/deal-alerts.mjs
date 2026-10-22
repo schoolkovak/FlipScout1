@@ -63,6 +63,26 @@ async function extraCpus(read) {
   }
   return { title: "CPUs under their used market", listings };
 }
+// Price targets: any listing of these models at or under the price (incl.
+// shipping) alerts, whatever its used market, ahead of other deals and
+// outside the per-family limits.
+export const PRICE_TARGETS = [{ model: "RX 580 8GB", max: 60 }];
+async function targetDeals(read) {
+  const out = [];
+  for (const t of PRICE_TARGETS) {
+    const snap = await read(modelPath(t.model));
+    const used = (snap?.results || []).filter(x => USED.has(x.condition)).map(x => x.totalPrice).filter(n => n > 0).sort((a, b) => a - b);
+    const market = used.length >= 5 ? used[Math.floor(used.length / 2)] : null;
+    for (const x of snap?.results || []) {
+      // Under $25 is bait or a broken card the title doesn't admit to.
+      if (!x.url || !(x.totalPrice >= 25 && x.totalPrice <= t.max) || x.marketplace === "aliexpress") continue;
+      const underPct = market ? Math.round((market - x.totalPrice) / market * 100) : 0;
+      out.push({ key: x.url, sectionId: "target", family: "target", target: t.max, score: 1000 - x.totalPrice, great: false, itemProfit: market ? Math.round((market - x.totalPrice) * 100) / 100 : 0, marketKind: "used", section: "Price target", title: x.title, price: x.totalPrice, market, underPct, profit: market ? Math.round((market - x.totalPrice) * 100) / 100 : 0, url: x.url, model: t.model, image: x.image || null });
+    }
+  }
+  return out;
+}
+
 // No pushes overnight (US Eastern, where the user lives); deals found then
 // are sent at 8am if they're still for sale.
 export const QUIET_HOURS = { from: 3, to: 8, tz: "America/New_York" };
@@ -115,6 +135,7 @@ export async function findGreatDeals(dataDir, { read: readOverride } = {}) {
       deals.push({ key: x.url, sectionId: id, family: familyOf(id), score: Math.round((valueScore(x.underPct, itemProfit) + (x.perfBonus || 0)) * 10) / 10, great, itemProfit, marketKind: x.marketKind || (id === "whitecases" ? "similar" : "used"), section: s.title, title: x.title, price: x.totalPrice, market: x.market, underPct: x.underPct, profit, url: x.url, model: id === "whitecases" ? "White ARGB case" : id === "ddr4" && x.sticks ? `${x.sticks}×8GB DDR4 ${x.speed}` : x.model || x.tag || null, perPair: x.perPair || null, perUnit: x.perUnit || null, count: x.count || null, image: x.image || null, note: x.note || null, unitLabel: x.unitLabel || null, unitNoun: x.unitNoun || null });
     }
   }
+  deals.push(...await targetDeals(read));
   // The same item listed twice (same title and price, different link) and
   // the same link in two sections alert once.
   const seen = new Set();
@@ -151,7 +172,7 @@ export async function sendAlerts(deals, { topic, alerted = [], recent = [], fetc
   const today = {};
   for (const r of recent) if (now - new Date(r.at) < 24 * 3600e3) today[r.f] = (today[r.f] || 0) + 1;
   let fresh = diversify(deals.filter(d => !seen.has(d.key)).map(d => ({ ...d, score: d.score ?? valueScore(d.underPct || 0, d.itemProfit ?? d.profit ?? 0) })))
-    .filter(d => d.great || (today[d.family] || 0) < FAMILY_PER_DAY)
+    .filter(d => d.great || d.target || (today[d.family] || 0) < FAMILY_PER_DAY)
     .slice(0, MAX_PER_RUN * 4);
   if (verify) {
     const ebay = fresh.filter(d => /ebay\.com\/itm\//.test(d.url)).map(d => d.url);
@@ -159,7 +180,7 @@ export async function sendAlerts(deals, { topic, alerted = [], recent = [], fetc
     fresh = fresh.filter(d => !/ebay\.com\/itm\//.test(d.url) || (live.has(d.url) && live.get(d.url) <= d.price + 0.5));
   }
   const taken = {};
-  fresh = fresh.filter(d => { taken[d.family] = (taken[d.family] || 0) + 1; return taken[d.family] <= FAMILY_PER_RUN; }).slice(0, MAX_PER_RUN);
+  fresh = fresh.filter(d => { taken[d.family] = (taken[d.family] || 0) + 1; return d.target || taken[d.family] <= FAMILY_PER_RUN; }).slice(0, MAX_PER_RUN);
   const sent = [], log = [];
   for (const d of fresh) {
     const r = topic ? await fetchImpl(server + "/" + encodeURIComponent(topic), { method: "POST", ...alertMessage(d) }).catch(e => ({ ok: false, status: String(e) })) : { ok: true };
@@ -180,6 +201,10 @@ export function alertMessage(d) {
   // Lots compare per drive / per 2 sticks, so say so next to both prices.
   const unit = d.unitLabel || (d.perUnit ? " per drive" : d.perPair ? " per 2×8GB" : "");
   const each = d.perUnit || d.perPair;
+  if (d.target) return {
+    body: `${money(d.price)} incl. shipping · at or under your ${money(d.target)} target${d.market ? ` · used market ~${money(d.market)}` : ""}\n${d.title}`,
+    headers: { "Title": `FlipScout target: ${d.model} ${money(d.price)}`, "Click": d.url, "Tags": "dart,moneybag", "Priority": "high", ...(d.image ? { "Attach": d.image } : {}) }
+  };
   const body = `${d.great ? "Great deal! " : ""}${money(d.price)} incl. shipping${each && each !== d.price ? " = " + money(each) + unit : ""} · ${vs} ~${money(d.market)}${unit} (${d.underPct}% under)\nEst. profit ~${money(d.profit)}${d.perUnit ? " across " + d.count + " " + (d.unitNoun || "drives") : ""}${d.note ? "\n" + d.note : ""}\n${d.title}`;
   return {
     body,

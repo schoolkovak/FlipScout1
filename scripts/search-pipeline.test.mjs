@@ -885,3 +885,27 @@ test("Xeon alerts: CPUs, boards, ECC RAM and combos vs their parts, ranked by pr
   assert.match(msg.body, /17,600 PassMark · 185 pts\/\$/);
   assert.ok(by("xeoncpu")[0].score > valueScore(53, 17) + 10, "pts/$ bonus ranks a cheap 14-core high");
 });
+
+test("price target: any RX 580 8GB at $60 or less alerts, ahead of other deals and outside the family limits", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { modelPath } = await import("../api/_lib/snapshots.js");
+  const { findGreatDeals, sendAlerts } = await import("./deal-alerts.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "fs-target-"));
+  mkdirSync(join(dir, "models"));
+  let n = 0;
+  const L = (t, p) => ({ id: t + p, title: t, totalPrice: p, itemPrice: p, condition: "used", url: "https://www.ebay.com/itm/" + (300000000000 + n++), source: "eBay", marketplace: "ebay" });
+  writeFileSync(join(dir, modelPath("RX 580 8GB")), JSON.stringify({ searchedAt: new Date().toISOString(), results: [70, 72, 75, 78, 80].map(p => L("Sapphire Pulse RX 580 8GB", p)).concat([L("XFX RX 580 8GB GTS", 58), L("MSI RX 580 8GB Armor", 60), L("RX 580 8GB", 61), L("RX 580 8GB cheap", 12)]) }));
+  const deals = await findGreatDeals(dir);
+  const targets = deals.filter(d => d.target);
+  assert.deepEqual(targets.map(d => d.price), [58, 60], "$61 is over the target, $12 is bait");
+  assert.equal(deals.filter(d => d.price === 58).length, 1, "alerted once, not also as a GPU deal");
+  const posts = [];
+  const noon = new Date("2026-10-13T16:00:00Z");
+  const recent = Array.from({ length: 10 }, () => ({ f: "target", at: noon.toISOString() }));
+  const r = await sendAlerts(deals, { topic: "t", fetchImpl: async (u, o) => { posts.push(o); return { ok: true }; }, now: noon, recent });
+  assert.equal(r.sent.filter(k => targets.some(t => t.key === k)).length, 2);
+  assert.match(posts[0].headers.Title, /^FlipScout target: RX 580 8GB \$58/);
+  assert.match(posts[0].body, /under your \$60 target · used market ~\$70/);
+});
