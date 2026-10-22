@@ -74,8 +74,8 @@ const PC4 = { 19200: 2400, 21300: 2666, 23400: 2933, 25600: 3200 };
 const ramSpeed = title => Math.max(0, ...[...String(title).toLowerCase().matchAll(/(?:pc4[\s-]?)?\b(\d{4,5})(?=\s?(?:mhz|mt|t\b|[a-z]?\b))/g)].map(m => PC4[m[1]] || Number(m[1])).filter(n => n >= 2133 && n <= 3200));
 const ecc2x8 = title => { const r = classifyXeon(title); return r.type === "ram" && r.stick === 8 && r.sticks === 2 && ramSpeed(title) >= 2400; };
 export const PRICE_TARGETS = [
-  { model: "RX 580 8GB", max: 60 },
-  { model: "2×8GB DDR4 ECC 2400+", models: ["16GB (2x8GB) DDR4 ECC 2400", "DDR4 ECC RAM lot"], max: 40, match: ecc2x8 }
+  { model: "RX 580 8GB", max: 60, min: 25 },
+  { model: "2×8GB DDR4 ECC 2400+", models: ["16GB (2x8GB) DDR4 ECC 2400", "DDR4 ECC RAM lot"], max: 40, min: 8, match: ecc2x8 }
 ];
 async function targetDeals(read) {
   const out = [];
@@ -85,8 +85,8 @@ async function targetDeals(read) {
     const used = (snap?.results || []).filter(x => USED.has(x.condition)).map(x => x.totalPrice).filter(n => n > 0).sort((a, b) => a - b);
     const market = used.length >= 5 ? used[Math.floor(used.length / 2)] : null;
     for (const x of snap?.results || []) {
-      // Under $25 is bait or a broken card the title doesn't admit to.
-      if (!x.url || !(x.totalPrice >= 25 && x.totalPrice <= t.max) || x.marketplace === "aliexpress") continue;
+      // Under `min` is bait or a broken part the title doesn't admit to.
+      if (!x.url || !(x.totalPrice >= t.min && x.totalPrice <= t.max) || x.marketplace === "aliexpress") continue;
       const underPct = market ? Math.round((market - x.totalPrice) / market * 100) : 0;
       out.push({ key: x.url, sectionId: "target", family: "target", target: t.max, score: 1000 - x.totalPrice, great: false, itemProfit: market ? Math.round((market - x.totalPrice) * 100) / 100 : 0, marketKind: "used", section: "Price target", title: x.title, price: x.totalPrice, market, underPct, profit: market ? Math.round((market - x.totalPrice) * 100) / 100 : 0, url: x.url, model: t.model, image: x.image || null });
     }

@@ -926,8 +926,9 @@ test("price target: 2×8GB DDR4 ECC 2400+ kits at $40 or less", async () => {
     L("Kingston 16GB 2x8GB DDR4 2666 ECC REG", 38),
     L("Lot of 2 8GB 1Rx8 PC4-2133P ECC REG", 20),
     L("4x 8GB PC4-2400T DDR4 ECC REG", 35),
-    L("2x 8GB PC4-2400T DDR4 ECC REG", 44)
+    L("2x 8GB PC4-2400T DDR4 ECC REG", 44),
+    L("Micron 2x8GB DDR4 2400 ECC RDIMM", 18)
   ] }));
   const t = (await findGreatDeals(dir)).filter(d => d.target === 40).map(d => d.price).sort((a, b) => a - b);
-  assert.deepEqual(t, [26, 32, 38], "2133 is too slow, 4 sticks isn't a pair, $44 is over");
+  assert.deepEqual(t, [18, 26, 32, 38], "2133 is too slow, 4 sticks isn't a pair, $44 is over");
 });
