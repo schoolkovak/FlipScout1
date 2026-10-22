@@ -1,3 +1,4 @@
+import { XEON_CPUS } from "./xeon.js";
 // Browse catalog: part group -> series -> models. Clicking a series loads a
 // price card per model. MSRP = launch list price in USD (reference only).
 const gpu = (name, msrp, vram, power, extra = {}) => ({
@@ -8,6 +9,12 @@ const cpu = (name, msrp, cores, threads, boost, tdp, extra = {}) => ({
   name, query: extra.query || name, category: "CPU", msrp,
   specs: [["Cores", cores + "C / " + threads + "T"], ["Boost", boost + " GHz"], ["TDP", tdp + "W"]]
 });
+// Xeon CPUs: specs from shared/xeon.js (approximate PassMark score shown).
+const xeon = key => {
+  const c = XEON_CPUS[key];
+  return { name: c.name, query: c.name, category: "Xeon CPU", msrp: null,
+    specs: [["Cores", c.cores + "C / " + c.threads + "T"], ["Boost", c.boost + " GHz"], ["TDP", c.tdp + "W"], ["PassMark", "~" + c.score.toLocaleString("en-US")]] };
+};
 const spec = (name, category, specs, extra = {}) => ({ name, query: extra.query || name, category, msrp: extra.msrp || null, specs });
 
 export const PART_GROUPS = [
@@ -195,6 +202,31 @@ export const PART_GROUPS = [
         spec("B760 LGA1700 motherboard", "Motherboard", [["Socket", "LGA1700"], ["Chipset", "B760"]]),
         spec("Z890 LGA1851 motherboard", "Motherboard", [["Socket", "LGA1851"], ["Chipset", "Z890"]]),
         spec("B860 LGA1851 motherboard", "Motherboard", [["Socket", "LGA1851"], ["Chipset", "B860"]])
+      ] }
+    ]
+  },
+  {
+    // Xeon E5 v3/v4 on X99 (LGA 2011-3): cheap many-core builds. Also feeds
+    // the Xeon deal alerts (scripts/xeon-deals.mjs).
+    id: "xeon", label: "Xeon / X99", icon: "cpu", series: [
+      { id: "xeoncpu", label: "Xeon E5 v3 / v4 CPUs", brand: "intel", items: [
+        xeon("2680v4"), xeon("2690v4"), xeon("2697v4"), xeon("2698v4"), xeon("2699v4"),
+        xeon("2667v4"), xeon("1650v4"), xeon("2680v3"), xeon("2678v3"), xeon("2699v3")
+      ] },
+      { id: "x99", label: "X99 boards", items: [
+        spec("X99 LGA 2011-3 motherboard", "Xeon motherboard", [["Socket", "LGA 2011-3"], ["Chipset", "X99"]], { query: "X99 motherboard LGA 2011-3" }),
+        spec("Huananzhi X99 motherboard", "Xeon motherboard", [["Socket", "LGA 2011-3"], ["Brand", "Huananzhi"]])
+      ] },
+      { id: "eccram", label: "DDR4 ECC RAM", items: [
+        spec("16GB DDR4 ECC RDIMM", "Xeon ECC RAM", [["Stick", "16 GB"], ["Type", "ECC registered"]], { query: "16GB DDR4 ECC REG RDIMM" }),
+        spec("16GB (2x8GB) DDR4 ECC 2400", "Xeon ECC RAM", [["Kit", "2×8 GB"], ["Speed", "2400 MT/s"], ["Type", "ECC registered"]], { query: "2x 8GB DDR4 2400 ECC REG" }),
+        spec("16GB (4x4GB) DDR4 ECC 2400", "Xeon ECC RAM", [["Kit", "4×4 GB"], ["Speed", "2400 MT/s"], ["Type", "ECC registered"]], { query: "4x 4GB DDR4 2400 ECC REG" }),
+        spec("32GB DDR4 ECC RDIMM", "Xeon ECC RAM", [["Stick", "32 GB"], ["Type", "ECC registered"]], { query: "32GB DDR4 ECC REG RDIMM" }),
+        spec("DDR4 ECC RAM lot", "Xeon ECC RAM", [["Kit", "Lot / kit"], ["Type", "ECC"]], { query: "DDR4 ECC RAM lot" })
+      ] },
+      { id: "xeoncombo", label: "Xeon combos", items: [
+        spec("X99 Xeon combo", "Xeon combo", [["Kit", "CPU + board"]], { query: "X99 motherboard Xeon combo" }),
+        spec("X99 Xeon combo with ECC RAM", "Xeon combo", [["Kit", "CPU + board + ECC RAM"]], { query: "X99 Xeon combo kit DDR4 ECC" })
       ] }
     ]
   },

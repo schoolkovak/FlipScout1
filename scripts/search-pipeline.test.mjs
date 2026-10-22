@@ -822,3 +822,144 @@ test("bulk lots: per-drive and per-2-stick math with the $60 caps", async () => 
   assert.equal(ddr4StickInfo("Lot of 8 8GB DDR4 2666 desktop RAM"), null, "below 3000MHz");
   assert.deepEqual(ddr4StickInfo("Lot of 8 8GB DDR4 3200 desktop RAM"), { sticks: 8, speed: "3200" });
 });
+
+test("Xeon / X99: each model keeps only its kind of listing", () => {
+  const ok = (t, name, category) => evaluateListing({ title: t, query: name, category }).ok;
+  const cpu = t => ok(t, "Xeon E5-2680 v4", "Xeon CPU");
+  assert.equal(cpu("Intel Xeon E5-2680 v4 SR2N7 2.4GHz 14-Core LGA2011-3 Server CPU Processor"), true);
+  assert.equal(cpu("Intel Xeon E5-2680V4 CPU for X99 Motherboard"), true, "'for X99 motherboard' only says what it fits");
+  assert.equal(cpu("Matched Pair Intel Xeon E5-2680 V4 CPU"), true);
+  assert.equal(cpu("Intel Xeon E5-2680 v3 2.5GHz 12-Core"), false, "v3 is another model");
+  assert.equal(cpu("Intel Xeon E5-2699 V4 QS QHVF 2.2GHz"), false, "engineering samples");
+  assert.equal(cpu("Dell Precision T5810 Workstation Xeon E5-2680 v4 32GB"), false, "whole workstation");
+  assert.equal(cpu("X99 Motherboard Combo Kit Xeon E5-2680 V4 CPU + 32GB (4x8GB) DDR4 ECC REG RAM"), false, "combo");
+  const board = t => ok(t, "X99 motherboard LGA 2011-3", "Xeon motherboard");
+  assert.equal(board("HUANANZHI X99 F8D PLUS Motherboard LGA 2011-3 DDR4 Support Xeon E5 2680 v4 2690 v4 128GB"), true, "supported-CPU list isn't a combo");
+  assert.equal(board("ASUS X99-A II LGA 2011-3 ATX Motherboard"), true);
+  assert.equal(board("ASUS P9X79 LGA 2011 X79 Motherboard"), false, "X79 / DDR3 platform");
+  const ram = t => ok(t, "16GB DDR4 ECC REG RDIMM", "Xeon ECC RAM");
+  assert.equal(ram("Lot of 4 Hynix 16GB DDR4 2133 ECC Registered RDIMM"), true);
+  assert.equal(ram("Samsung 32GB 2Rx4 PC4-2400T DDR4 ECC REG RDIMM Server Memory"), false, "32GB sticks are another model");
+  assert.equal(ram("Crucial 16GB DDR4 2666 Desktop RAM non-ECC"), false);
+  assert.equal(ram("Samsung 16GB DDR3 ECC REG 1600"), false);
+  const combo = (t, q) => ok(t, q, "Xeon combo");
+  assert.equal(combo("X99 Motherboard Set with Intel Xeon E5 2678 V3 CPU", "X99 motherboard Xeon combo"), true);
+  assert.equal(combo("X99 Motherboard Combo Xeon E5-2680 V4 + 32GB (2x16GB) DDR4 ECC", "X99 motherboard Xeon combo"), false, "has RAM: the other combo model");
+  assert.equal(combo("X99 Motherboard Combo Xeon E5-2680 V4 + 32GB (2x16GB) DDR4 ECC", "X99 Xeon combo kit DDR4 ECC"), true);
+  assert.equal(combo("Xeon E5-2697 v4 + X99 Motherboard + 64GB DDR4 ECC + 512GB SSD", "X99 Xeon combo kit DDR4 ECC"), false, "SSD thrown in");
+});
+
+test("Xeon alerts: CPUs, boards, ECC RAM and combos vs their parts, ranked by price-to-performance, ❗ on the best", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { modelPath } = await import("../api/_lib/snapshots.js");
+  const { findGreatDeals, alertMessage, valueScore } = await import("./deal-alerts.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "fs-xeon-"));
+  mkdirSync(join(dir, "models"));
+  let n = 0;
+  const L = (t, p) => ({ id: t + p, title: t, totalPrice: p, itemPrice: p, condition: "used", url: "https://www.ebay.com/itm/" + (200000000000 + n++), source: "eBay", marketplace: "ebay" });
+  const save = (name, results) => writeFileSync(join(dir, modelPath(name)), JSON.stringify({ searchedAt: new Date().toISOString(), results }));
+  // E5-2680 v4 market: lower third of 15,30,32,34,36,38,40 → $32. $15 is 53% under.
+  save("Xeon E5-2680 v4", [...[30, 32, 34, 36, 38, 40].map(p => L("Intel Xeon E5-2680 v4 14-Core CPU", p)), L("Intel Xeon E5-2680 v4 SR2N7 CPU", 15)]);
+  // Chinese X99 boards ~$70.
+  save("X99 LGA 2011-3 motherboard", [60, 65, 70, 75, 80].map(p => L("HUANANZHI X99 F8D Motherboard LGA 2011-3", p)));
+  // 16GB ECC sticks ~$1.22/GB (median incl. the lot).
+  save("16GB DDR4 ECC RDIMM", [...[18, 19, 20, 21, 22].map(p => L("Samsung 16GB DDR4 2400 ECC REG RDIMM", p)), L("Lot of 4 Hynix 16GB DDR4 2133 ECC Registered RDIMM", 48)]);
+  // Combo parts: $32 + $70 + 64GB × ~$1.22 = $180; $95 is 47% under.
+  save("X99 Xeon combo with ECC RAM", [L("X99 Motherboard Combo Kit Xeon E5-2680 V4 + 64GB (4x16GB) DDR4 ECC REG", 95)]);
+  const deals = await findGreatDeals(dir);
+  const by = id => deals.filter(d => d.sectionId === id);
+  assert.deepEqual(by("xeoncpu").map(d => d.price), [15]);
+  assert.equal(by("xeoncpu")[0].market, 32);
+  assert.equal(by("xeoncpu")[0].great, false, "53% under but only $17 profit");
+  assert.deepEqual(by("eccram").map(d => d.model), ["64GB DDR4 ECC (4×16GB)"]);
+  assert.equal(by("eccram")[0].great, true, "$48 for 64GB worth ~$80");
+  const combo = by("xeoncombo")[0];
+  assert.equal(combo.market, 180);
+  assert.equal(combo.great, true);
+  assert.equal(combo.family, "xeoncombo");
+  const msg = alertMessage(combo);
+  assert.equal(msg.headers.Tags, "exclamation,moneybag");
+  assert.match(msg.body, /parts sold separately ~\$180/);
+  assert.match(msg.body, /17,600 PassMark · 185 pts\/\$/);
+  assert.ok(by("xeoncpu")[0].score > valueScore(53, 17) + 10, "pts/$ bonus ranks a cheap 14-core high");
+});
+
+test("price target: any RX 580 8GB at $65 or less alerts, ahead of other deals and outside the family limits", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { modelPath } = await import("../api/_lib/snapshots.js");
+  const { findGreatDeals, sendAlerts } = await import("./deal-alerts.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "fs-target-"));
+  mkdirSync(join(dir, "models"));
+  let n = 0;
+  const L = (t, p) => ({ id: t + p, title: t, totalPrice: p, itemPrice: p, condition: "used", url: "https://www.ebay.com/itm/" + (300000000000 + n++), source: "eBay", marketplace: "ebay" });
+  writeFileSync(join(dir, modelPath("RX 580 8GB")), JSON.stringify({ searchedAt: new Date().toISOString(), results: [70, 72, 75, 78, 80].map(p => L("Sapphire Pulse RX 580 8GB", p)).concat([L("XFX RX 580 8GB GTS", 58), L("MSI RX 580 8GB Armor", 60), L("RX 580 8GB", 66), L("RX 580 8GB cheap", 12)]) }));
+  const deals = await findGreatDeals(dir);
+  const targets = deals.filter(d => d.target);
+  assert.deepEqual(targets.map(d => d.price), [58, 60], "$66 is over the target, $12 is bait");
+  assert.equal(deals.filter(d => d.price === 58).length, 1, "alerted once, not also as a GPU deal");
+  const posts = [];
+  const noon = new Date("2026-10-13T16:00:00Z");
+  const recent = Array.from({ length: 10 }, () => ({ f: "target", at: noon.toISOString() }));
+  const r = await sendAlerts(deals, { topic: "t", fetchImpl: async (u, o) => { posts.push(o); return { ok: true }; }, now: noon, recent });
+  assert.equal(r.sent.filter(k => targets.some(t => t.key === k)).length, 2);
+  assert.match(posts[0].headers.Title, /^FlipScout target: RX 580 8GB \$58/);
+  assert.match(posts[0].body, /under your \$65 target · used market ~\$70/);
+});
+
+test("price target: 16GB DDR4 ECC 2400+ (2×8GB or 4×4GB) at $40 or less", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { modelPath } = await import("../api/_lib/snapshots.js");
+  const { findGreatDeals } = await import("./deal-alerts.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "fs-ecc-"));
+  mkdirSync(join(dir, "models"));
+  let n = 0;
+  const L = (t, p) => ({ id: t + p, title: t, totalPrice: p, itemPrice: p, condition: "used", url: "https://www.ebay.com/itm/" + (400000000000 + n++), source: "eBay", marketplace: "ebay" });
+  writeFileSync(join(dir, modelPath("16GB (2x8GB) DDR4 ECC 2400")), JSON.stringify({ results: [
+    L("Samsung 16GB (2x8GB) DDR4 2400MHz PC4-19200 ECC Registered RDIMM", 32),
+    L("2x 8GB PC4-2400T DDR4 ECC REG Hynix", 26),
+    L("Kingston 16GB 2x8GB DDR4 2666 ECC REG", 38),
+    L("Lot of 2 8GB 1Rx8 PC4-2133P ECC REG", 20),
+    L("4x 8GB PC4-2400T DDR4 ECC REG", 35),
+    L("2x 8GB PC4-2400T DDR4 ECC REG", 44),
+    L("Micron 2x8GB DDR4 2400 ECC RDIMM", 18),
+    L("Lot of 4 Samsung 4GB PC4-2400T ECC REG RDIMM", 22),
+    L("4x 4GB DDR4 2133 ECC REG", 15)
+  ] }));
+  const t = (await findGreatDeals(dir)).filter(d => d.target === 40).map(d => d.price).sort((a, b) => a - b);
+  assert.deepEqual(t, [18, 22, 26, 32, 38], "2133 is too slow, 4×8GB isn't 16GB, $44 is over");
+});
+
+test("price target: SSDs 450GB+ at $40 or less per drive, singles or lots, 8 a day", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { modelPath } = await import("../api/_lib/snapshots.js");
+  const { findGreatDeals, sendAlerts } = await import("./deal-alerts.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "fs-ssd-"));
+  mkdirSync(join(dir, "models"));
+  let n = 0;
+  const L = (t, p) => ({ id: t + p, title: t, totalPrice: p, itemPrice: p, condition: "used", url: "https://www.ebay.com/itm/" + (500000000000 + n++), source: "eBay", marketplace: "ebay" });
+  writeFileSync(join(dir, modelPath("500GB SSD")), JSON.stringify({ results: [
+    L("Samsung 860 EVO 500GB SATA SSD", 30), L("WD Blue SN570 1TB NVMe SSD", 39), L("Crucial MX500 1TB SATA SSD", 45),
+    L("Kingston 240GB SATA SSD", 12), L("Samsung 870 EVO 500GB SSD", 5)
+  ] }));
+  writeFileSync(join(dir, modelPath("SSD lot")), JSON.stringify({ results: [L("Lot of 5 Crucial 500GB SSD", 150), L("Lot of 4 512GB NVMe SSD", 180)] }));
+  const t = (await findGreatDeals(dir)).filter(d => d.sectionId === "target");
+  assert.deepEqual(t.map(d => d.model).sort(), ["1TB SSD", "500GB SSD", "500GB SSD ×5"].sort(), "$45/drive, 240GB, $5 bait and $45/drive lot are out");
+  const lot = t.find(d => d.count === 5);
+  assert.equal(lot.perUnit, 30);
+  const posts = [];
+  const r = await sendAlerts(t, { topic: "x", fetchImpl: async (u, o) => { posts.push(o); return { ok: true }; }, now: new Date("2026-10-13T16:00:00Z") });
+  assert.equal(r.sent.length, 2, "2 per batch like any family");
+  assert.match(posts[0].headers.Title, /1TB SSD \$39/, "cheapest per 500GB first");
+  await sendAlerts([lot], { topic: "x", fetchImpl: async (u, o) => { posts.push(o); return { ok: true }; }, now: new Date("2026-10-13T16:00:00Z") });
+  assert.match(posts.at(-1).body, /\$150 incl\. shipping = \$30 per drive · at or under your \$40 per drive target/);
+  const full = Array.from({ length: 8 }, () => ({ f: "target:SSD 450GB+", at: "2026-10-13T15:00:00Z" }));
+  assert.equal((await sendAlerts(t, { topic: "x", fetchImpl: async () => ({ ok: true }), now: new Date("2026-10-13T16:00:00Z"), recent: full })).sent.length, 0, "8 a day");
+});

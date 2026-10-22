@@ -77,5 +77,5 @@ export function groupedSniperCategories(){
 export function allowsUsed(category){
   const c=String(category||"").toLowerCase();
   if(/hdd|hard drive/.test(c))return false;
-  return /^(gpu|cpu)$|graphics|processor|^ram|memory|ssd|nvme|motherboard/.test(c);
+  return /^(gpu|cpu)$|graphics|processor|^ram|memory|ssd|nvme|motherboard|^xeon/.test(c);
 }

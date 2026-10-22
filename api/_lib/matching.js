@@ -7,6 +7,7 @@
 import { resolveCatalogPart, GPUS, CPUS } from "../../shared/catalog.js";
 import { SNIPER_CATEGORIES } from "../../shared/sniper.js";
 import { caseAttributes } from "../../shared/caseAttrs.js";
+import { classifyXeon, XEON_CATEGORY_TYPE, xeonKeyOf } from "../../shared/xeon.js";
 
 // ---------------------------------------------------------------------------
 // Text normalization
@@ -89,6 +90,7 @@ export function conditionMatches(actual, requested) {
 // ---------------------------------------------------------------------------
 export function categoryKind(category) {
   const c = String(category || "").toLowerCase().trim();
+  if (c.startsWith("xeon")) return "xeon";
   if (c === "gpu" || c.includes("graphics")) return "gpu";
   if (c === "cpu" || c === "processor") return "cpu";
   if (c === "ssd / nvme" || c === "ssd / storage" || c === "storage") return "ssd";
@@ -380,7 +382,8 @@ export function evaluateListing({ title, query, category, structuredCondition = 
 
   // Incomplete / accessory / form-factor ------------------------------------
   const incomplete = hasUnnegated(t, INCOMPLETE_RE);
-  if (incomplete) return reject("incomplete", incomplete);
+  // "X99 combo, no RAM" is still a complete CPU + board combo.
+  if (incomplete && !(kind === "xeon" && /^no (?:ram|ssd|hdd|psu|gpu)$/.test(incomplete))) return reject("incomplete", incomplete);
   if (/\bmonitor\b/.test(String(category || "").toLowerCase()) && /\bportable\b/.test(t) && !/\bportable\b/.test(q)) return reject("form-factor-mismatch", "portable monitor");
   const boxOnly = kind !== "case" && boxOnlyTitle(t);
   if (boxOnly) return reject("box-only", boxOnly);
@@ -580,6 +583,26 @@ export function evaluateListing({ title, query, category, structuredCondition = 
       if (!sizes.has(qSize)) return reject("size-mismatch", [...sizes][0] + "mm");
       consumed.add(qSize); consumed.add(qSize + "mm");
     }
+  } else if (kind === "xeon") {
+    // Xeon / X99 models keep one kind of listing each (CPU, board, ECC RAM
+    // or combo); the classifier rejects servers, PCs, ES chips and DDR3.
+    const want = XEON_CATEGORY_TYPE[String(category || "").toLowerCase().trim()];
+    const x = classifyXeon(title);
+    if (!x.type) return reject(x.reason === "complete-system" ? "complete-system" : x.reason === "multiple-models" ? "multiple-models" : "model-mismatch", x.reason);
+    if (want && x.type !== want) return reject(x.type === "combo" ? "bundle-or-combo" : "model-mismatch", x.type);
+    if (want === "cpu") {
+      const key = xeonKeyOf(String(query).trim());
+      if (key && x.cpu !== key) return reject("model-mismatch", x.cpu);
+    }
+    if (want === "board" && /\bhuananzhi\b/.test(q) && !/\bhuananzhi\b/.test(t)) return reject("model-mismatch", "not Huananzhi");
+    if (want === "ram") {
+      const qStick = Number(q.match(/\b(4|8|16|32|64)gb\b/)?.[1]);
+      if (qStick && x.stick !== qStick) return reject("capacity-mismatch", x.stick + "GB sticks");
+      if (/\blot\b/.test(q) && x.sticks < 2) return reject("model-not-stated", "not a lot");
+    }
+    // "X99 Xeon combo" = CPU + board; the "... ECC" combo also has RAM.
+    if (want === "combo" && /\becc\b/.test(q) !== !!x.ramGb) return reject("model-mismatch", x.ramGb ? "combo includes RAM" : "no RAM in combo");
+    softFloor = 0;
   } else if (kind === "pc") {
     if (/\b(?:laptop|notebook|case only|barebones?|no gpu|no cpu)\b/.test(t)) return reject("incomplete", "not a complete desktop");
     const gpuKey = expectedGpu(query).key;

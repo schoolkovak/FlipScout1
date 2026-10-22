@@ -5,9 +5,12 @@
 // ntfy (free app, no account): https://ntfy.sh/<topic>.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { flipperSection, FLIPPER_SECTIONS, isAm5 } from "../api/_lib/flipper.js";
+import { flipperSection, FLIPPER_SECTIONS, isAm5, ssdLotInfo } from "../api/_lib/flipper.js";
+import { normalizeListingText } from "../api/_lib/matching.js";
 import { modelPath } from "../api/_lib/snapshots.js";
 import { PART_GROUPS } from "../shared/partCatalog.js";
+import { classifyXeon } from "../shared/xeon.js";
+import { xeonSections, XEON_SECTIONS, XEON_GREAT_PCT, XEON_GREAT_PROFIT } from "./xeon-deals.mjs";
 
 export const ALERT_MIN_PCT = 10;
 // A deal must make at least this much per item (per drive / per 2 sticks):
@@ -62,6 +65,51 @@ async function extraCpus(read) {
   }
   return { title: "CPUs under their used market", listings };
 }
+// Price targets: any listing of these models at or under the price (incl.
+// shipping) alerts, whatever its used market, ahead of other deals.
+// models: where to look; match: an extra title test; unit: how many items a
+// listing holds (the price compared is per item); perDay: a daily cap for
+// targets that would otherwise fire all day (others skip the family limits).
+// 16GB of DDR4 ECC as 2×8GB or 4×4GB, rated 2400MHz or faster ("2400", "PC4-2400T",
+// "PC4-19200"); faster kits run at 2400 on X99.
+const PC4 = { 19200: 2400, 21300: 2666, 23400: 2933, 25600: 3200 };
+const ramSpeed = title => Math.max(0, ...[...String(title).toLowerCase().matchAll(/(?:pc4[\s-]?)?\b(\d{4,5})(?=\s?(?:mhz|mt|t\b|[a-z]?\b))/g)].map(m => PC4[m[1]] || Number(m[1])).filter(n => n >= 2133 && n <= 3200));
+const ecc16 = title => { const r = classifyXeon(title); return r.type === "ram" && r.gb === 16 && (r.stick === 8 || r.stick === 4) && ramSpeed(title) >= 2400; };
+// SSDs of 450GB+ (one capacity per listing), single drives or lots.
+const ssdCapacity = title => {
+  const lot = ssdLotInfo(title);
+  if (lot) return lot.capacityGb;
+  const caps = [...new Set([...normalizeListingText(title).matchAll(/(?<![\d.])(\d{3,4}|\d(?:\.\d)?)(gb|tb)\b/g)].map(m => Math.round(Number(m[1]) * (m[2] === "tb" ? 1000 : 1))).filter(c => c >= 100).map(c => (c >= 900 && c <= 1100 ? 1000 : c >= 1900 && c <= 2100 ? 2000 : c)))];
+  return caps.length === 1 ? caps[0] : 0;
+};
+const SSD_MODELS = ["500GB SSD", "500GB NVMe SSD", "500GB SATA SSD", "SSD lot", "1TB SSD", "1TB NVMe SSD", "1TB SATA SSD"];
+export const PRICE_TARGETS = [
+  { model: "RX 580 8GB", max: 65, min: 25 },
+  { model: "16GB DDR4 ECC 2400+", models: ["16GB (2x8GB) DDR4 ECC 2400", "16GB (4x4GB) DDR4 ECC 2400", "DDR4 ECC RAM lot"], max: 40, min: 8, match: ecc16 },
+  { model: "SSD 450GB+", models: SSD_MODELS, max: 40, min: 10, match: t => ssdCapacity(t) >= 450, unit: t => ssdLotInfo(t)?.count || 1, unitLabel: " per drive", unitNoun: "drives", perDay: 8 }
+];
+async function targetDeals(read) {
+  const out = [];
+  for (const t of PRICE_TARGETS) {
+    const rows = [];
+    for (const m of t.models || [t.model]) rows.push(...((await read(modelPath(m)))?.results || []).filter(x => !t.match || t.match(x.title)));
+    const each = x => Math.round(x.totalPrice / (t.unit ? t.unit(x.title) : 1) * 100) / 100;
+    // Market = median used price per item (SSDs: of the same capacity).
+    const group = x => (t.unit ? ssdCapacity(x.title) : 0);
+    const marketOf = g => { const used = rows.filter(x => USED.has(x.condition) && group(x) === g).map(each).filter(n => n > 0).sort((a, b) => a - b); return used.length >= 5 ? used[Math.floor(used.length / 2)] : null; };
+    for (const x of rows) {
+      const price = each(x), count = t.unit ? t.unit(x.title) : 1, market = marketOf(group(x));
+      // Under `min` is bait or a broken part the title doesn't admit to.
+      if (!x.url || !(price >= t.min && price <= t.max) || x.marketplace === "aliexpress") continue;
+      const gain = market ? Math.round((market - price) * 100) / 100 : 0;
+      // Cheapest first; SSDs by price per 500GB.
+      const score = 1000 - (t.unit ? price / ssdCapacity(x.title) * 500 : price);
+      out.push({ key: x.url, sectionId: "target", family: t.perDay ? "target:" + t.model : "target", target: t.max, targetPerDay: t.perDay || null, score, great: false, itemProfit: gain, marketKind: "used", section: "Price target", title: x.title, price: x.totalPrice, market, underPct: market ? Math.round(gain / market * 100) : 0, profit: Math.round(gain * count * 100) / 100, url: x.url, model: t.model === "SSD 450GB+" ? (ssdCapacity(x.title) >= 1000 ? ssdCapacity(x.title) / 1000 + "TB" : ssdCapacity(x.title) + "GB") + " SSD" + (count > 1 ? " ×" + count : "") : t.model, image: x.image || null, ...(count > 1 ? { perUnit: price, count, unitLabel: t.unitLabel, unitNoun: t.unitNoun } : {}) });
+    }
+  }
+  return out;
+}
+
 // No pushes overnight (US Eastern, where the user lives); deals found then
 // are sent at 8am if they're still for sale.
 export const QUIET_HOURS = { from: 3, to: 8, tz: "America/New_York" };
@@ -82,8 +130,9 @@ export async function findGreatDeals(dataDir, { read: readOverride } = {}) {
     if (!msrpOf.has(model)) msrpOf.set(model, Number((await read(modelPath(model)))?.msrp) || 0);
     return msrpOf.get(model);
   };
-  for (const id of [...Object.keys(FLIPPER_SECTIONS), "cpus"]) {
-    const s = id === "cpus" ? await extraCpus(read) : await flipperSection(id, read);
+  const xeon = await xeonSections(read);
+  for (const id of [...Object.keys(FLIPPER_SECTIONS), "cpus", ...Object.keys(XEON_SECTIONS)]) {
+    const s = id === "cpus" ? await extraCpus(read) : xeon[id] || await flipperSection(id, read);
     for (const x of s?.listings || []) {
       if (x.underPct == null || x.underPct < ALERT_MIN_PCT || !x.market || !x.url) continue;
       // Only alert against a real used-market price: at least 5 used comps.
@@ -109,10 +158,11 @@ export async function findGreatDeals(dataDir, { read: readOverride } = {}) {
       const itemProfit = Math.round((x.market - price) * 100) / 100;
       if (itemProfit < MIN_ITEM_PROFIT) continue;
       const profit = Math.round(itemProfit * units * 100) / 100;
-      const great = x.underPct >= GREAT_PCT && itemProfit >= GREAT_PROFIT;
-      deals.push({ key: x.url, sectionId: id, family: familyOf(id), score: valueScore(x.underPct, itemProfit), great, itemProfit, marketKind: x.marketKind || (id === "whitecases" ? "similar" : "used"), section: s.title, title: x.title, price: x.totalPrice, market: x.market, underPct: x.underPct, profit, url: x.url, model: id === "whitecases" ? "White ARGB case" : id === "ddr4" && x.sticks ? `${x.sticks}×8GB DDR4 ${x.speed}` : x.model || x.tag || null, perPair: x.perPair || null, perUnit: x.perUnit || null, count: x.count || null, image: x.image || null });
+      const great = (x.underPct >= GREAT_PCT && itemProfit >= GREAT_PROFIT) || (id in XEON_SECTIONS && x.underPct >= XEON_GREAT_PCT && itemProfit >= XEON_GREAT_PROFIT[id]);
+      deals.push({ key: x.url, sectionId: id, family: familyOf(id), score: Math.round((valueScore(x.underPct, itemProfit) + (x.perfBonus || 0)) * 10) / 10, great, itemProfit, marketKind: x.marketKind || (id === "whitecases" ? "similar" : "used"), section: s.title, title: x.title, price: x.totalPrice, market: x.market, underPct: x.underPct, profit, url: x.url, model: id === "whitecases" ? "White ARGB case" : id === "ddr4" && x.sticks ? `${x.sticks}×8GB DDR4 ${x.speed}` : x.model || x.tag || null, perPair: x.perPair || null, perUnit: x.perUnit || null, count: x.count || null, image: x.image || null, note: x.note || null, unitLabel: x.unitLabel || null, unitNoun: x.unitNoun || null });
     }
   }
+  deals.push(...await targetDeals(read));
   // The same item listed twice (same title and price, different link) and
   // the same link in two sections alert once.
   const seen = new Set();
@@ -149,7 +199,7 @@ export async function sendAlerts(deals, { topic, alerted = [], recent = [], fetc
   const today = {};
   for (const r of recent) if (now - new Date(r.at) < 24 * 3600e3) today[r.f] = (today[r.f] || 0) + 1;
   let fresh = diversify(deals.filter(d => !seen.has(d.key)).map(d => ({ ...d, score: d.score ?? valueScore(d.underPct || 0, d.itemProfit ?? d.profit ?? 0) })))
-    .filter(d => d.great || (today[d.family] || 0) < FAMILY_PER_DAY)
+    .filter(d => d.great || (d.target && !d.targetPerDay) || (today[d.family] || 0) < (d.targetPerDay || FAMILY_PER_DAY))
     .slice(0, MAX_PER_RUN * 4);
   if (verify) {
     const ebay = fresh.filter(d => /ebay\.com\/itm\//.test(d.url)).map(d => d.url);
@@ -157,7 +207,7 @@ export async function sendAlerts(deals, { topic, alerted = [], recent = [], fetc
     fresh = fresh.filter(d => !/ebay\.com\/itm\//.test(d.url) || (live.has(d.url) && live.get(d.url) <= d.price + 0.5));
   }
   const taken = {};
-  fresh = fresh.filter(d => { taken[d.family] = (taken[d.family] || 0) + 1; return taken[d.family] <= FAMILY_PER_RUN; }).slice(0, MAX_PER_RUN);
+  fresh = fresh.filter(d => { taken[d.family] = (taken[d.family] || 0) + 1; return (d.target && !d.targetPerDay) || taken[d.family] <= FAMILY_PER_RUN; }).slice(0, MAX_PER_RUN);
   const sent = [], log = [];
   for (const d of fresh) {
     const r = topic ? await fetchImpl(server + "/" + encodeURIComponent(topic), { method: "POST", ...alertMessage(d) }).catch(e => ({ ok: false, status: String(e) })) : { ok: true };
@@ -174,11 +224,15 @@ export const recentAlerts = (log, now = new Date()) => log.filter(r => now - new
 // The ntfy message for one deal. Great deals get ❗ (ntfy shows the
 // "exclamation" tag as an emoji before the title) and high priority.
 export function alertMessage(d) {
-  const vs = d.marketKind === "new" ? "typical new price" : d.marketKind === "similar" ? "similar cases" : "used market";
+  const vs = d.marketKind === "new" ? "typical new price" : d.marketKind === "similar" ? "similar cases" : d.marketKind === "parts" ? "parts sold separately" : "used market";
   // Lots compare per drive / per 2 sticks, so say so next to both prices.
-  const unit = d.perUnit ? " per drive" : d.perPair ? " per 2×8GB" : "";
+  const unit = d.unitLabel || (d.perUnit ? " per drive" : d.perPair ? " per 2×8GB" : "");
   const each = d.perUnit || d.perPair;
-  const body = `${d.great ? "Great deal! " : ""}${money(d.price)} incl. shipping${each && each !== d.price ? " = " + money(each) + unit : ""} · ${vs} ~${money(d.market)}${unit} (${d.underPct}% under)\nEst. profit ~${money(d.profit)}${d.perUnit ? " across " + d.count + " drives" : ""}\n${d.title}`;
+  if (d.target) return {
+    body: `${money(d.price)} incl. shipping${d.perUnit ? " = " + money(d.perUnit) + d.unitLabel : ""} · at or under your ${money(d.target)}${d.perUnit ? d.unitLabel : ""} target${d.market ? ` · used market ~${money(d.market)}${d.perUnit ? d.unitLabel : ""}` : ""}\n${d.title}`,
+    headers: { "Title": `FlipScout target: ${d.model} ${money(d.price)}`, "Click": d.url, "Tags": "dart,moneybag", "Priority": "high", ...(d.image ? { "Attach": d.image } : {}) }
+  };
+  const body = `${d.great ? "Great deal! " : ""}${money(d.price)} incl. shipping${each && each !== d.price ? " = " + money(each) + unit : ""} · ${vs} ~${money(d.market)}${unit} (${d.underPct}% under)\nEst. profit ~${money(d.profit)}${d.perUnit ? " across " + d.count + " " + (d.unitNoun || "drives") : ""}${d.note ? "\n" + d.note : ""}\n${d.title}`;
   return {
     body,
     headers: { "Title": `FlipScout deal: ${d.model || d.section} ${money(d.price)}`, "Click": d.url, "Tags": d.great ? "exclamation,moneybag" : "moneybag", "Priority": d.great ? "high" : "default", ...(d.image ? { "Attach": d.image } : {}) }

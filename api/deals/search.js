@@ -21,7 +21,7 @@ export default async function handler(req, res) {
   // GET ?watch=<part type> (deal watcher): the newest Buy It Now listings in
   // that eBay category, newest first, as raw offers. One eBay call.
   if (isGet && q.watch) {
-    const WATCH = { gpu: ["graphics card", "GPU"], cpu: ["ryzen processor", "CPU"], ram: ["ddr4 8gb desktop", "RAM / Memory"], ssd: ["ssd", "SSD / Storage"], psu: ["power supply", "Power Supply / PSU"], mobo: ["motherboard", "Motherboard"], case: ["pc case", "PC Case"] };
+    const WATCH = { gpu: ["graphics card", "GPU"], cpu: ["ryzen processor", "CPU"], ram: ["ddr4 8gb desktop", "RAM / Memory"], ssd: ["ssd", "SSD / Storage"], psu: ["power supply", "Power Supply / PSU"], mobo: ["motherboard", "Motherboard"], case: ["pc case", "PC Case"], xeon: ["xeon e5", "Xeon CPU"] };
     const w = WATCH[String(q.watch)];
     if (!w) return res.status(400).json({ error: "unknown watch type" });
     try {
