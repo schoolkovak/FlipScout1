@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { flipperSection, FLIPPER_SECTIONS, isAm5 } from "../api/_lib/flipper.js";
 import { modelPath } from "../api/_lib/snapshots.js";
 import { PART_GROUPS } from "../shared/partCatalog.js";
+import { classifyXeon } from "../shared/xeon.js";
 import { xeonSections, XEON_SECTIONS, XEON_GREAT_PCT, XEON_GREAT_PROFIT } from "./xeon-deals.mjs";
 
 export const ALERT_MIN_PCT = 10;
@@ -66,11 +67,21 @@ async function extraCpus(read) {
 // Price targets: any listing of these models at or under the price (incl.
 // shipping) alerts, whatever its used market, ahead of other deals and
 // outside the per-family limits.
-export const PRICE_TARGETS = [{ model: "RX 580 8GB", max: 60 }];
+// models: where to look; match: an extra title test.
+// A 2-stick 8GB DDR4 ECC kit rated 2400MHz or faster ("2400", "PC4-2400T",
+// "PC4-19200"); faster kits run at 2400 on X99.
+const PC4 = { 19200: 2400, 21300: 2666, 23400: 2933, 25600: 3200 };
+const ramSpeed = title => Math.max(0, ...[...String(title).toLowerCase().matchAll(/(?:pc4[\s-]?)?\b(\d{4,5})(?=\s?(?:mhz|mt|t\b|[a-z]?\b))/g)].map(m => PC4[m[1]] || Number(m[1])).filter(n => n >= 2133 && n <= 3200));
+const ecc2x8 = title => { const r = classifyXeon(title); return r.type === "ram" && r.stick === 8 && r.sticks === 2 && ramSpeed(title) >= 2400; };
+export const PRICE_TARGETS = [
+  { model: "RX 580 8GB", max: 60 },
+  { model: "2×8GB DDR4 ECC 2400+", models: ["16GB (2x8GB) DDR4 ECC 2400", "DDR4 ECC RAM lot"], max: 40, match: ecc2x8 }
+];
 async function targetDeals(read) {
   const out = [];
   for (const t of PRICE_TARGETS) {
-    const snap = await read(modelPath(t.model));
+    const snap = { results: [] };
+    for (const m of t.models || [t.model]) snap.results.push(...((await read(modelPath(m)))?.results || []).filter(x => !t.match || t.match(x.title)));
     const used = (snap?.results || []).filter(x => USED.has(x.condition)).map(x => x.totalPrice).filter(n => n > 0).sort((a, b) => a - b);
     const market = used.length >= 5 ? used[Math.floor(used.length / 2)] : null;
     for (const x of snap?.results || []) {

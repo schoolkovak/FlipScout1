@@ -219,6 +219,7 @@ export const PART_GROUPS = [
       ] },
       { id: "eccram", label: "DDR4 ECC RAM", items: [
         spec("16GB DDR4 ECC RDIMM", "Xeon ECC RAM", [["Stick", "16 GB"], ["Type", "ECC registered"]], { query: "16GB DDR4 ECC REG RDIMM" }),
+        spec("16GB (2x8GB) DDR4 ECC 2400", "Xeon ECC RAM", [["Kit", "2×8 GB"], ["Speed", "2400 MT/s"], ["Type", "ECC registered"]], { query: "2x 8GB DDR4 2400 ECC REG" }),
         spec("32GB DDR4 ECC RDIMM", "Xeon ECC RAM", [["Stick", "32 GB"], ["Type", "ECC registered"]], { query: "32GB DDR4 ECC REG RDIMM" }),
         spec("DDR4 ECC RAM lot", "Xeon ECC RAM", [["Kit", "Lot / kit"], ["Type", "ECC"]], { query: "DDR4 ECC RAM lot" })
       ] },

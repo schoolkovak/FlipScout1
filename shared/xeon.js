@@ -115,7 +115,7 @@ export function classifyXeon(title) {
     return { type: "board", tier: boardTier(raw) };
   }
   if (hasRam) {
-    if (!/\bddr4\b/.test(raw)) return { type: null, reason: "not-ddr4" };
+    if (!/\b(?:ddr4|pc4)\b/.test(raw)) return { type: null, reason: "not-ddr4" };
     if (!ecc) return { type: null, reason: "not-ecc" };
     if (OTHER_PARTS.test(t)) return { type: null, reason: "other-parts-included" };
     return { type: "ram", ...ram };

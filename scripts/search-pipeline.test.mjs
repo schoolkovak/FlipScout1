@@ -909,3 +909,25 @@ test("price target: any RX 580 8GB at $60 or less alerts, ahead of other deals a
   assert.match(posts[0].headers.Title, /^FlipScout target: RX 580 8GB \$58/);
   assert.match(posts[0].body, /under your \$60 target · used market ~\$70/);
 });
+
+test("price target: 2×8GB DDR4 ECC 2400+ kits at $40 or less", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { modelPath } = await import("../api/_lib/snapshots.js");
+  const { findGreatDeals } = await import("./deal-alerts.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "fs-ecc-"));
+  mkdirSync(join(dir, "models"));
+  let n = 0;
+  const L = (t, p) => ({ id: t + p, title: t, totalPrice: p, itemPrice: p, condition: "used", url: "https://www.ebay.com/itm/" + (400000000000 + n++), source: "eBay", marketplace: "ebay" });
+  writeFileSync(join(dir, modelPath("16GB (2x8GB) DDR4 ECC 2400")), JSON.stringify({ results: [
+    L("Samsung 16GB (2x8GB) DDR4 2400MHz PC4-19200 ECC Registered RDIMM", 32),
+    L("2x 8GB PC4-2400T DDR4 ECC REG Hynix", 26),
+    L("Kingston 16GB 2x8GB DDR4 2666 ECC REG", 38),
+    L("Lot of 2 8GB 1Rx8 PC4-2133P ECC REG", 20),
+    L("4x 8GB PC4-2400T DDR4 ECC REG", 35),
+    L("2x 8GB PC4-2400T DDR4 ECC REG", 44)
+  ] }));
+  const t = (await findGreatDeals(dir)).filter(d => d.target === 40).map(d => d.price).sort((a, b) => a - b);
+  assert.deepEqual(t, [26, 32, 38], "2133 is too slow, 4 sticks isn't a pair, $44 is over");
+});
