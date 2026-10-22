@@ -596,7 +596,7 @@ export function evaluateListing({ title, query, category, structuredCondition = 
     }
     if (want === "board" && /\bhuananzhi\b/.test(q) && !/\bhuananzhi\b/.test(t)) return reject("model-mismatch", "not Huananzhi");
     if (want === "ram") {
-      const qStick = Number(q.match(/\b(8|16|32|64)gb\b/)?.[1]);
+      const qStick = Number(q.match(/\b(4|8|16|32|64)gb\b/)?.[1]);
       if (qStick && x.stick !== qStick) return reject("capacity-mismatch", x.stick + "GB sticks");
       if (/\blot\b/.test(q) && x.sticks < 2) return reject("model-not-stated", "not a lot");
     }

@@ -910,7 +910,7 @@ test("price target: any RX 580 8GB at $60 or less alerts, ahead of other deals a
   assert.match(posts[0].body, /under your \$60 target · used market ~\$70/);
 });
 
-test("price target: 2×8GB DDR4 ECC 2400+ kits at $40 or less", async () => {
+test("price target: 16GB DDR4 ECC 2400+ (2×8GB or 4×4GB) at $40 or less", async () => {
   const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
@@ -927,8 +927,10 @@ test("price target: 2×8GB DDR4 ECC 2400+ kits at $40 or less", async () => {
     L("Lot of 2 8GB 1Rx8 PC4-2133P ECC REG", 20),
     L("4x 8GB PC4-2400T DDR4 ECC REG", 35),
     L("2x 8GB PC4-2400T DDR4 ECC REG", 44),
-    L("Micron 2x8GB DDR4 2400 ECC RDIMM", 18)
+    L("Micron 2x8GB DDR4 2400 ECC RDIMM", 18),
+    L("Lot of 4 Samsung 4GB PC4-2400T ECC REG RDIMM", 22),
+    L("4x 4GB DDR4 2133 ECC REG", 15)
   ] }));
   const t = (await findGreatDeals(dir)).filter(d => d.target === 40).map(d => d.price).sort((a, b) => a - b);
-  assert.deepEqual(t, [18, 26, 32, 38], "2133 is too slow, 4 sticks isn't a pair, $44 is over");
+  assert.deepEqual(t, [18, 22, 26, 32, 38], "2133 is too slow, 4×8GB isn't 16GB, $44 is over");
 });

@@ -68,14 +68,14 @@ async function extraCpus(read) {
 // shipping) alerts, whatever its used market, ahead of other deals and
 // outside the per-family limits.
 // models: where to look; match: an extra title test.
-// A 2-stick 8GB DDR4 ECC kit rated 2400MHz or faster ("2400", "PC4-2400T",
+// 16GB of DDR4 ECC as 2×8GB or 4×4GB, rated 2400MHz or faster ("2400", "PC4-2400T",
 // "PC4-19200"); faster kits run at 2400 on X99.
 const PC4 = { 19200: 2400, 21300: 2666, 23400: 2933, 25600: 3200 };
 const ramSpeed = title => Math.max(0, ...[...String(title).toLowerCase().matchAll(/(?:pc4[\s-]?)?\b(\d{4,5})(?=\s?(?:mhz|mt|t\b|[a-z]?\b))/g)].map(m => PC4[m[1]] || Number(m[1])).filter(n => n >= 2133 && n <= 3200));
-const ecc2x8 = title => { const r = classifyXeon(title); return r.type === "ram" && r.stick === 8 && r.sticks === 2 && ramSpeed(title) >= 2400; };
+const ecc16 = title => { const r = classifyXeon(title); return r.type === "ram" && r.gb === 16 && (r.stick === 8 || r.stick === 4) && ramSpeed(title) >= 2400; };
 export const PRICE_TARGETS = [
   { model: "RX 580 8GB", max: 60, min: 25 },
-  { model: "2×8GB DDR4 ECC 2400+", models: ["16GB (2x8GB) DDR4 ECC 2400", "DDR4 ECC RAM lot"], max: 40, min: 8, match: ecc2x8 }
+  { model: "16GB DDR4 ECC 2400+", models: ["16GB (2x8GB) DDR4 ECC 2400", "16GB (4x4GB) DDR4 ECC 2400", "DDR4 ECC RAM lot"], max: 40, min: 8, match: ecc16 }
 ];
 async function targetDeals(read) {
   const out = [];
