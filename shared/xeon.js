@@ -97,7 +97,7 @@ export function classifyXeon(title) {
   const board = /\b(?:motherboards?|mainboards?|mobo|main board)\b/.test(t) || (/\bx99\b/.test(t) && !cpus.keys.length && !/\b(?:ram|memory|rdimm|dimm)\b/.test(t));
   const x99 = /\b(?:x99|c612|lga\s?2011\s?3|lga2011\s?v3|2011 3|2011v3)\b/.test(raw);
   const ram = ramIn(raw);
-  const hasRam = !!(ram && /\b(?:ram|memory|ddr4|rdimm|dimm|ecc|reg)\b/.test(t) && /\b\d{1,3}\s?gb\b/.test(t));
+  const hasRam = !!(ram && /\b(?:ram|memory|ddr4|rdimm|dimm|ecc|reg)\b/.test(t) && /(?:\b|x)\d{1,3}\s?gb\b/.test(t));
   const ecc = /\b(?:ecc|rdimm|registered|reg|server memory)\b/.test(raw) && !/\bnon\s?ecc\b/.test(raw);
   if (cpus.keys.length && board) {
     if (OTHER_PARTS.test(t)) return { type: null, reason: "other-parts-included" };
