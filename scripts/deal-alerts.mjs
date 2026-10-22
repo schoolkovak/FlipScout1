@@ -84,7 +84,7 @@ const ssdCapacity = title => {
 };
 const SSD_MODELS = ["500GB SSD", "500GB NVMe SSD", "500GB SATA SSD", "SSD lot", "1TB SSD", "1TB NVMe SSD", "1TB SATA SSD"];
 export const PRICE_TARGETS = [
-  { model: "RX 580 8GB", max: 60, min: 25 },
+  { model: "RX 580 8GB", max: 65, min: 25 },
   { model: "16GB DDR4 ECC 2400+", models: ["16GB (2x8GB) DDR4 ECC 2400", "16GB (4x4GB) DDR4 ECC 2400", "DDR4 ECC RAM lot"], max: 40, min: 8, match: ecc16 },
   { model: "SSD 450GB+", models: SSD_MODELS, max: 40, min: 10, match: t => ssdCapacity(t) >= 450, unit: t => ssdLotInfo(t)?.count || 1, unitLabel: " per drive", unitNoun: "drives", perDay: 8 }
 ];
