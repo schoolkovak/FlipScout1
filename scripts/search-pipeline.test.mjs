@@ -934,3 +934,32 @@ test("price target: 16GB DDR4 ECC 2400+ (2×8GB or 4×4GB) at $40 or less", asyn
   const t = (await findGreatDeals(dir)).filter(d => d.target === 40).map(d => d.price).sort((a, b) => a - b);
   assert.deepEqual(t, [18, 22, 26, 32, 38], "2133 is too slow, 4×8GB isn't 16GB, $44 is over");
 });
+
+test("price target: SSDs 450GB+ at $40 or less per drive, singles or lots, 8 a day", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { modelPath } = await import("../api/_lib/snapshots.js");
+  const { findGreatDeals, sendAlerts } = await import("./deal-alerts.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "fs-ssd-"));
+  mkdirSync(join(dir, "models"));
+  let n = 0;
+  const L = (t, p) => ({ id: t + p, title: t, totalPrice: p, itemPrice: p, condition: "used", url: "https://www.ebay.com/itm/" + (500000000000 + n++), source: "eBay", marketplace: "ebay" });
+  writeFileSync(join(dir, modelPath("500GB SSD")), JSON.stringify({ results: [
+    L("Samsung 860 EVO 500GB SATA SSD", 30), L("WD Blue SN570 1TB NVMe SSD", 39), L("Crucial MX500 1TB SATA SSD", 45),
+    L("Kingston 240GB SATA SSD", 12), L("Samsung 870 EVO 500GB SSD", 5)
+  ] }));
+  writeFileSync(join(dir, modelPath("SSD lot")), JSON.stringify({ results: [L("Lot of 5 Crucial 500GB SSD", 150), L("Lot of 4 512GB NVMe SSD", 180)] }));
+  const t = (await findGreatDeals(dir)).filter(d => d.sectionId === "target");
+  assert.deepEqual(t.map(d => d.model).sort(), ["1TB SSD", "500GB SSD", "500GB SSD ×5"].sort(), "$45/drive, 240GB, $5 bait and $45/drive lot are out");
+  const lot = t.find(d => d.count === 5);
+  assert.equal(lot.perUnit, 30);
+  const posts = [];
+  const r = await sendAlerts(t, { topic: "x", fetchImpl: async (u, o) => { posts.push(o); return { ok: true }; }, now: new Date("2026-10-13T16:00:00Z") });
+  assert.equal(r.sent.length, 2, "2 per batch like any family");
+  assert.match(posts[0].headers.Title, /1TB SSD \$39/, "cheapest per 500GB first");
+  await sendAlerts([lot], { topic: "x", fetchImpl: async (u, o) => { posts.push(o); return { ok: true }; }, now: new Date("2026-10-13T16:00:00Z") });
+  assert.match(posts.at(-1).body, /\$150 incl\. shipping = \$30 per drive · at or under your \$40 per drive target/);
+  const full = Array.from({ length: 8 }, () => ({ f: "target:SSD 450GB+", at: "2026-10-13T15:00:00Z" }));
+  assert.equal((await sendAlerts(t, { topic: "x", fetchImpl: async () => ({ ok: true }), now: new Date("2026-10-13T16:00:00Z"), recent: full })).sent.length, 0, "8 a day");
+});
